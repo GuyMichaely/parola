@@ -1,21 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createCardStorage, readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode, type CardStorage, type CardType, type Flashcard, type StorageMode } from "./storage";
+import { cardTypes, typeLabels } from "./cardTypes";
+import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
+import { StorageSettingsModal } from "./components/StorageSettingsModal";
+import { StudyOptions, answerKeyword, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
+import { StudyScope, type ScopeMode, type StudyScopeOption } from "./components/StudyScope";
 
-type ScopeMode = "all" | "only" | "exclude";
-type PromptLanguage = "english" | "italian";
-type PromptMode = PromptLanguage | "both";
 type AnswerSyntaxMode = "universal" | "compact";
-
-type AnswerKeywords = {
-  noun: string;
-  verb: string;
-  adjective: string;
-  adverb: string;
-  masculine: string;
-  feminine: string;
-  singularOnly: string;
-  pluralOnly: string;
-};
 
 type BatchRow = {
   id: string;
@@ -63,18 +54,10 @@ type BatchDraft<Row> = {
   rows: Row[];
 };
 
-type SaveState = "idle" | "saving" | "saved" | "failed";
-
 type StudyItem = {
   key: string;
   card: Flashcard;
   promptLanguage: PromptLanguage;
-};
-
-type StudyScopeOption = {
-  key: string;
-  label: string;
-  kind: "type" | "set" | "deck" | "tag";
 };
 
 type VerificationField = {
@@ -83,54 +66,8 @@ type VerificationField = {
   expected: string;
 };
 
-const typeLabels: Record<CardType, string> = {
-  noun: "Noun",
-  verb: "Verb",
-  adjective: "Adjective",
-  adverb: "Adverb",
-};
-
-const cardTypes: CardType[] = ["noun", "verb", "adjective", "adverb"];
-
 const cardAdderTypeKey = "parola:card-adder:type";
 const deckTagPrefix = "__deck__:";
-const answerKeywordsKey = "parola:answer-keywords";
-const defaultAnswerKeywords: AnswerKeywords = {
-  noun: "n",
-  verb: "v",
-  adjective: "a",
-  adverb: "adv",
-  masculine: "m",
-  feminine: "f",
-  singularOnly: "sin",
-  pluralOnly: "plu",
-};
-
-function answerKeyword(type: CardType, keywords: AnswerKeywords) {
-  return type === "noun" ? keywords.noun : type === "verb" ? keywords.verb : type === "adjective" ? keywords.adjective : keywords.adverb;
-}
-
-function readAnswerKeywords(): AnswerKeywords {
-  if (typeof window === "undefined") return defaultAnswerKeywords;
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(answerKeywordsKey) ?? "{}") as Partial<AnswerKeywords>;
-    return Object.fromEntries(Object.entries(defaultAnswerKeywords).map(([key, fallback]) => {
-      const stored = parsed[key as keyof AnswerKeywords];
-      return [key, typeof stored === "string" && stored.trim() ? stored.trim() : fallback];
-    })) as AnswerKeywords;
-  } catch {
-    return defaultAnswerKeywords;
-  }
-}
-
-function writeAnswerKeywords(keywords: AnswerKeywords) {
-  try {
-    window.localStorage.setItem(answerKeywordsKey, JSON.stringify(keywords));
-  } catch {
-    // Keyword customization is optional; verification still works with the current in-memory values.
-  }
-}
-
 function cardAdderDraftKey(type: CardType) {
   return `parola:card-adder:${type}`;
 }
@@ -792,126 +729,6 @@ function ItalianVerificationForm({ card, syntaxMode, compactType, keywords, onRe
       <button className="primary-button check-answer-button" type="submit">Check answer</button>
     </form>
   );
-}
-
-function AnswerKeywordSettings({ keywords, onChange }: { keywords: AnswerKeywords; onChange: (keywords: AnswerKeywords) => void }) {
-  const [draft, setDraft] = useState(keywords);
-  const [message, setMessage] = useState("");
-  const fields: { key: keyof AnswerKeywords; label: string }[] = [
-    { key: "noun", label: "Noun" },
-    { key: "verb", label: "Verb" },
-    { key: "adjective", label: "Adjective" },
-    { key: "adverb", label: "Adverb" },
-    { key: "masculine", label: "Masculine" },
-    { key: "feminine", label: "Feminine" },
-    { key: "singularOnly", label: "Singular-only" },
-    { key: "pluralOnly", label: "Plural-only" },
-  ];
-
-  function applyKeywords() {
-    const normalized = Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, value.trim().toLocaleLowerCase("it-IT")])) as AnswerKeywords;
-    const values = Object.values(normalized);
-    if (values.some((value) => !value || /\s|[|:"]/u.test(value))) {
-      setMessage("Each keyword must be one non-empty token without spaces or punctuation separators.");
-      return;
-    }
-    if (new Set(values).size !== values.length) {
-      setMessage("Each keyword must be different.");
-      return;
-    }
-    onChange(normalized);
-    setDraft(normalized);
-    setMessage("Applied and saved on this device.");
-  }
-
-  function resetKeywords() {
-    setDraft(defaultAnswerKeywords);
-    onChange(defaultAnswerKeywords);
-    setMessage("Defaults restored.");
-  }
-
-  return <details className="keyword-settings">
-    <summary>Answer keywords</summary>
-    <div className="keyword-settings-body">
-      <p>Customize the short tokens used by type-to-verify. Changes apply to new answers immediately.</p>
-      <div className="keyword-grid">
-        {fields.map((field) => <label key={field.key}><span>{field.label}</span><input value={draft[field.key]} onChange={(event) => { setDraft((current) => ({ ...current, [field.key]: event.target.value })); setMessage(""); }} autoCapitalize="none" spellCheck={false} /></label>)}
-      </div>
-      {message && <p className="keyword-message" role="status">{message}</p>}
-      <div className="keyword-actions"><button type="button" className="text-button" onClick={resetKeywords}>Restore defaults</button><button type="button" className="neutral-button" onClick={applyKeywords}>Apply keywords</button></div>
-    </div>
-  </details>;
-}
-
-function StudyOptions({
-  promptMode,
-  onPromptMode,
-  typeToVerify,
-  onTypeToVerify,
-  oneDirectionPerWord,
-  onOneDirectionPerWord,
-  englishFirstWhenBoth,
-  onEnglishFirstWhenBoth,
-  homogeneousType,
-  compactAnswers,
-  onCompactAnswers,
-  answerKeywords,
-  onAnswerKeywords,
-}: {
-  promptMode: PromptMode;
-  onPromptMode: (mode: PromptMode) => void;
-  typeToVerify: boolean;
-  onTypeToVerify: () => void;
-  oneDirectionPerWord: boolean;
-  onOneDirectionPerWord: () => void;
-  englishFirstWhenBoth: boolean;
-  onEnglishFirstWhenBoth: () => void;
-  homogeneousType: CardType | null;
-  compactAnswers: boolean;
-  onCompactAnswers: () => void;
-  answerKeywords: AnswerKeywords;
-  onAnswerKeywords: (keywords: AnswerKeywords) => void;
-}) {
-  return (
-    <section className="study-options" aria-label="Study options">
-      <label className="study-option-select">
-        <span>Prompt in</span>
-        <select value={promptMode} onChange={(event) => onPromptMode(event.target.value as PromptMode)}>
-          <option value="english">English</option>
-          <option value="italian">Italian</option>
-          <option value="both">Both languages</option>
-        </select>
-      </label>
-      <label className="switch-option">
-        <input type="checkbox" checked={typeToVerify} onChange={onTypeToVerify} />
-        <span><strong>Type to verify</strong><small>Checks Italian answers automatically</small></span>
-      </label>
-      {promptMode === "both" && (
-        <label className="study-option-select direction-choice">
-          <span>For each word</span>
-          <select value={oneDirectionPerWord ? "one" : "both"} onChange={onOneDirectionPerWord}>
-            <option value="both">Prompt in both directions</option>
-            <option value="one">Prompt in one mixed direction</option>
-          </select>
-        </label>
-      )}
-      {promptMode === "both" && !oneDirectionPerWord && <label className="switch-option">
-        <input type="checkbox" checked={englishFirstWhenBoth} onChange={onEnglishFirstWhenBoth} />
-        <span><strong>English first</strong><small>Show each word’s English prompt before its Italian prompt</small></span>
-      </label>}
-      {typeToVerify && promptMode !== "italian" && homogeneousType && <label className="switch-option compact-mode-option">
-        <input type="checkbox" checked={compactAnswers} onChange={onCompactAnswers} />
-        <span><strong>{typeLabels[homogeneousType]} mode</strong><small>All cards in this scope are {typeLabels[homogeneousType].toLowerCase()}s; omit the {answerKeyword(homogeneousType, answerKeywords)} prefix</small></span>
-      </label>}
-      {typeToVerify && promptMode !== "italian" && <AnswerKeywordSettings keywords={answerKeywords} onChange={onAnswerKeywords} />}
-    </section>
-  );
-}
-
-function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === "idle") return null;
-  const label = state === "saving" ? "Saving…" : state === "saved" ? "Saved" : "Save failed";
-  return <div className={`save-indicator ${state}`} role="status" aria-live="polite"><i />{label}</div>;
 }
 
 function SetField({
@@ -1698,122 +1515,6 @@ function InventoryCardsEditor({
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
   </form>;
-}
-
-function StorageSettingsModal({
-  mode,
-  endpoint,
-  onClose,
-  onApply,
-}: {
-  mode: StorageMode;
-  endpoint: string;
-  onClose: () => void;
-  onApply: (mode: StorageMode, endpoint: string) => Promise<void>;
-}) {
-  const [draftMode, setDraftMode] = useState<StorageMode>(mode);
-  const [draftEndpoint, setDraftEndpoint] = useState(endpoint);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    if (draftMode === "remote" && !draftEndpoint.trim()) {
-      setError("Enter a remote API endpoint before selecting remote storage.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await onApply(draftMode, draftEndpoint.trim());
-      onClose();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Storage could not be changed.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return <div className="modal-backdrop" onMouseDown={onClose}>
-    <form className="modal storage-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
-      <header className="modal-header">
-        <div><h2>Storage</h2><p className="modal-subtitle">Choose which saved storage location Parola uses.</p></div>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close storage settings">×</button>
-      </header>
-      <div className="storage-option-copy">
-        <strong>The endpoint and active storage mode are saved separately.</strong>
-        <p>You can keep the Azure endpoint saved here while continuing to use browser localStorage. Switching storage changes which inventory is shown; it does not copy cards between locations.</p>
-      </div>
-      <div className="storage-mode-options" role="radiogroup" aria-label="Active card storage">
-        <label className={draftMode === "browser" ? "selected" : ""}>
-          <input type="radio" name="storage-mode" checked={draftMode === "browser"} onChange={() => setDraftMode("browser")} />
-          <span><strong>Browser</strong><small>Use this browser's localStorage.</small></span>
-        </label>
-        <label className={draftMode === "remote" ? "selected" : ""}>
-          <input type="radio" name="storage-mode" checked={draftMode === "remote"} onChange={() => setDraftMode("remote")} />
-          <span><strong>Remote</strong><small>Use the saved API endpoint.</small></span>
-        </label>
-      </div>
-      <label className="field full-field">
-        <span>Remote API endpoint</span>
-        <input
-          type="url"
-          inputMode="url"
-          value={draftEndpoint}
-          onChange={(event) => setDraftEndpoint(event.target.value)}
-          placeholder="https://example.com/api/cards"
-          autoComplete="off"
-        />
-      </label>
-      <div className="api-contract">
-        <strong>Expected API</strong>
-        <code>GET endpoint → {`{ cards: [...] }`}</code>
-        <code>POST endpoint ← {`{ cards: [...] }`}</code>
-        <code>PUT endpoint ← one card</code>
-        <code>DELETE endpoint?id=123</code>
-        <p>The endpoint must allow browser requests from the site where Parola is hosted (CORS).</p>
-      </div>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <footer className="modal-actions">
-        <button type="button" className="text-button" onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="submit" className="primary-button" disabled={saving}>{saving ? "Checking…" : "Apply"}</button>
-      </footer>
-    </form>
-  </div>;
-}
-
-function StudyScope({
-  mode,
-  onMode,
-  options,
-  selected,
-  onToggle,
-}: {
-  mode: ScopeMode;
-  onMode: (mode: ScopeMode) => void;
-  options: StudyScopeOption[];
-  selected: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <section className="scope-panel" aria-label="Study scope">
-      <label>
-        <span>Study from</span>
-        <select value={mode} onChange={(event) => onMode(event.target.value as ScopeMode)}>
-          <option value="all">Entire inventory</option>
-          <option value="only">Only selected types / decks / sets / tags</option>
-          <option value="exclude">Everything except selected types / decks / sets / tags</option>
-        </select>
-      </label>
-      {mode !== "all" && (
-        <div className="set-picker">
-          {options.length ? options.map((option) => (
-            <button key={option.key} className={`${option.kind} ${selected.includes(option.key) ? "selected" : ""}`} aria-pressed={selected.includes(option.key)} onClick={() => onToggle(option.key)}>{option.kind === "type" ? "Type · " : option.kind === "deck" ? "Deck · " : option.kind === "tag" ? "Tag · " : "Set · "}{option.label}</button>
-          )) : <span className="no-sets">No study scopes available.</span>}
-        </div>
-      )}
-    </section>
-  );
 }
 
 export default function Home() {
