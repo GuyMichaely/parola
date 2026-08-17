@@ -21,7 +21,6 @@ export interface CardStorage {
 const cardsKey = "parola:cards:v1";
 const endpointKey = "parola:storage-endpoint:v1";
 const storageModeKey = "parola:storage-mode:v1";
-const defaultRemoteEndpoint = "https://parola-api-12706-4372.azurewebsites.net/cards";
 
 export type StorageMode = "browser" | "remote";
 
@@ -154,12 +153,9 @@ class RemoteStorage implements CardStorage {
 
 export function readStorageEndpoint() {
   try {
-    const stored = window.localStorage.getItem(endpointKey);
-    if (stored !== null) return stored.trim();
-    window.localStorage.setItem(endpointKey, defaultRemoteEndpoint);
-    return defaultRemoteEndpoint;
+    return window.localStorage.getItem(endpointKey)?.trim() ?? "";
   } catch {
-    return defaultRemoteEndpoint;
+    return "";
   }
 }
 
