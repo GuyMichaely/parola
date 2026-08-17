@@ -1,13 +1,9 @@
 name: Capture live Duolingo
 
-# Diagnostic: run a minimal regular-Chrome login from a GitHub-hosted runner,
-# routing only its Internet traffic through the residential exit node.
+# GitHub runs the automation driver. A dedicated Chrome process runs on the
+# residential machine and exposes only its CDP port privately through Tailscale.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/capture-duolingo.yml"
 
 permissions:
   contents: read
@@ -35,20 +31,6 @@ jobs:
           timeout: 30s
           retry: 1
 
-      - name: Route Internet traffic through residential exit node
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo tailscale set --exit-node=parola-residential-exit
-          tailscale status
-
-      - name: Verify residential egress fingerprint
-        shell: bash
-        run: |
-          set -euo pipefail
-          PUBLIC_IP="$(curl -4fsSL https://api.ipify.org)"
-          printf '%s' "$PUBLIC_IP" | sha256sum | awk '{print "Residential egress SHA256: "$1}'
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -56,42 +38,67 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Prepare regular Chrome and nodriver
+      - name: Prepare remote Chrome tunnel and nodriver
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r extension/tests/requirements-live.txt
 
-          CHROME_PATH=""
-          for browser in google-chrome-stable google-chrome; do
-            if command -v "$browser" >/dev/null 2>&1; then
-              CHROME_PATH="$(command -v "$browser")"
+          if ! command -v socat >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y socat
+          fi
+
+          socat \
+            TCP-LISTEN:9222,bind=127.0.0.1,reuseaddr,fork \
+            TCP:parola-residential-exit:9222 &
+          echo $! > /tmp/parola-cdp-socat.pid
+
+          READY=false
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:9222/json/version >/tmp/parola-chrome-version.json; then
+              READY=true
               break
             fi
+            sleep 1
           done
 
-          test -n "$CHROME_PATH" || {
-            echo "Regular Google Chrome is not available on the hosted runner." >&2
+          if [[ "$READY" != "true" ]]; then
+            echo "Could not reach the residential Chrome CDP endpoint." >&2
+            tailscale status
             exit 1
-          }
-          command -v xvfb-run >/dev/null 2>&1
+          fi
 
-          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
-          "$CHROME_PATH" --version
+          python - <<'PY'
+          import json
+          with open('/tmp/parola-chrome-version.json', encoding='utf-8') as f:
+              data = json.load(f)
+          print('Remote browser:', data.get('Browser'))
+          PY
 
-      - name: Probe Duolingo login with clean Chrome
+      - name: Probe Duolingo login through residential Chrome
         working-directory: extension
         env:
-          DUOLINGO_CAPTURE_DIR: login-probe-capture
-        run: xvfb-run -a python tests/duolingo-login-probe.py
+          DUOLINGO_CAPTURE_DIR: remote-browser-capture
+          DUOLINGO_CDP_HOST: 127.0.0.1
+          DUOLINGO_CDP_PORT: "9222"
+        run: python tests/duolingo-remote-browser-probe.py
 
-      - name: Upload login probe
+      - name: Upload remote-browser capture
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: duolingo-login-probe
-          path: extension/login-probe-capture
+          name: duolingo-remote-browser-capture
+          path: extension/remote-browser-capture
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Stop CDP tunnel
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/parola-cdp-socat.pid ]]; then
+            kill "$(cat /tmp/parola-cdp-socat.pid)" 2>/dev/null || true
+          fi
