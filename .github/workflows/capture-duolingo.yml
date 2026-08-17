@@ -6,10 +6,21 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/capture-duolingo.yml"
-      - "extension/tests/live-duolingo.mjs"
+      - "extension/tests/live-duolingo.py"
+      - "extension/tests/requirements-live.txt"
+      - "extension/manifest.json"
+      - "extension/background.js"
+      - "extension/content/**"
+      - "extension/popup.*"
+      - "extension/review.*"
+      - "extension/ui.css"
 
 permissions:
   contents: read
+
+concurrency:
+  group: parola-duolingo-live
+  cancel-in-progress: true
 
 jobs:
   capture:
@@ -18,16 +29,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          node-version: 24
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Install browser dependencies
+      - name: Install nodriver
         working-directory: extension
         run: |
-          npm install --ignore-scripts
-          npx puppeteer browsers install chrome
+          python -m pip install --upgrade pip
+          python -m pip install -r tests/requirements-live.txt
+          python -c 'import nodriver; print("nodriver", nodriver.__version__)'
+          google-chrome --version
 
       - name: Check live-test credentials
         id: credentials
@@ -43,14 +58,15 @@ jobs:
             echo "Live capture credentials are not configured; skipping browser login."
           fi
 
-      - name: Capture live Duolingo session
+      - name: Capture live Duolingo session with nodriver
         if: steps.credentials.outputs.configured == 'true'
         working-directory: extension
         env:
           DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
           DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
           DUOLINGO_CAPTURE_DIR: live-capture
-        run: xvfb-run -a node tests/live-duolingo.mjs
+          CHROME_PATH: /usr/bin/google-chrome
+        run: xvfb-run -a python tests/live-duolingo.py
 
       - name: Upload live capture
         if: always() && steps.credentials.outputs.configured == 'true'
