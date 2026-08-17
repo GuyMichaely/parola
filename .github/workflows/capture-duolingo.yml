@@ -1,22 +1,10 @@
 name: Capture live Duolingo
 
-# Real-site integration test. This intentionally runs only on the dedicated
-# private residential runner so Duolingo sees the normal home connection.
+# Live-site integration test runs in GitHub-hosted Chrome. Tailscale routes the
+# runner's Internet traffic through the residential exit node so the browser
+# itself never runs on the residential machine.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/capture-duolingo.yml"
-      - "extension/tests/live-duolingo.py"
-      - "extension/tests/requirements-live.txt"
-      - "extension/tests/duolingo-test-account.json"
-      - "extension/manifest.json"
-      - "extension/background.js"
-      - "extension/content/**"
-      - "extension/popup.*"
-      - "extension/review.*"
-      - "extension/ui.css"
 
 permissions:
   contents: read
@@ -27,49 +15,56 @@ concurrency:
 
 jobs:
   capture:
-    runs-on: [self-hosted, linux, x64, parola-duolingo]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Prepare Python environment
+      - name: Connect to residential tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:parola-ci
+          version: latest
+
+      - name: Route Internet traffic through residential exit node
         shell: bash
         run: |
           set -euo pipefail
-          python3 --version
-          python3 -m venv .venv-live
-          . .venv-live/bin/activate
+          sudo tailscale set --exit-node=parola-residential-exit
+          tailscale status
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: extension/tests/requirements-live.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install nodriver and Chrome for Testing
+        working-directory: extension
+        shell: bash
+        run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r extension/tests/requirements-live.txt
-          python -c 'import nodriver; print("nodriver", nodriver.__version__)'
-          echo "$PWD/.venv-live/bin" >> "$GITHUB_PATH"
+          python -m pip install -r tests/requirements-live.txt
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
 
-      - name: Find local Chrome
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          CHROME_PATH=""
-          for browser in google-chrome google-chrome-stable chromium chromium-browser; do
-            if command -v "$browser" >/dev/null 2>&1; then
-              CHROME_PATH="$(command -v "$browser")"
-              break
-            fi
-          done
-
-          test -n "$CHROME_PATH" || {
-            echo "No supported Chrome/Chromium executable was found on the runner." >&2
-            exit 1
-          }
-
-          command -v xvfb-run >/dev/null 2>&1 || {
-            echo "xvfb-run is not installed on the runner." >&2
-            exit 1
-          }
+          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
 
           echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+          python -c 'import nodriver; print("nodriver", nodriver.__version__)'
           "$CHROME_PATH" --version
 
       - name: Capture live Duolingo session with nodriver
