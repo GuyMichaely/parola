@@ -1,7 +1,7 @@
 name: Capture live Duolingo
 
-# Real-site integration test. This intentionally runs only on the private
-# repository's self-hosted Linux x64 runner so Duolingo sees the home connection.
+# Real-site integration test. This intentionally runs only on the dedicated
+# private residential runner so Duolingo sees the normal home connection.
 on:
   workflow_dispatch:
   push:
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   capture:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, linux, x64, parola-duolingo]
     timeout-minutes: 20
 
     steps:
