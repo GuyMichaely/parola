@@ -1,0 +1,69 @@
+name: Deploy Parola API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: parola-api-production
+  cancel-in-progress: true
+
+env:
+  AZURE_WEBAPP_NAME: parola-api-12706-4372
+  AZURE_CLIENT_ID: 86c61211-f326-4cd8-9497-0d83e94a9142
+  AZURE_TENANT_ID: 0e558bf6-cdd2-492d-be6f-2a6189935325
+  AZURE_SUBSCRIPTION_ID: 8cb49c9d-178d-461e-af46-50e76071eb22
+  AZURE_WEBAPP_URL: https://parola-api-12706-4372.azurewebsites.net
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Validate API source
+        run: node --check api/server.mjs
+
+      - name: Log in to Azure with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy API to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: api
+
+      - name: Verify deployed API
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$AZURE_WEBAPP_URL/health"; then
+              echo
+              echo "Parola API is healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API health check did not become ready in time." >&2
+          exit 1
