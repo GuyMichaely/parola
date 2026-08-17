@@ -1,0 +1,53 @@
+name: Harvest sanitized Duolingo trace
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/harvest-duolingo-trace.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download sanitized trace from target run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 1fa51d9e51d672270b045a9b0207a6664b69cebd
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RUN_ID="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/capture-duolingo.yml/runs?head_sha=${TARGET_SHA}&per_page=20" \
+            --jq '.workflow_runs | map(select(.status == "completed")) | sort_by(.created_at) | reverse | .[0].id')"
+
+          test -n "$RUN_ID"
+          test "$RUN_ID" != "null"
+          echo "Harvesting run $RUN_ID"
+
+          rm -rf /tmp/parola-trace .diagnostics/latest-duolingo-trace
+          mkdir -p /tmp/parola-trace .diagnostics/latest-duolingo-trace
+          gh run download "$RUN_ID" --name duolingo-manual-login-trace --dir /tmp/parola-trace
+
+          for file in summary.json input-trace.json network-trace.json; do
+            test -f "/tmp/parola-trace/$file"
+            cp "/tmp/parola-trace/$file" ".diagnostics/latest-duolingo-trace/$file"
+          done
+
+      - name: Commit sanitized trace JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .diagnostics/latest-duolingo-trace
+          git commit -m 'Temporarily expose sanitized Duolingo trace for analysis'
+          git push
