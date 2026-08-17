@@ -7,6 +7,6 @@
     "test": "node tests/e2e.mjs"
   },
   "devDependencies": {
-    "puppeteer-core": "25.4.0"
+    "puppeteer": "25.4.0"
   }
 }
