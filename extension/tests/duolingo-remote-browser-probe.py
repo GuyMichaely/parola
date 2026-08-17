@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import nodriver as uc
@@ -16,6 +17,13 @@ OUTPUT_DIR = Path(os.environ.get("DUOLINGO_CAPTURE_DIR", "remote-browser-capture
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CDP_HOST = os.environ.get("DUOLINGO_CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("DUOLINGO_CDP_PORT", "9222"))
+INTERACTIVE_TIMEOUT_SECONDS = int(os.environ.get("DUOLINGO_INTERACTIVE_TIMEOUT_SECONDS", "300"))
+
+
+def sha256_text(value):
+    if value is None:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 async def wait_for_selector(tab, selector, attempts=8):
@@ -27,13 +35,58 @@ async def wait_for_selector(tab, selector, attempts=8):
     return None
 
 
-async def field_value(tab, selector):
-    expression = (
-        "(() => { const el = document.querySelector("
-        + json.dumps(selector)
-        + "); return el ? el.value : null; })()"
-    )
+async def page_state(tab):
+    expression = """
+    (() => {
+      const identity = document.querySelector('input[data-test="email-input"]');
+      const password = document.querySelector('input[data-test="password-input"]');
+      const active = document.activeElement;
+      return {
+        identity: identity ? identity.value : null,
+        password: password ? password.value : null,
+        activeTag: active ? active.tagName : null,
+        activeType: active && active.getAttribute ? active.getAttribute('type') : null,
+        activeDataTest: active && active.getAttribute ? active.getAttribute('data-test') : null,
+        bodyText: document.body ? document.body.innerText : '',
+        href: location.href
+      };
+    })()
+    """
     return await tab.evaluate(expression, return_by_value=True)
+
+
+def summarize_state(raw, elapsed_seconds):
+    identity = raw.get("identity")
+    password = raw.get("password")
+    body_text = (raw.get("bodyText") or "").lower()
+    href = raw.get("href") or ""
+    login_form_present = password is not None
+    wrong_credentials = "wrong username or password" in body_text
+    logged_in = not login_form_present and "/log-in" not in href
+
+    return {
+        "elapsedSeconds": round(elapsed_seconds, 2),
+        "url": href,
+        "identityFieldPresent": identity is not None,
+        "passwordFieldPresent": password is not None,
+        "identityFieldExact": identity == EMAIL if identity is not None else None,
+        "passwordFieldExact": password == PASSWORD if password is not None else None,
+        "identityFieldLength": len(identity) if identity is not None else None,
+        "passwordFieldLength": len(password) if password is not None else None,
+        "identityLeadingOrTrailingWhitespace": (
+            identity != identity.strip() if identity is not None else None
+        ),
+        "passwordLeadingOrTrailingWhitespace": (
+            password != password.strip() if password is not None else None
+        ),
+        "passwordFieldSha256": sha256_text(password),
+        "activeTag": raw.get("activeTag"),
+        "activeType": raw.get("activeType"),
+        "activeDataTest": raw.get("activeDataTest"),
+        "wrongCredentialsMessage": wrong_credentials,
+        "loginFormStillPresent": login_form_present,
+        "loggedIn": logged_in,
+    }
 
 
 async def capture(tab, name):
@@ -51,20 +104,33 @@ async def capture(tab, name):
 
 async def main():
     browser = None
+    interaction_log = []
     summary = {
-        "automation": "nodriver-remote-browser-probe",
+        "automation": "nodriver-remote-browser-interactive-probe",
         "nodriverVersion": uc.__version__,
         "cdpHost": CDP_HOST,
         "cdpPort": CDP_PORT,
         "email": EMAIL,
         "emailLength": len(EMAIL),
         "passwordLength": len(PASSWORD),
-        "passwordSha256": hashlib.sha256(PASSWORD.encode("utf-8")).hexdigest(),
+        "passwordSha256": sha256_text(PASSWORD),
+        "interactiveTimeoutSeconds": INTERACTIVE_TIMEOUT_SECONDS,
+        "submittedByAutomation": False,
     }
 
     try:
         browser = await uc.start(config=uc.Config(host=CDP_HOST, port=CDP_PORT))
         summary["chromeVersion"] = dict(browser.info) if browser.info else None
+
+        # This is a dedicated test-browser profile. Clear its authentication state so
+        # this run starts from a reproducible logged-out Duolingo session.
+        tab = await browser.get("https://www.duolingo.com/", new_tab=True)
+        await tab.sleep(2)
+        await tab.send(uc.cdp.network.clear_browser_cookies())
+        try:
+            await tab.evaluate("localStorage.clear(); sessionStorage.clear();")
+        except Exception:
+            pass
 
         tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
         await tab.sleep(3)
@@ -83,82 +149,76 @@ async def main():
         await password.send_keys(PASSWORD)
         await tab.sleep(0.5)
 
-        actual_identity = await field_value(tab, identity_selector)
-        actual_password = await field_value(tab, password_selector)
-        summary.update(
-            {
-                "identityFieldExact": actual_identity == EMAIL,
-                "passwordFieldExact": actual_password == PASSWORD,
-                "identityFieldLength": len(actual_identity) if actual_identity is not None else None,
-                "passwordFieldLength": len(actual_password) if actual_password is not None else None,
-                "identityLeadingOrTrailingWhitespace": (
-                    actual_identity != actual_identity.strip()
-                    if actual_identity is not None
-                    else None
-                ),
-                "passwordLeadingOrTrailingWhitespace": (
-                    actual_password != actual_password.strip()
-                    if actual_password is not None
-                    else None
-                ),
-                "passwordFieldSha256": (
-                    hashlib.sha256(actual_password.encode("utf-8")).hexdigest()
-                    if actual_password is not None
-                    else None
-                ),
-            }
-        )
-
-        if actual_identity != EMAIL or actual_password != PASSWORD:
+        initial_raw = await page_state(tab)
+        initial_state = summarize_state(initial_raw, 0)
+        summary["initialFilledState"] = initial_state
+        if not initial_state["identityFieldExact"] or not initial_state["passwordFieldExact"]:
             raise RuntimeError("Login fields do not exactly match configured credentials")
 
-        submit = await wait_for_selector(tab, 'button[data-test="register-button"]')
-        if not submit:
-            submit = await tab.find("LOG IN", best_match=True)
-        if not submit:
-            raise RuntimeError("Could not find Duolingo login button")
+        await capture(tab, "01-filled-before-manual-interaction")
 
-        await submit.mouse_click()
-        await tab.sleep(10)
-        html, final_url, title = await capture(tab, "01-after-login")
-        lower = html.lower()
-        challenge_markers = [
-            "verify you are human",
-            "unusual traffic",
-            "security check",
-            "cf-chl-",
-            "challenges.cloudflare.com",
-        ]
-        summary.update(
-            {
-                "finalUrl": final_url,
-                "title": title,
-                "wrongCredentialsMessage": "wrong username or password" in lower,
-                "antiBotChallengeMarkers": [
-                    marker for marker in challenge_markers if marker in lower
-                ],
-                "loginFormStillPresent": 'data-test="password-input"' in lower,
+        print(
+            "Credentials are filled exactly. Automation will NOT submit the form. "
+            f"You have {INTERACTIVE_TIMEOUT_SECONDS} seconds to inspect, edit, and submit manually."
+        )
+
+        start = time.monotonic()
+        previous_comparable = None
+        final_state = initial_state
+
+        while time.monotonic() - start < INTERACTIVE_TIMEOUT_SECONDS:
+            elapsed = time.monotonic() - start
+            raw = await page_state(tab)
+            state = summarize_state(raw, elapsed)
+            final_state = state
+
+            comparable = {
+                key: value
+                for key, value in state.items()
+                if key != "elapsedSeconds"
             }
-        )
-        summary["loggedIn"] = (
-            not summary["wrongCredentialsMessage"]
-            and not summary["antiBotChallengeMarkers"]
-            and not summary["loginFormStillPresent"]
-            and "/log-in" not in final_url
-        )
+            if comparable != previous_comparable:
+                interaction_log.append(state)
+                previous_comparable = comparable
+                print(
+                    "Interaction state changed:",
+                    json.dumps(
+                        {
+                            "elapsedSeconds": state["elapsedSeconds"],
+                            "url": state["url"],
+                            "identityExact": state["identityFieldExact"],
+                            "passwordExact": state["passwordFieldExact"],
+                            "identityLength": state["identityFieldLength"],
+                            "passwordLength": state["passwordFieldLength"],
+                            "wrongCredentials": state["wrongCredentialsMessage"],
+                            "loggedIn": state["loggedIn"],
+                            "activeDataTest": state["activeDataTest"],
+                        },
+                        sort_keys=True,
+                    ),
+                )
 
-        if summary["loggedIn"]:
-            print(f"Remote Chrome login succeeded at {final_url}")
-        elif summary["wrongCredentialsMessage"]:
-            raise RuntimeError("Duolingo returned its wrong-credentials response")
-        elif summary["antiBotChallengeMarkers"]:
-            raise RuntimeError("Duolingo presented an anti-bot/security challenge")
+            if state["loggedIn"]:
+                summary["manualLoginSucceeded"] = True
+                summary["finalState"] = state
+                await capture(tab, "02-after-manual-login")
+                print("Manual login succeeded; interaction trace captured.")
+                break
+
+            await asyncio.sleep(0.75)
         else:
-            raise RuntimeError("Duolingo login did not reach an authenticated state")
+            summary["manualLoginSucceeded"] = False
+            summary["finalState"] = final_state
+            await capture(tab, "02-interactive-timeout")
+            raise RuntimeError("Interactive login window expired before an authenticated state")
+
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"
         raise
     finally:
+        (OUTPUT_DIR / "interaction-log.json").write_text(
+            json.dumps(interaction_log, indent=2), encoding="utf-8"
+        )
         (OUTPUT_DIR / "summary.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"
         )
