@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/refactor-study.yml"
+      - ".github/scripts/refactor-study.py"
   workflow_dispatch:
 
 permissions:
