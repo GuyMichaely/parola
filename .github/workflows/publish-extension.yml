@@ -128,8 +128,35 @@ jobs:
         with:
           repository: GuyMichaely/guymichaely.github.io
           ref: main
-          ssh-key: ${{ secrets.PAGES_DEPLOY_KEY }}
           path: public-site
+          persist-credentials: false
+
+      - name: Configure public-site deploy key
+        env:
+          PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PAGES_DEPLOY_KEY"
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$PAGES_DEPLOY_KEY" > "$HOME/.ssh/parola-pages-deploy-key"
+          chmod 600 "$HOME/.ssh/parola-pages-deploy-key"
+          ssh-keyscan github.com >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          cat > "$HOME/.ssh/config" <<EOF
+          Host parola-pages-deploy
+            HostName github.com
+            User git
+            IdentityFile $HOME/.ssh/parola-pages-deploy-key
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+
+          git -C public-site remote set-url origin git@parola-pages-deploy:GuyMichaely/guymichaely.github.io.git
+          git -C public-site ls-remote origin HEAD >/dev/null
 
       - name: Publish signed extension
         shell: bash
