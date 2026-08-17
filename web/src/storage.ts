@@ -19,7 +19,7 @@ export interface CardStorage {
 }
 
 const cardsKey = "parola:cards:v1";
-const endpointKey = "parola:storage-endpoint:v1";
+const endpointKey = "parola:storage-endpoint:v2";
 const storageModeKey = "parola:storage-mode:v1";
 
 export type StorageMode = "browser" | "remote";
@@ -162,10 +162,9 @@ export function readStorageEndpoint() {
 export function readStorageMode(): StorageMode {
   try {
     const storedMode = window.localStorage.getItem(storageModeKey);
-    if (storedMode === "browser" || storedMode === "remote") return storedMode;
-    // Preserve the old behavior for devices that had explicitly saved an endpoint
-    // before storage mode became a separate setting. New devices stay local.
-    return window.localStorage.getItem(endpointKey)?.trim() ? "remote" : "browser";
+    if (storedMode === "browser") return "browser";
+    if (storedMode === "remote" && window.localStorage.getItem(endpointKey)?.trim()) return "remote";
+    return "browser";
   } catch {
     return "browser";
   }
