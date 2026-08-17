@@ -33,6 +33,8 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:parola-ci
           version: latest
+          timeout: 30s
+          retry: 0
 
       - name: Route Internet traffic through residential exit node
         shell: bash
