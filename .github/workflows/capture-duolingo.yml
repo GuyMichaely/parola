@@ -1,10 +1,13 @@
 name: Capture live Duolingo
 
-# Live-site integration test runs in GitHub-hosted Chrome. Tailscale routes the
-# runner's Internet traffic through the residential exit node so the browser
-# itself never runs on the residential machine.
+# Diagnostic: run a minimal regular-Chrome login from a GitHub-hosted runner,
+# routing only its Internet traffic through the residential exit node.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/capture-duolingo.yml"
 
 permissions:
   contents: read
@@ -16,7 +19,7 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -53,40 +56,42 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Install nodriver and Chrome for Testing
-        working-directory: extension
+      - name: Prepare regular Chrome and nodriver
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r tests/requirements-live.txt
-          npm install --ignore-scripts
-          npx puppeteer browsers install chrome
+          python -m pip install -r extension/tests/requirements-live.txt
 
-          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
-          test -n "$CHROME_PATH"
-          test -x "$CHROME_PATH"
+          CHROME_PATH=""
+          for browser in google-chrome-stable google-chrome; do
+            if command -v "$browser" >/dev/null 2>&1; then
+              CHROME_PATH="$(command -v "$browser")"
+              break
+            fi
+          done
+
+          test -n "$CHROME_PATH" || {
+            echo "Regular Google Chrome is not available on the hosted runner." >&2
+            exit 1
+          }
+          command -v xvfb-run >/dev/null 2>&1
 
           echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
           "$CHROME_PATH" --version
 
-      - name: Capture live Duolingo session with nodriver
+      - name: Probe Duolingo login with clean Chrome
         working-directory: extension
         env:
-          DUOLINGO_CAPTURE_DIR: live-capture
-        run: xvfb-run -a python tests/live-duolingo.py
+          DUOLINGO_CAPTURE_DIR: login-probe-capture
+        run: xvfb-run -a python tests/duolingo-login-probe.py
 
-      - name: Upload live capture
+      - name: Upload login probe
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: duolingo-live-capture
-          path: extension/live-capture
+          name: duolingo-login-probe
+          path: extension/login-probe-capture
           if-no-files-found: warn
           retention-days: 14
