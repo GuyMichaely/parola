@@ -15,9 +15,11 @@ markers = {
 }
 positions = {name: text.index(marker) for name, marker in markers.items()}
 
+# Data model, transformations, validation, tag helpers, and draft persistence.
 model = text[positions["types"]:positions["set_field"]] + text[positions["row_from_card"]:positions["row_cells"]]
-for name in ["BatchRow", "VerbBatchRow", "AdjectiveBatchRow", "AdverbBatchRow", "BatchDraft"]:
+for name in ["BatchRow", "VerbBatchRow", "AdjectiveBatchRow", "AdverbBatchRow"]:
     model = model.replace(f"type {name} =", f"export type {name} =", 1)
+model = model.replace("type BatchDraft<Row> =", "export type BatchDraft<Row> =", 1)
 model_header = '''import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
 import {
@@ -28,9 +30,9 @@ import {
 } from "../study/logic";
 
 '''
-model_path = Path("web/src/cards/editorModel.ts")
-model_path.write_text(model_header + model.rstrip() + "\n")
+Path("web/src/cards/editorModel.ts").write_text(model_header + model.rstrip() + "\n")
 
+# Shared form fields and table row cells.
 fields = text[positions["set_field"]:positions["row_from_card"]] + text[positions["row_cells"]:positions["batch_nouns"]]
 fields_header = '''import type { CardType } from "../cards/types";
 import {
@@ -38,15 +40,15 @@ import {
   type AdverbBatchRow,
   type BatchRow,
   type VerbBatchRow,
-  updateNounRow,
 } from "../cards/editorModel";
 
 '''
 Path("web/src/components/CardEditorFields.tsx").write_text(fields_header + fields.rstrip() + "\n")
 
+# Batch-add flow.
 add = text[positions["batch_nouns"]:positions["edit_modal"]]
 add_header = '''import { type FormEvent, useEffect, useState } from "react";
-import type { Flashcard } from "../cards/types";
+import type { CardType, Flashcard } from "../cards/types";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
   adjectiveCard,
@@ -57,6 +59,7 @@ import {
   emptyBatchRow,
   emptyVerbBatchRow,
   newRowId,
+  normalizeNounRow,
   nounCard,
   nounFormsError,
   parseTags,
@@ -84,13 +87,23 @@ import {
 '''
 Path("web/src/components/AddCardModal.tsx").write_text(add_header + add.rstrip() + "\n")
 
-edit = text[positions["edit_modal"]:positions["inventory_type"]]
+# The remaining components are not ordered by responsibility in the original file,
+# so derive their ranges from their actual positions rather than assuming an order.
+post_edit_markers = sorted([
+    (positions["bulk_modal"], "bulk"),
+    (positions["inventory_type"], "inventory"),
+])
+edit_end = post_edit_markers[0][0]
+edit = text[positions["edit_modal"]:edit_end]
 edit_header = '''import { type FormEvent, useState } from "react";
-import type { Flashcard } from "../cards/types";
-import { typeLabels } from "../cardTypes";
+import type { CardType, Flashcard } from "../cards/types";
+import { cardTypes, typeLabels } from "../cardTypes";
 import {
+  adjectiveCard,
   adjectiveRowFromCard,
+  adverbCard,
   adverbRowFromCard,
+  deckTagPrefix,
   nounCard,
   nounFormsError,
   nounRowFromCard,
@@ -100,9 +113,9 @@ import {
   type BatchRow,
   type VerbBatchRow,
   updateNounRow,
+  verbCard,
   verbRowFromCard,
   visibleTags,
-  deckTagPrefix,
 } from "../cards/editorModel";
 import {
   AdjectiveRowCells,
@@ -116,15 +129,12 @@ import {
 '''
 Path("web/src/components/EditCardModal.tsx").write_text(edit_header + edit.rstrip() + "\n")
 
-inventory = text[positions["inventory_type"]:positions["bulk_modal"]]
-inventory_header = '''import { type FormEvent, useEffect, useState } from "react";
-import type { CardType, Flashcard } from "../cards/types";
-import { cardTypes, typeLabels } from "../cardTypes";
-import {
+common_editor_model_imports = '''
   adjectiveCard,
   adjectiveRowFromCard,
   adverbCard,
   adverbRowFromCard,
+  deckTagPrefix,
   nounCard,
   nounFormsError,
   nounRowFromCard,
@@ -137,47 +147,39 @@ import {
   verbCard,
   verbRowFromCard,
   visibleTags,
-  deckTagPrefix,
-} from "../cards/editorModel";
-import {
-  AdjectiveRowCells,
-  AdverbRowCells,
-  NounRowCells,
-  VerbRowCells,
-} from "./CardEditorFields";
-
 '''
-Path("web/src/components/InventoryCardsEditor.tsx").write_text(inventory_header + inventory.rstrip() + "\n")
-
-bulk = text[positions["bulk_modal"]:]
-bulk_header = '''import { useState } from "react";
-import type { CardType, Flashcard } from "../cards/types";
-import { cardTypes, typeLabels } from "../cardTypes";
-import {
-  adjectiveCard,
-  adjectiveRowFromCard,
-  adverbCard,
-  adverbRowFromCard,
-  nounCard,
-  nounFormsError,
-  nounRowFromCard,
-  type AdjectiveBatchRow,
-  type AdverbBatchRow,
-  type BatchRow,
-  type VerbBatchRow,
-  updateNounRow,
-  verbCard,
-  verbRowFromCard,
-} from "../cards/editorModel";
-import {
+common_fields_imports = '''
   AdjectiveRowCells,
   AdverbRowCells,
   NounRowCells,
   VerbRowCells,
-} from "./CardEditorFields";
+'''
+
+# Extract bulk and inventory whichever order they happen to occur in.
+if positions["bulk_modal"] < positions["inventory_type"]:
+    bulk = text[positions["bulk_modal"]:positions["inventory_type"]]
+    inventory = text[positions["inventory_type"]:]
+else:
+    inventory = text[positions["inventory_type"]:positions["bulk_modal"]]
+    bulk = text[positions["bulk_modal"]:]
+
+bulk_header = f'''import {{ type FormEvent, useState }} from "react";
+import type {{ CardType, Flashcard }} from "../cards/types";
+import {{ cardTypes, typeLabels }} from "../cardTypes";
+import {{{common_editor_model_imports}}} from "../cards/editorModel";
+import {{{common_fields_imports}}} from "./CardEditorFields";
 
 '''
 Path("web/src/components/BulkEditCardsModal.tsx").write_text(bulk_header + bulk.rstrip() + "\n")
+
+inventory_header = f'''import {{ type FormEvent, useEffect, useState }} from "react";
+import type {{ CardType, Flashcard }} from "../cards/types";
+import {{ cardTypes, typeLabels }} from "../cardTypes";
+import {{{common_editor_model_imports}}} from "../cards/editorModel";
+import {{{common_fields_imports}}} from "./CardEditorFields";
+
+'''
+Path("web/src/components/InventoryCardsEditor.tsx").write_text(inventory_header + inventory.rstrip() + "\n")
 
 barrel = '''export { AddCardModal } from "./AddCardModal";
 export { BulkEditCardsModal } from "./BulkEditCardsModal";
