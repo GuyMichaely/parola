@@ -10,10 +10,10 @@ from pathlib import Path
 
 import nodriver as uc
 
-EMAIL = os.environ.get("DUOLINGO_TEST_EMAIL")
-PASSWORD = os.environ.get("DUOLINGO_TEST_PASSWORD")
-if not EMAIL or not PASSWORD:
-    raise RuntimeError("DUOLINGO_TEST_EMAIL and DUOLINGO_TEST_PASSWORD are required")
+ACCOUNT_PATH = Path(__file__).with_name("duolingo-test-account.json")
+ACCOUNT = json.loads(ACCOUNT_PATH.read_text(encoding="utf-8"))
+EMAIL = ACCOUNT["email"]
+PASSWORD = ACCOUNT["password"]
 
 EXTENSION_ROOT = Path.cwd().resolve()
 OUTPUT_DIR = Path(os.environ.get("DUOLINGO_CAPTURE_DIR", "live-capture")).resolve()
@@ -243,8 +243,9 @@ async def main():
         "nodriverVersion": uc.__version__,
         "chromePath": CHROME_PATH,
         "chromeLaunchMode": "external-cdp",
-        "passwordSecretHasOuterWhitespace": PASSWORD != PASSWORD.strip(),
-        "emailSecretHasOuterWhitespace": EMAIL != EMAIL.strip(),
+        "credentialSource": str(ACCOUNT_PATH),
+        "email": EMAIL,
+        "passwordLength": len(PASSWORD),
     }
 
     try:
