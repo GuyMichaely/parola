@@ -1,5 +1,6 @@
 name: Capture live Duolingo
 
+# Live-site integration test uses nodriver with Chrome for Testing.
 on:
   workflow_dispatch:
   push:
