@@ -1,6 +1,11 @@
 import json
 import os
 import re
+import socket
+import subprocess
+import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 import nodriver as uc
@@ -21,6 +26,76 @@ def target_json(target):
         return target.target.to_json()
     except Exception:
         return {"repr": repr(target)}
+
+
+def free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def wait_for_debug_endpoint(port, process, timeout_seconds=30):
+    deadline = time.monotonic() + timeout_seconds
+    url = f"http://127.0.0.1:{port}/json/version"
+    last_error = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(
+                f"Chrome exited before its CDP endpoint became available (exit {process.returncode})"
+            )
+        try:
+            with urllib.request.urlopen(url, timeout=1) as response:
+                return json.loads(response.read())
+        except Exception as error:
+            last_error = error
+            time.sleep(0.25)
+    raise RuntimeError(f"Chrome CDP endpoint did not become available: {last_error}")
+
+
+def launch_chrome():
+    port = free_port()
+    profile_dir = Path(tempfile.mkdtemp(prefix="parola-nodriver-profile-"))
+    stdout_path = OUTPUT_DIR / "chrome-stdout.log"
+    stderr_path = OUTPUT_DIR / "chrome-stderr.log"
+    stdout_file = stdout_path.open("wb")
+    stderr_file = stderr_path.open("wb")
+
+    args = [
+        CHROME_PATH,
+        f"--user-data-dir={profile_dir}",
+        f"--remote-debugging-port={port}",
+        "--remote-debugging-address=127.0.0.1",
+        "--remote-allow-origins=*",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--password-store=basic",
+        "--disable-infobars",
+        "--disable-breakpad",
+        "--disable-dev-shm-usage",
+        "--disable-session-crashed-bubble",
+        "--disable-search-engine-choice-screen",
+        "--no-sandbox",
+        "--disable-features=IsolateOrigins,site-per-process,DisableLoadExtensionCommandLineSwitch",
+        "--enable-unsafe-extension-debugging",
+        f"--disable-extensions-except={EXTENSION_ROOT}",
+        f"--load-extension={EXTENSION_ROOT}",
+        "about:blank",
+    ]
+
+    (OUTPUT_DIR / "chrome-command.json").write_text(
+        json.dumps({"args": args, "port": port, "profileDir": str(profile_dir)}, indent=2),
+        encoding="utf-8",
+    )
+
+    process = subprocess.Popen(args, stdout=stdout_file, stderr=stderr_file)
+    try:
+        version = wait_for_debug_endpoint(port, process)
+    except Exception:
+        stdout_file.close()
+        stderr_file.close()
+        raise
+
+    return process, stdout_file, stderr_file, profile_dir, port, version
 
 
 async def find_extension_id(browser, timeout_seconds=15):
@@ -67,22 +142,39 @@ async def capture_extension_review(browser, extension_id, name):
 
 
 async def main():
-    config = uc.Config(
-        browser_executable_path=CHROME_PATH,
-        headless=False,
-        sandbox=False,
-        lang="en-US",
-    )
-    config.add_extension(EXTENSION_ROOT)
+    chrome_process = None
+    stdout_file = None
+    stderr_file = None
+    browser = None
 
-    browser = await uc.start(config=config)
     summary = {
         "automation": "nodriver",
         "nodriverVersion": uc.__version__,
         "chromePath": CHROME_PATH,
+        "chromeLaunchMode": "external-cdp",
     }
 
     try:
+        (
+            chrome_process,
+            stdout_file,
+            stderr_file,
+            profile_dir,
+            port,
+            chrome_version,
+        ) = launch_chrome()
+
+        summary.update(
+            {
+                "chromeDebugPort": port,
+                "chromeProfileDir": str(profile_dir),
+                "chromeVersion": chrome_version,
+            }
+        )
+
+        config = uc.Config(host="127.0.0.1", port=port)
+        browser = await uc.start(config=config)
+
         extension_id = await find_extension_id(browser)
         summary["extensionId"] = extension_id
         if not extension_id:
@@ -159,16 +251,38 @@ async def main():
         else:
             print(f"Duolingo login did not complete; final URL: {final_url}")
 
+        if challenge_hits:
+            raise RuntimeError("Duolingo presented an anti-bot/security challenge")
+    except Exception as error:
+        summary["error"] = f"{type(error).__name__}: {error}"
+        raise
+    finally:
         (OUTPUT_DIR / "summary.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"
         )
 
-        # A wrong-credentials response is a test-account/configuration problem, not a
-        # browser-automation failure. Other states remain captured for inspection.
-        if challenge_hits:
-            raise RuntimeError("Duolingo presented an anti-bot/security challenge")
-    finally:
-        browser.stop()
+        if browser is not None:
+            try:
+                for target in list(browser.targets):
+                    try:
+                        target.connection.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        if chrome_process is not None and chrome_process.poll() is None:
+            chrome_process.terminate()
+            try:
+                chrome_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                chrome_process.kill()
+                chrome_process.wait(timeout=5)
+
+        if stdout_file is not None:
+            stdout_file.close()
+        if stderr_file is not None:
+            stderr_file.close()
 
 
 if __name__ == "__main__":
