@@ -8,6 +8,8 @@ on:
       - ".github/workflows/capture-duolingo.yml"
       - "extension/tests/live-duolingo.py"
       - "extension/tests/requirements-live.txt"
+      - "extension/package.json"
+      - "extension/package-lock.json"
       - "extension/manifest.json"
       - "extension/background.js"
       - "extension/content/**"
@@ -36,13 +38,31 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Install nodriver
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install nodriver and Chrome for Testing
         working-directory: extension
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r tests/requirements-live.txt
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
+
+          CHROME_PATH="$(node --input-type=module - <<'NODE'
+          import puppeteer from 'puppeteer';
+          console.log(puppeteer.executablePath());
+          NODE
+          )"
+
+          test -x "$CHROME_PATH"
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
-          google-chrome --version
+          "$CHROME_PATH" --version
 
       - name: Check live-test credentials
         id: credentials
@@ -65,7 +85,6 @@ jobs:
           DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
           DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
           DUOLINGO_CAPTURE_DIR: live-capture
-          CHROME_PATH: /usr/bin/google-chrome
         run: xvfb-run -a python tests/live-duolingo.py
 
       - name: Upload live capture
