@@ -4,7 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "extension/**"
+      - "extension/manifest.json"
+      - "extension/background.js"
+      - "extension/content/**"
+      - "extension/popup.html"
+      - "extension/popup.js"
+      - "extension/review.html"
+      - "extension/review.js"
+      - "extension/ui.css"
       - ".github/workflows/publish-extension.yml"
   workflow_dispatch:
 
