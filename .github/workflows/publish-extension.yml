@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXTENSION_UPDATE_URL: https://guymichaely.com/parola/extension/updates.xml
-  EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola-duolingo.crx
+  EXTENSION_UPDATE_URL: https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/updates.xml
+  EXTENSION_CRX_URL: https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/parola-duolingo.crx
 
 jobs:
   publish:
