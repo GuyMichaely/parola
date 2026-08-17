@@ -1,0 +1,43 @@
+name: Test Parola extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+      - ".github/workflows/test-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install test dependencies
+        working-directory: extension
+        run: npm install --ignore-scripts
+
+      - name: Validate extension source
+        working-directory: extension
+        run: |
+          node --check background.js
+          node --check content/duolingo.js
+          node --check popup.js
+          node --check review.js
+          node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
+
+      - name: Run Chrome extension tests
+        working-directory: extension
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: npm test

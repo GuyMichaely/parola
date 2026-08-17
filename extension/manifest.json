@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Parola for Duolingo",
+  "version": "0.1.0",
+  "version_name": "source",
+  "description": "Stages words Duolingo marks as new so they can be reviewed and added to Parola.",
+  "update_url": "https://guymichaely.com/parola/extension/updates.xml",
+  "permissions": ["storage", "activeTab", "unlimitedStorage"],
+  "host_permissions": [
+    "https://www.duolingo.com/*",
+    "https://duolingo.com/*",
+    "https://guymichaely.com/parola/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Parola for Duolingo",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.duolingo.com/*", "https://duolingo.com/*"],
+      "js": ["content/duolingo.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

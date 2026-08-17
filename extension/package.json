@@ -1,0 +1,12 @@
+{
+  "name": "parola-duolingo-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "25.4.0"
+  }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Parola for Duolingo</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="popup-body">
+    <main class="popup-shell">
+      <div class="brand-row">
+        <div>
+          <strong>Parola</strong>
+          <span>Duolingo capture</span>
+        </div>
+        <code id="version"></code>
+      </div>
+      <section class="summary-card">
+        <span class="eyebrow">Staged words</span>
+        <strong id="staged-count" class="big-number">0</strong>
+        <div id="word-preview" class="word-preview"></div>
+      </section>
+      <p id="status" class="status-line" role="status"></p>
+      <div class="button-stack">
+        <button id="review" class="primary">Review staged words</button>
+        <button id="capture">Capture missed-word snapshot</button>
+      </div>
+      <p class="fine-print">Automatic detections are logged for detector debugging.</p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

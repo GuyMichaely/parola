@@ -1,0 +1,124 @@
+name: Publish Parola extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+      - ".github/workflows/publish-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXTENSION_UPDATE_URL: https://guymichaely.com/parola/extension/updates.xml
+  EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola-duolingo.crx
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install test dependencies
+        working-directory: extension
+        run: npm install --ignore-scripts
+
+      - name: Test extension before packaging
+        working-directory: extension
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: npm test
+
+      - name: Check signing key
+        id: signing
+        env:
+          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          if [[ -n "$PRIVATE_KEY" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "PAROLA_EXTENSION_PRIVATE_KEY is not configured; skipping signed publication."
+          fi
+
+      - name: Build signed CRX and update manifest
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          BUILD_DIR="$(mktemp -d)/parola-duolingo"
+          KEY_FILE="$(mktemp)"
+
+          mkdir -p "$BUILD_DIR/content"
+          cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
+          cp extension/content/duolingo.js "$BUILD_DIR/content/"
+
+          python3 - "$BUILD_DIR/manifest.json" "$VERSION" "${GITHUB_SHA::8}" <<'PY'
+          import json, sys
+          path, version, commit = sys.argv[1:]
+          with open(path) as f:
+              manifest = json.load(f)
+          manifest["version"] = version
+          manifest["version_name"] = f"{version} · {commit}"
+          with open(path, "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          PY
+
+          printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          google-chrome --headless=new --no-sandbox \
+            --pack-extension="$BUILD_DIR" \
+            --pack-extension-key="$KEY_FILE"
+
+          CRX_FILE="${BUILD_DIR}.crx"
+          test -s "$CRX_FILE"
+
+          HEX_ID="$(openssl rsa -in "$KEY_FILE" -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | xxd -p -c 256 | cut -c1-32)"
+          EXTENSION_ID="$(python3 - "$HEX_ID" <<'PY'
+          import sys
+          print(''.join(chr(ord('a') + int(ch, 16)) for ch in sys.argv[1]))
+          PY
+          )"
+
+          mkdir -p web/public/extension
+          cp "$CRX_FILE" web/public/extension/parola-duolingo.crx
+          cat > web/public/extension/updates.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+            <app appid="$EXTENSION_ID">
+              <updatecheck codebase="$EXTENSION_CRX_URL" version="$VERSION" />
+            </app>
+          </gupdate>
+          EOF
+          cat > web/public/extension/version.json <<EOF
+          {
+            "id": "$EXTENSION_ID",
+            "version": "$VERSION",
+            "commit": "$GITHUB_SHA",
+            "updateUrl": "$EXTENSION_UPDATE_URL"
+          }
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/extension
+          if git diff --cached --quiet; then
+            echo "No extension release changes to publish."
+            exit 0
+          fi
+          git commit -m "Publish Parola extension $VERSION"
+          git push
