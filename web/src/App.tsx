@@ -1820,8 +1820,8 @@ export default function Home() {
   const [view, setView] = useState<"study" | "library">("study");
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loadingCards, setLoadingCards] = useState(true);
-  const [storageEndpoint, setStorageEndpoint] = useState(readStorageEndpoint);
   const [storageMode, setStorageMode] = useState<StorageMode>(readStorageMode);
+  const [storageEndpoint, setStorageEndpoint] = useState(readStorageEndpoint);
   const [storageSettingsOpen, setStorageSettingsOpen] = useState(false);
   const activeStorageEndpoint = storageMode === "remote" ? storageEndpoint : "";
   const storage = useMemo<CardStorage>(() => createCardStorage(activeStorageEndpoint), [activeStorageEndpoint]);

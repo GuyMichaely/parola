@@ -155,7 +155,9 @@ class RemoteStorage implements CardStorage {
 export function readStorageEndpoint() {
   try {
     const stored = window.localStorage.getItem(endpointKey);
-    return stored === null ? defaultRemoteEndpoint : stored.trim();
+    if (stored !== null) return stored.trim();
+    window.localStorage.setItem(endpointKey, defaultRemoteEndpoint);
+    return defaultRemoteEndpoint;
   } catch {
     return defaultRemoteEndpoint;
   }
