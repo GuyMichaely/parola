@@ -11,12 +11,20 @@ Current behavior:
 - Provides a manual missed-word snapshot action that captures the current Duolingo document for false-negative debugging.
 - Provides a review page to approve/discard staged words and export/clear diagnostics.
 
-The Parola import bridge is intentionally a separate next step; this first slice establishes reliable capture, staging, diagnostics, and browser test infrastructure.
+The Parola import bridge is a separate next step; the current extension establishes capture, staging, diagnostics, and browser-test infrastructure.
 
-## Development testing
+## Testing
 
-`npm test` launches Chrome with the unpacked extension using Puppeteer and checks both the extension popup and a screenshot-derived `NEW WORD` fixture.
+`npm test` runs the deterministic extension suite. Puppeteer launches Chrome with the unpacked extension and verifies the popup plus a screenshot-derived `NEW WORD` fixture.
+
+The `Capture live Duolingo` GitHub Actions workflow is the real-site integration suite. It starts Chrome for Testing with the unpacked extension, waits for Chrome's CDP endpoint, attaches nodriver, verifies the Parola review UI, and attempts the configured disposable Duolingo login. HTML, screenshots, Chrome logs, extension targets, and a machine-readable summary are retained as workflow artifacts even when the live test fails.
+
+Live-account credentials are supplied only through the `DUOLINGO_TEST_EMAIL` and `DUOLINGO_TEST_PASSWORD` Actions secrets.
 
 ## Distribution
 
-`manifest.json` points at a self-hosted Linux update manifest under `https://guymichaely.com/parola/extension/updates.xml`. A signed CRX release workflow will publish there once the repository has a `PAROLA_EXTENSION_PRIVATE_KEY` Actions secret.
+Signed Linux releases are produced with the `PAROLA_EXTENSION_PRIVATE_KEY` Actions secret. The extension checks the update manifest at:
+
+`https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/updates.xml`
+
+The signed CRX and update metadata are committed under `web/public/extension/`. The signing key determines the permanent extension ID and must remain unchanged between releases.
