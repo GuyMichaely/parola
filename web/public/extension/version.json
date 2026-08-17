@@ -1,6 +1,6 @@
 {
   "id": "kekniohgmpmijldjfamhjehnbmkmiajg",
-  "version": "0.1.9",
-  "commit": "c46567f1961c1e516a02d09371902e2255953b68",
-  "updateUrl": "https://guymichaely.com/parola/extension/updates.xml"
+  "version": "0.1.11",
+  "commit": "99aa1296968c9aa5ca0030cebf283851aac7d77a",
+  "updateUrl": "https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/updates.xml"
 }
