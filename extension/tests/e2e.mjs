@@ -9,7 +9,7 @@ const chromePath = process.env.CHROME_PATH || "/usr/bin/google-chrome";
 
 const browser = await puppeteer.launch({
   executablePath: chromePath,
-  headless: true,
+  headless: false,
   enableExtensions: [extensionRoot],
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
 });
