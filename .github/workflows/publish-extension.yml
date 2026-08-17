@@ -16,21 +16,21 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: parola-extension-publish
-  cancel-in-progress: true
+  group: parola-public-deploy
+  cancel-in-progress: false
 
 env:
-  EXTENSION_UPDATE_URL: https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/updates.xml
-  EXTENSION_CRX_URL: https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/parola-duolingo.crx
+  EXTENSION_UPDATE_URL: https://guymichaely.com/extension/updates.xml
+  EXTENSION_CRX_URL: https://guymichaely.com/extension/parola-duolingo.crx
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out Parola source
         uses: actions/checkout@v7
 
       - name: Set up Node.js
@@ -40,39 +40,36 @@ jobs:
 
       - name: Install test dependencies and Chrome
         working-directory: extension
+        shell: bash
         run: |
+          set -euo pipefail
           npm install --ignore-scripts
           npx puppeteer browsers install chrome
+          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
 
       - name: Test extension before packaging
         working-directory: extension
         run: xvfb-run -a npm test
 
-      - name: Check signing key
-        id: signing
-        env:
-          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
-        shell: bash
-        run: |
-          if [[ -n "$PRIVATE_KEY" ]]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "PAROLA_EXTENSION_PRIVATE_KEY is not configured; skipping signed publication."
-          fi
-
       - name: Build signed CRX and update manifest
-        if: steps.signing.outputs.configured == 'true'
         env:
           PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="0.1.${GITHUB_RUN_NUMBER}"
-          BUILD_DIR="$(mktemp -d)/parola-duolingo"
-          KEY_FILE="$(mktemp)"
+          test -n "$PRIVATE_KEY"
 
-          mkdir -p "$BUILD_DIR/content"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          RELEASE_DIR="$RUNNER_TEMP/parola-extension-release"
+          BUILD_DIR="$RUNNER_TEMP/parola-duolingo"
+          KEY_FILE="$RUNNER_TEMP/parola-extension.pem"
+
+          rm -rf "$RELEASE_DIR" "$BUILD_DIR" "${BUILD_DIR}.crx"
+          mkdir -p "$RELEASE_DIR" "$BUILD_DIR/content"
+
           cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
           cp extension/content/duolingo.js "$BUILD_DIR/content/"
 
@@ -91,7 +88,7 @@ jobs:
           printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          google-chrome --headless=new --no-sandbox \
+          "$CHROME_PATH" --headless=new --no-sandbox \
             --pack-extension="$BUILD_DIR" \
             --pack-extension-key="$KEY_FILE"
 
@@ -105,9 +102,8 @@ jobs:
           PY
           )"
 
-          mkdir -p web/public/extension
-          cp "$CRX_FILE" web/public/extension/parola-duolingo.crx
-          cat > web/public/extension/updates.xml <<EOF
+          cp "$CRX_FILE" "$RELEASE_DIR/parola-duolingo.crx"
+          cat > "$RELEASE_DIR/updates.xml" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
             <app appid="$EXTENSION_ID">
@@ -115,7 +111,7 @@ jobs:
             </app>
           </gupdate>
           EOF
-          cat > web/public/extension/version.json <<EOF
+          cat > "$RELEASE_DIR/version.json" <<EOF
           {
             "id": "$EXTENSION_ID",
             "version": "$VERSION",
@@ -124,14 +120,36 @@ jobs:
           }
           EOF
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/public/extension
-          if git diff --cached --quiet; then
+          echo "EXTENSION_ID=$EXTENSION_ID" >> "$GITHUB_ENV"
+          echo "EXTENSION_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Check out public site
+        uses: actions/checkout@v7
+        with:
+          repository: GuyMichaely/guymichaely.github.io
+          ref: main
+          ssh-key: ${{ secrets.PAGES_DEPLOY_KEY }}
+          path: public-site
+
+      - name: Publish signed extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf public-site/extension
+          mkdir -p public-site/extension
+          cp -a "$RUNNER_TEMP/parola-extension-release/." public-site/extension/
+
+          git -C public-site config user.name "github-actions[bot]"
+          git -C public-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C public-site add extension
+
+          if git -C public-site diff --cached --quiet; then
             echo "No extension release changes to publish."
             exit 0
           fi
-          git commit -m "Publish Parola extension $VERSION"
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+
+          git -C public-site commit -m "Publish Parola extension $EXTENSION_VERSION"
+          git -C public-site pull --rebase origin main
+          git -C public-site push origin main
+
+          echo "Published Parola extension $EXTENSION_VERSION ($EXTENSION_ID)."
