@@ -53,13 +53,10 @@ jobs:
           npm install --ignore-scripts
           npx puppeteer browsers install chrome
 
-          CHROME_PATH="$(node --input-type=module - <<'NODE'
-          import puppeteer from 'puppeteer';
-          console.log(puppeteer.executablePath());
-          NODE
-          )"
-
+          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
+          test -n "$CHROME_PATH"
           test -x "$CHROME_PATH"
+
           echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
           "$CHROME_PATH" --version
