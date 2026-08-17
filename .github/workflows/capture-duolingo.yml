@@ -1,6 +1,7 @@
 name: Capture live Duolingo
 
-# Live-site integration test uses nodriver with Chrome for Testing.
+# Real-site integration test. This intentionally runs only on the dedicated
+# private residential runner so Duolingo sees the normal home connection.
 on:
   workflow_dispatch:
   push:
@@ -9,8 +10,7 @@ on:
       - ".github/workflows/capture-duolingo.yml"
       - "extension/tests/live-duolingo.py"
       - "extension/tests/requirements-live.txt"
-      - "extension/package.json"
-      - "extension/package-lock.json"
+      - "extension/tests/duolingo-test-account.json"
       - "extension/manifest.json"
       - "extension/background.js"
       - "extension/content/**"
@@ -27,7 +27,9 @@ concurrency:
 
 jobs:
   capture:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, parola-duolingo]
+    timeout-minutes: 20
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -39,54 +41,48 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Install nodriver and Chrome for Testing
-        working-directory: extension
+      - name: Install nodriver
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r tests/requirements-live.txt
-          npm install --ignore-scripts
-          npx puppeteer browsers install chrome
-
-          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
-          test -n "$CHROME_PATH"
-          test -x "$CHROME_PATH"
-
-          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+          python -m pip install -r extension/tests/requirements-live.txt
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
-          "$CHROME_PATH" --version
 
-      - name: Check live-test credentials
-        id: credentials
-        env:
-          DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
-          DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
+      - name: Find local Chrome
         shell: bash
         run: |
-          if [[ -n "$DUOLINGO_TEST_EMAIL" && -n "$DUOLINGO_TEST_PASSWORD" ]]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Live capture credentials are not configured; skipping browser login."
-          fi
+          set -euo pipefail
+
+          CHROME_PATH=""
+          for browser in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$browser" >/dev/null 2>&1; then
+              CHROME_PATH="$(command -v "$browser")"
+              break
+            fi
+          done
+
+          test -n "$CHROME_PATH" || {
+            echo "No supported Chrome/Chromium executable was found on the runner." >&2
+            exit 1
+          }
+
+          command -v xvfb-run >/dev/null 2>&1 || {
+            echo "xvfb-run is not installed on the runner." >&2
+            exit 1
+          }
+
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+          "$CHROME_PATH" --version
 
       - name: Capture live Duolingo session with nodriver
-        if: steps.credentials.outputs.configured == 'true'
         working-directory: extension
         env:
-          DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
-          DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
           DUOLINGO_CAPTURE_DIR: live-capture
         run: xvfb-run -a python tests/live-duolingo.py
 
       - name: Upload live capture
-        if: always() && steps.credentials.outputs.configured == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: duolingo-live-capture
