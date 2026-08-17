@@ -23,66 +23,10 @@ jobs:
           git clone --depth 1 https://github.com/GuyMichaely/guymichaely.github.io.git /tmp/old-site
           cp -a /tmp/old-site/parola-src web
 
-      - name: Replace bootstrap workflow with normal web deployment workflow
-        run: |
-          mkdir -p .github/workflows
-          cat > .github/workflows/deploy-web.yml <<'EOF'
-          name: Deploy Parola web
-
-          on:
-            push:
-              branches: [main]
-              paths:
-                - "web/**"
-                - ".github/workflows/deploy-web.yml"
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-            pages: write
-            id-token: write
-
-          concurrency:
-            group: parola-pages
-            cancel-in-progress: true
-
-          jobs:
-            build:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-                    cache-dependency-path: web/package-lock.json
-                - name: Install and build
-                  working-directory: web
-                  run: |
-                    npm ci
-                    npm run build
-                - uses: actions/configure-pages@v5
-                - uses: actions/upload-pages-artifact@v3
-                  with:
-                    path: web/dist
-
-            deploy:
-              environment:
-                name: github-pages
-                url: ${{ steps.deployment.outputs.page_url }}
-              runs-on: ubuntu-latest
-              needs: build
-              steps:
-                - name: Deploy
-                  id: deployment
-                  uses: actions/deploy-pages@v4
-          EOF
-          rm .github/workflows/bootstrap-web.yml
-
       - name: Commit migrated frontend
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A web .github/workflows/bootstrap-web.yml .github/workflows/deploy-web.yml
+          git add -A web
           git commit -m "Move Parola frontend into its own repository"
           git push
