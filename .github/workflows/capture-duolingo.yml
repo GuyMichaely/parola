@@ -34,7 +34,7 @@ jobs:
           tags: tag:parola-ci
           version: latest
           timeout: 30s
-          retry: 0
+          retry: 1
 
       - name: Route Internet traffic through residential exit node
         shell: bash
@@ -42,6 +42,13 @@ jobs:
           set -euo pipefail
           sudo tailscale set --exit-node=parola-residential-exit
           tailscale status
+
+      - name: Verify residential egress fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_IP="$(curl -4fsSL https://api.ipify.org)"
+          printf '%s' "$PUBLIC_IP" | sha256sum | awk '{print "Residential egress SHA256: "$1}'
 
       - name: Set up Python
         uses: actions/setup-python@v6
