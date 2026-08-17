@@ -138,6 +138,17 @@ async def wait_for_selector(tab, selector, attempts=4):
     return None
 
 
+async def field_matches(tab, selector, expected):
+    expression = (
+        "(() => { const el = document.querySelector("
+        + json.dumps(selector)
+        + "); return !!el && el.value === "
+        + json.dumps(expected)
+        + "; })()"
+    )
+    return bool(await tab.evaluate(expression, return_by_value=True))
+
+
 async def capture(tab, name):
     html = await tab.get_content()
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.I | re.S)
@@ -161,8 +172,10 @@ async def login_attempt(browser, identity_value, capture_name):
     tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
     await tab.sleep(2)
 
-    identity = await wait_for_selector(tab, 'input[data-test="email-input"]')
-    password = await wait_for_selector(tab, 'input[data-test="password-input"]')
+    identity_selector = 'input[data-test="email-input"]'
+    password_selector = 'input[data-test="password-input"]'
+    identity = await wait_for_selector(tab, identity_selector)
+    password = await wait_for_selector(tab, password_selector)
     if not identity or not password:
         raise RuntimeError("Could not find Duolingo login inputs")
 
@@ -172,6 +185,13 @@ async def login_attempt(browser, identity_value, capture_name):
     await password.mouse_click()
     await password.send_keys(PASSWORD)
     await tab.sleep(0.45)
+
+    identity_exact = await field_matches(tab, identity_selector, identity_value)
+    password_exact = await field_matches(tab, password_selector, PASSWORD)
+    if not identity_exact or not password_exact:
+        raise RuntimeError(
+            f"Login field mismatch after typing (identity={identity_exact}, password={password_exact})"
+        )
 
     submit = await wait_for_selector(tab, 'button[data-test="register-button"]')
     if not submit:
@@ -193,6 +213,8 @@ async def login_attempt(browser, identity_value, capture_name):
     ]
     result = {
         "identityKind": "email" if "@" in identity_value else "username",
+        "identityFieldExact": identity_exact,
+        "passwordFieldExact": password_exact,
         "finalUrl": final_url,
         "title": title,
         "wrongCredentialsMessage": "wrong username or password" in lower,
@@ -221,6 +243,8 @@ async def main():
         "nodriverVersion": uc.__version__,
         "chromePath": CHROME_PATH,
         "chromeLaunchMode": "external-cdp",
+        "passwordSecretHasOuterWhitespace": PASSWORD != PASSWORD.strip(),
+        "emailSecretHasOuterWhitespace": EMAIL != EMAIL.strip(),
     }
 
     try:
