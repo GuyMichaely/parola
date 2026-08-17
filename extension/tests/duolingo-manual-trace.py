@@ -45,8 +45,36 @@ def attr(obj, name, default=None):
         return default
 
 
+def json_safe(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    try:
+        return json_safe(value.value)
+    except Exception:
+        return str(value)
+
+
+async def evaluate_json(tab, expression):
+    # nodriver 0.50.x can return a raw RemoteObject for falsy return-by-value
+    # results (notably []), so transport structured values as a JSON string.
+    encoded = await tab.evaluate(
+        f"JSON.stringify(({expression}))",
+        return_by_value=True,
+    )
+    if not isinstance(encoded, str):
+        encoded = getattr(encoded, "value", encoded)
+    if encoded is None:
+        return None
+    return json.loads(encoded)
+
+
 async def page_state(tab):
-    return await tab.evaluate(
+    return await evaluate_json(
+        tab,
         """
         (() => {
           const identity = document.querySelector('input[data-test="email-input"]');
@@ -64,7 +92,6 @@ async def page_state(tab):
           };
         })()
         """,
-        return_by_value=True,
     )
 
 
@@ -126,9 +153,7 @@ async def install_input_trace(tab):
 
 
 async def read_input_trace(tab):
-    return await tab.evaluate(
-        "window.__parolaManualLoginEvents || []", return_by_value=True
-    )
+    return await evaluate_json(tab, "window.__parolaManualLoginEvents || []")
 
 
 async def main():
@@ -212,6 +237,7 @@ async def main():
         tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
         await tab.sleep(3)
 
+        await tab.send(uc.cdp.network.enable())
         tab.add_handler(uc.cdp.network.RequestWillBeSent, on_request)
         tab.add_handler(uc.cdp.network.ResponseReceived, on_response)
         tab.add_handler(uc.cdp.network.LoadingFailed, on_failed)
@@ -231,9 +257,9 @@ async def main():
                 if len(events) > seen_input_events:
                     input_events.extend(events[seen_input_events:])
                     seen_input_events = len(events)
-            except Exception:
+            except Exception as error:
                 # Navigation can briefly destroy the old page context.
-                pass
+                summary["lastInputTraceReadError"] = f"{type(error).__name__}: {error}"
 
             try:
                 state = await page_state(tab)
@@ -246,8 +272,8 @@ async def main():
                     summary["finalState"] = state
                     print(f"Manual login succeeded at {sanitize_url(href)}")
                     break
-            except Exception:
-                pass
+            except Exception as error:
+                summary["lastPageStateError"] = f"{type(error).__name__}: {error}"
 
             await asyncio.sleep(0.1)
         else:
@@ -267,15 +293,15 @@ async def main():
     finally:
         # Network metadata only: no bodies, headers, cookies, or query strings.
         (OUTPUT_DIR / "network-trace.json").write_text(
-            json.dumps(network_events, indent=2), encoding="utf-8"
+            json.dumps(json_safe(network_events), indent=2), encoding="utf-8"
         )
         (OUTPUT_DIR / "input-trace.json").write_text(
-            json.dumps(input_events, indent=2), encoding="utf-8"
+            json.dumps(json_safe(input_events), indent=2), encoding="utf-8"
         )
         summary["networkEventCount"] = len(network_events)
         summary["inputEventCount"] = len(input_events)
         (OUTPUT_DIR / "summary.json").write_text(
-            json.dumps(summary, indent=2), encoding="utf-8"
+            json.dumps(json_safe(summary), indent=2), encoding="utf-8"
         )
 
         if browser is not None:
