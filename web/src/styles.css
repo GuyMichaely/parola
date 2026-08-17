@@ -406,6 +406,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .storage-dot.remote { background: var(--accent); }
 .storage-option-copy { margin: 20px 0 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); padding: 13px 14px; }
 .storage-option-copy strong { font-size: 12px; }
+.storage-mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 0 0 16px; }
+.storage-mode-options label { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); padding: 11px 12px; cursor: pointer; }
+.storage-mode-options label.selected { border-color: #4576b9; background: #172b45; }
+.storage-mode-options input { margin: 0; accent-color: var(--accent); }
+.storage-mode-options span { display: flex; flex-direction: column; gap: 2px; }
+.storage-mode-options strong { font-size: 11px; }
+.storage-mode-options small { color: var(--muted); font-size: 9px; }
 .storage-option-copy p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .api-contract { display: grid; gap: 6px; margin-top: 16px; border: 1px solid var(--line); border-radius: 7px; background: #101317; padding: 13px 14px; }
 .api-contract > strong { margin-bottom: 2px; color: #cbd2da; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }

@@ -20,6 +20,10 @@ export interface CardStorage {
 
 const cardsKey = "parola:cards:v1";
 const endpointKey = "parola:storage-endpoint:v1";
+const storageModeKey = "parola:storage-mode:v1";
+const defaultRemoteEndpoint = "https://parola-api-12706-4372.azurewebsites.net/cards";
+
+export type StorageMode = "browser" | "remote";
 
 function cloneCards(cards: Flashcard[]) {
   return cards.map((card) => ({ ...card, tags: [...card.tags], details: { ...card.details } }));
@@ -150,10 +154,27 @@ class RemoteStorage implements CardStorage {
 
 export function readStorageEndpoint() {
   try {
-    return window.localStorage.getItem(endpointKey)?.trim() ?? "";
+    const stored = window.localStorage.getItem(endpointKey);
+    return stored === null ? defaultRemoteEndpoint : stored.trim();
   } catch {
-    return "";
+    return defaultRemoteEndpoint;
   }
+}
+
+export function readStorageMode(): StorageMode {
+  try {
+    const storedMode = window.localStorage.getItem(storageModeKey);
+    if (storedMode === "browser" || storedMode === "remote") return storedMode;
+    // Preserve the old behavior for devices that had explicitly saved an endpoint
+    // before storage mode became a separate setting. New devices stay local.
+    return window.localStorage.getItem(endpointKey)?.trim() ? "remote" : "browser";
+  } catch {
+    return "browser";
+  }
+}
+
+export function saveStorageMode(mode: StorageMode) {
+  window.localStorage.setItem(storageModeKey, mode);
 }
 
 export function saveStorageEndpoint(endpoint: string) {

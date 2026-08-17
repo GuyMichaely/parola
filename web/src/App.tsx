@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { createCardStorage, readStorageEndpoint, saveStorageEndpoint, type CardStorage, type CardType, type Flashcard } from "./storage";
+import { createCardStorage, readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode, type CardStorage, type CardType, type Flashcard, type StorageMode } from "./storage";
 
 type ScopeMode = "all" | "only" | "exclude";
 type PromptLanguage = "english" | "italian";
@@ -1701,24 +1701,31 @@ function InventoryCardsEditor({
 }
 
 function StorageSettingsModal({
+  mode,
   endpoint,
   onClose,
   onApply,
 }: {
+  mode: StorageMode;
   endpoint: string;
   onClose: () => void;
-  onApply: (endpoint: string) => Promise<void>;
+  onApply: (mode: StorageMode, endpoint: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(endpoint);
+  const [draftMode, setDraftMode] = useState<StorageMode>(mode);
+  const [draftEndpoint, setDraftEndpoint] = useState(endpoint);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    if (draftMode === "remote" && !draftEndpoint.trim()) {
+      setError("Enter a remote API endpoint before selecting remote storage.");
+      return;
+    }
     setSaving(true);
     try {
-      await onApply(draft.trim());
+      await onApply(draftMode, draftEndpoint.trim());
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Storage could not be changed.");
@@ -1730,20 +1737,30 @@ function StorageSettingsModal({
   return <div className="modal-backdrop" onMouseDown={onClose}>
     <form className="modal storage-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header">
-        <div><h2>Storage</h2><p className="modal-subtitle">Choose where your flashcards are saved.</p></div>
+        <div><h2>Storage</h2><p className="modal-subtitle">Choose which saved storage location Parola uses.</p></div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close storage settings">×</button>
       </header>
       <div className="storage-option-copy">
-        <strong>Browser storage is the default.</strong>
-        <p>Leave the API endpoint blank and Parola stores cards in this browser using localStorage. Enter an endpoint to use remote storage instead.</p>
+        <strong>The endpoint and active storage mode are saved separately.</strong>
+        <p>You can keep the Azure endpoint saved here while continuing to use browser localStorage. Switching storage changes which inventory is shown; it does not copy cards between locations.</p>
+      </div>
+      <div className="storage-mode-options" role="radiogroup" aria-label="Active card storage">
+        <label className={draftMode === "browser" ? "selected" : ""}>
+          <input type="radio" name="storage-mode" checked={draftMode === "browser"} onChange={() => setDraftMode("browser")} />
+          <span><strong>Browser</strong><small>Use this browser's localStorage.</small></span>
+        </label>
+        <label className={draftMode === "remote" ? "selected" : ""}>
+          <input type="radio" name="storage-mode" checked={draftMode === "remote"} onChange={() => setDraftMode("remote")} />
+          <span><strong>Remote</strong><small>Use the saved API endpoint.</small></span>
+        </label>
       </div>
       <label className="field full-field">
-        <span>Remote API endpoint <em>optional</em></span>
+        <span>Remote API endpoint</span>
         <input
           type="url"
           inputMode="url"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          value={draftEndpoint}
+          onChange={(event) => setDraftEndpoint(event.target.value)}
           placeholder="https://example.com/api/cards"
           autoComplete="off"
         />
@@ -1754,12 +1771,11 @@ function StorageSettingsModal({
         <code>POST endpoint ← {`{ cards: [...] }`}</code>
         <code>PUT endpoint ← one card</code>
         <code>DELETE endpoint?id=123</code>
-        <p>The endpoint must allow browser requests from the site where Parola is hosted (CORS). Changing storage does not copy cards between locations.</p>
+        <p>The endpoint must allow browser requests from the site where Parola is hosted (CORS).</p>
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer className="modal-actions">
         <button type="button" className="text-button" onClick={onClose} disabled={saving}>Cancel</button>
-        {draft && <button type="button" className="neutral-button" onClick={() => setDraft("")} disabled={saving}>Use browser storage</button>}
         <button type="submit" className="primary-button" disabled={saving}>{saving ? "Checking…" : "Apply"}</button>
       </footer>
     </form>
@@ -1805,8 +1821,10 @@ export default function Home() {
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loadingCards, setLoadingCards] = useState(true);
   const [storageEndpoint, setStorageEndpoint] = useState(readStorageEndpoint);
+  const [storageMode, setStorageMode] = useState<StorageMode>(readStorageMode);
   const [storageSettingsOpen, setStorageSettingsOpen] = useState(false);
-  const storage = useMemo<CardStorage>(() => createCardStorage(storageEndpoint), [storageEndpoint]);
+  const activeStorageEndpoint = storageMode === "remote" ? storageEndpoint : "";
+  const storage = useMemo<CardStorage>(() => createCardStorage(activeStorageEndpoint), [activeStorageEndpoint]);
   const [adding, setAdding] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [bulkEditingCards, setBulkEditingCards] = useState<Flashcard[] | null>(null);
@@ -2191,11 +2209,15 @@ export default function Home() {
     })();
   }
 
-  async function applyStorageEndpoint(endpoint: string) {
-    const candidate = createCardStorage(endpoint);
+  async function applyStorageSettings(mode: StorageMode, endpoint: string) {
+    const normalizedEndpoint = endpoint.trim();
+    if (mode === "remote" && !normalizedEndpoint) throw new Error("Enter a remote API endpoint before selecting remote storage.");
+    const candidate = createCardStorage(mode === "remote" ? normalizedEndpoint : "");
     const nextCards = await candidate.listCards();
-    saveStorageEndpoint(endpoint);
-    setStorageEndpoint(endpoint.trim());
+    saveStorageEndpoint(normalizedEndpoint);
+    saveStorageMode(mode);
+    setStorageEndpoint(normalizedEndpoint);
+    setStorageMode(mode);
     setCards(nextCards);
     setSyncWarning("");
     setSaveState("idle");
@@ -2212,9 +2234,9 @@ export default function Home() {
             <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>Inventory</button>
           </nav>
           <div className="header-actions">
-            <button className="storage-button" onClick={() => setStorageSettingsOpen(true)} title={storageEndpoint ? `Remote storage: ${storage.label}` : "Cards are stored in this browser"}>
-              <span className={`storage-dot ${storageEndpoint ? "remote" : "local"}`} />
-              {storageEndpoint ? "Remote" : "Browser"}
+            <button className="storage-button" onClick={() => setStorageSettingsOpen(true)} title={storageMode === "remote" ? `Remote storage: ${storage.label}` : storageEndpoint ? "Cards are stored in this browser; a remote endpoint is saved" : "Cards are stored in this browser"}>
+              <span className={`storage-dot ${storageMode === "remote" ? "remote" : "local"}`} />
+              {storageMode === "remote" ? "Remote" : "Browser"}
             </button>
             <SaveIndicator state={saveState} />
             <button className="primary-button" onClick={() => setAdding(true)}>＋ New cards</button>
@@ -2350,7 +2372,7 @@ export default function Home() {
       {adding && <AddCardModal knownSets={setNames} onClose={() => setAdding(false)} onBatch={addBatch} />}
       {editingCard && <EditCardModal card={editingCard} knownSets={setNames} onClose={() => setEditingCard(null)} onSave={updateCard} />}
       {bulkEditingCards && <BulkEditCardsModal cards={bulkEditingCards} onClose={() => setBulkEditingCards(null)} onSave={(updatedCards) => persistManyCards(updatedCards, bulkEditingCards, "Those card edits could not be saved. The previous cards were restored.")} />}
-      {storageSettingsOpen && <StorageSettingsModal endpoint={storageEndpoint} onClose={() => setStorageSettingsOpen(false)} onApply={applyStorageEndpoint} />}
+      {storageSettingsOpen && <StorageSettingsModal mode={storageMode} endpoint={storageEndpoint} onClose={() => setStorageSettingsOpen(false)} onApply={applyStorageSettings} />}
     </main>
   );
 }
