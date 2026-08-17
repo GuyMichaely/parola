@@ -27,14 +27,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install test dependencies
+      - name: Install test dependencies and Chrome
         working-directory: extension
-        run: npm install --ignore-scripts
+        run: |
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
 
       - name: Test extension before packaging
         working-directory: extension
-        env:
-          CHROME_PATH: /usr/bin/google-chrome
         run: xvfb-run -a npm test
 
       - name: Check signing key
