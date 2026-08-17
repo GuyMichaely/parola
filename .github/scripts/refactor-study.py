@@ -10,7 +10,7 @@ start = text.index(start_marker)
 end = text.index(end_marker)
 block = text[start:end].rstrip() + "\n"
 
-block = re.sub(r"(?m)^function ([A-Za-z0-9_]+)\(", r"export function \1(", block)
+block = re.sub(r"(?m)^function ([A-Za-z0-9_]+)", r"export function \1", block)
 
 module = '''import type { CardType, Flashcard } from "../cards/types";
 import type { AnswerKeywords, PromptLanguage } from "../components/StudyOptions";
