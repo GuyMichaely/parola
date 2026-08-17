@@ -98,15 +98,35 @@ def launch_chrome():
     return process, stdout_file, stderr_file, profile_dir, port, version
 
 
-async def find_extension_id(browser, timeout_seconds=15):
+async def find_parola_extension(browser, timeout_seconds=15):
+    candidate_ids = []
     for _ in range(timeout_seconds * 2):
         await browser.update_targets()
-        serialized = json.dumps([target_json(target) for target in browser.targets])
-        match = re.search(r"chrome-extension://([a-p]{32})", serialized)
-        if match:
-            return match.group(1)
+        candidate_ids = []
+        for target in browser.targets:
+            data = target_json(target)
+            url = str(data.get("url", ""))
+            match = re.fullmatch(r"chrome-extension://([a-p]{32})/background\.js", url)
+            if match and match.group(1) not in candidate_ids:
+                candidate_ids.append(match.group(1))
+        if candidate_ids:
+            break
         await browser.sleep(0.5)
-    return None
+
+    for extension_id in candidate_ids:
+        review = await browser.get(
+            f"chrome-extension://{extension_id}/review.html", new_tab=True
+        )
+        await review.sleep(0.5)
+        html = await review.get_content()
+        if "Parola for Duolingo" in html and "Review staged words" in html:
+            return extension_id, review
+        try:
+            await review.close()
+        except Exception:
+            pass
+
+    return None, None
 
 
 async def wait_for_selector(tab, selector, attempts=4):
@@ -132,13 +152,62 @@ async def capture(tab, name):
     return html, url, title
 
 
-async def capture_extension_review(browser, extension_id, name):
-    review = await browser.get(
-        f"chrome-extension://{extension_id}/review.html", new_tab=True
-    )
-    await review.sleep(1)
+async def capture_extension_review(review, name):
+    await review.sleep(0.75)
     await capture(review, name)
-    return review
+
+
+async def login_attempt(browser, identity_value, capture_name):
+    tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
+    await tab.sleep(2)
+
+    identity = await wait_for_selector(tab, 'input[data-test="email-input"]')
+    password = await wait_for_selector(tab, 'input[data-test="password-input"]')
+    if not identity or not password:
+        raise RuntimeError("Could not find Duolingo login inputs")
+
+    await identity.mouse_click()
+    await identity.send_keys(identity_value)
+    await tab.sleep(0.35)
+    await password.mouse_click()
+    await password.send_keys(PASSWORD)
+    await tab.sleep(0.45)
+
+    submit = await wait_for_selector(tab, 'button[data-test="register-button"]')
+    if not submit:
+        submit = await tab.find("LOG IN", best_match=True)
+    if not submit:
+        raise RuntimeError("Could not find Duolingo login button")
+
+    await submit.mouse_click()
+    await tab.sleep(10)
+    html, final_url, title = await capture(tab, capture_name)
+
+    lower = html.lower()
+    challenge_markers = [
+        "verify you are human",
+        "unusual traffic",
+        "security check",
+        "cf-chl-",
+        "challenges.cloudflare.com",
+    ]
+    result = {
+        "identityKind": "email" if "@" in identity_value else "username",
+        "finalUrl": final_url,
+        "title": title,
+        "wrongCredentialsMessage": "wrong username or password" in lower,
+        "antiBotChallengeMarkers": [
+            marker for marker in challenge_markers if marker in lower
+        ],
+        "loginFormStillPresent": 'data-test="password-input"' in lower,
+    }
+    result["loggedIn"] = (
+        not result["wrongCredentialsMessage"]
+        and not result["antiBotChallengeMarkers"]
+        and not result["loginFormStillPresent"]
+        and "/log-in" not in final_url
+    )
+    return tab, result
 
 
 async def main():
@@ -175,84 +244,53 @@ async def main():
         config = uc.Config(host="127.0.0.1", port=port)
         browser = await uc.start(config=config)
 
-        extension_id = await find_extension_id(browser)
-        summary["extensionId"] = extension_id
-        if not extension_id:
-            raise RuntimeError("Parola extension did not load in Chrome")
-
         (OUTPUT_DIR / "targets.json").write_text(
             json.dumps([target_json(target) for target in browser.targets], indent=2),
             encoding="utf-8",
         )
-        await capture_extension_review(browser, extension_id, "00-extension-review")
 
-        tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
-        await tab.sleep(2)
-        await capture(tab, "01-login-page")
+        extension_id, review = await find_parola_extension(browser)
+        summary["extensionId"] = extension_id
+        if not extension_id or review is None:
+            raise RuntimeError("Parola extension did not load in Chrome")
+        await capture_extension_review(review, "00-extension-review")
 
-        identity = await wait_for_selector(tab, 'input[data-test="email-input"]')
-        password = await wait_for_selector(tab, 'input[data-test="password-input"]')
-        if not identity or not password:
-            raise RuntimeError("Could not find Duolingo login inputs")
+        login_page = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
+        await login_page.sleep(2)
+        await capture(login_page, "01-login-page")
+        try:
+            await login_page.close()
+        except Exception:
+            pass
 
-        await identity.mouse_click()
-        await identity.send_keys(EMAIL)
-        await tab.sleep(0.35)
-        await password.mouse_click()
-        await password.send_keys(PASSWORD)
-        await tab.sleep(0.45)
+        tab, result = await login_attempt(browser, EMAIL, "02-after-email-login")
+        summary["loginAttempts"] = [result]
 
-        submit = await wait_for_selector(tab, 'button[data-test="register-button"]')
-        if not submit:
-            submit = await tab.find("LOG IN", best_match=True)
-        if not submit:
-            raise RuntimeError("Could not find Duolingo login button")
+        if result["wrongCredentialsMessage"]:
+            username_guess = EMAIL.split("@", 1)[0]
+            try:
+                await tab.close()
+            except Exception:
+                pass
+            tab, result = await login_attempt(
+                browser, username_guess, "03-after-username-login"
+            )
+            summary["loginAttempts"].append(result)
 
-        await submit.mouse_click()
-        await tab.sleep(10)
-        html, final_url, title = await capture(tab, "02-after-login")
+        summary.update(result)
 
-        lower = html.lower()
-        wrong_credentials = "wrong username or password" in lower
-        challenge_markers = [
-            "verify you are human",
-            "unusual traffic",
-            "security check",
-            "cf-chl-",
-            "challenges.cloudflare.com",
-        ]
-        challenge_hits = [marker for marker in challenge_markers if marker in lower]
-        login_form_present = 'data-test="password-input"' in lower
-        logged_in = (
-            not wrong_credentials
-            and not challenge_hits
-            and not login_form_present
-            and "/log-in" not in final_url
-        )
-
-        summary.update(
-            {
-                "finalUrl": final_url,
-                "title": title,
-                "loggedIn": logged_in,
-                "loginFormStillPresent": login_form_present,
-                "wrongCredentialsMessage": wrong_credentials,
-                "antiBotChallengeMarkers": challenge_hits,
-            }
-        )
-
-        if logged_in:
-            await capture_extension_review(browser, extension_id, "03-extension-after-login")
-            print(f"nodriver logged into Duolingo successfully at {final_url}")
-        elif wrong_credentials:
-            print("Duolingo returned 'Wrong username or password'.")
-        elif challenge_hits:
-            print(f"Duolingo challenge markers: {challenge_hits}")
-        else:
-            print(f"Duolingo login did not complete; final URL: {final_url}")
-
-        if challenge_hits:
+        if result["loggedIn"]:
+            await capture_extension_review(review, "04-extension-after-login")
+            print(f"nodriver logged into Duolingo successfully at {result['finalUrl']}")
+        elif result["antiBotChallengeMarkers"]:
+            print(f"Duolingo challenge markers: {result['antiBotChallengeMarkers']}")
             raise RuntimeError("Duolingo presented an anti-bot/security challenge")
+        elif result["wrongCredentialsMessage"]:
+            print("Duolingo rejected both configured email and inferred username credentials.")
+            raise RuntimeError("Duolingo rejected the configured test credentials")
+        else:
+            print(f"Duolingo login did not complete; final URL: {result['finalUrl']}")
+            raise RuntimeError("Duolingo login did not reach an authenticated state")
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"
         raise
