@@ -40,4 +40,4 @@ jobs:
         working-directory: extension
         env:
           CHROME_PATH: /usr/bin/google-chrome
-        run: npm test
+        run: xvfb-run -a npm test
