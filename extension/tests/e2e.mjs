@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 
 const extensionRoot = path.resolve(process.cwd());
-const chromePath = process.env.CHROME_PATH || "/usr/bin/google-chrome";
 
 const browser = await puppeteer.launch({
-  executablePath: chromePath,
   headless: false,
+  pipe: true,
   enableExtensions: [extensionRoot],
   args: ["--no-sandbox", "--disable-dev-shm-usage"],
 });
