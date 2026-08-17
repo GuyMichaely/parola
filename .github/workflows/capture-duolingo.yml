@@ -1,0 +1,62 @@
+name: Capture live Duolingo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/capture-duolingo.yml"
+      - "extension/tests/live-duolingo.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install browser dependencies
+        working-directory: extension
+        run: |
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
+
+      - name: Check live-test credentials
+        id: credentials
+        env:
+          DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
+          DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$DUOLINGO_TEST_EMAIL" && -n "$DUOLINGO_TEST_PASSWORD" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Live capture credentials are not configured; skipping browser login."
+          fi
+
+      - name: Capture live Duolingo session
+        if: steps.credentials.outputs.configured == 'true'
+        working-directory: extension
+        env:
+          DUOLINGO_TEST_EMAIL: ${{ secrets.DUOLINGO_TEST_EMAIL }}
+          DUOLINGO_TEST_PASSWORD: ${{ secrets.DUOLINGO_TEST_PASSWORD }}
+          DUOLINGO_CAPTURE_DIR: live-capture
+        run: xvfb-run -a node tests/live-duolingo.mjs
+
+      - name: Upload live capture
+        if: always() && steps.credentials.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: duolingo-live-capture
+          path: extension/live-capture
+          if-no-files-found: warn
+          retention-days: 14
