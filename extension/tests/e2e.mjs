@@ -8,18 +8,25 @@ const extensionRoot = path.resolve(process.cwd());
 const browser = await puppeteer.launch({
   headless: false,
   pipe: true,
-  enableExtensions: [extensionRoot],
-  args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  ignoreDefaultArgs: ["--disable-extensions"],
+  args: [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    `--disable-extensions-except=${extensionRoot}`,
+    `--load-extension=${extensionRoot}`,
+  ],
 });
 
 try {
-  const extensions = await browser.extensions();
-  assert.ok(extensions.length >= 1, "extension should load in Chrome");
-  const extension = extensions.find((item) => item.name === "Parola for Duolingo") || extensions[0];
-  assert.ok(extension?.id, "extension id should be available");
+  const extensionTarget = await browser.waitForTarget(
+    (target) => target.type() === "service_worker" && target.url().startsWith("chrome-extension://"),
+    { timeout: 10000 },
+  );
+  const extensionId = new URL(extensionTarget.url()).host;
+  assert.ok(extensionId, "extension id should be available from the service worker");
 
   const popup = await browser.newPage();
-  await popup.goto(`chrome-extension://${extension.id}/popup.html`);
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   assert.match(await popup.title(), /Parola/i);
   assert.equal(await popup.$eval("#staged-count", (el) => el.textContent), "0");
 
@@ -48,7 +55,7 @@ try {
   assert.equal(detection.evidence.newWordMarker, true);
   assert.equal(detection.evidence.highlightedText, true);
 
-  console.log(`Extension ${extension.id} loaded; detector staged ${detection.word}.`);
+  console.log(`Extension ${extensionId} loaded; detector staged ${detection.word}.`);
 } finally {
   await browser.close();
 }
