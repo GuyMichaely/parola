@@ -4,10 +4,6 @@ name: Capture live Duolingo
 # residential machine and exposes only its CDP port privately through Tailscale.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/capture-duolingo.yml"
 
 permissions:
   contents: read
