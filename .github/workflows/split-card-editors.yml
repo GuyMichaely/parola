@@ -1,0 +1,37 @@
+name: Split card editor modules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/split-card-editors.yml"
+      - ".github/scripts/split-card-editors.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Split card editor modules
+        run: python3 .github/scripts/split-card-editors.py
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Commit refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src
+          git commit -m "Split card editor modules"
+          git push
