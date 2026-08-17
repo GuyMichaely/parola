@@ -18,6 +18,7 @@ import type { CardType, Flashcard } from "../cards/types";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
   inferArticle,
+  normalizeAnswer,
   standardAdjectivePattern,
   standardNounPattern,
 } from "../study/logic";
@@ -31,8 +32,9 @@ text = text[:start] + text[end:]
 anchor = 'import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";\n'
 imports = '''import {
   AddCardModal,
-  BulkInventoryEditor,
+  BulkEditCardsModal,
   EditCardModal,
+  InventoryCardsEditor,
   deckName,
   deckTagPrefix,
   localDateStamp,
