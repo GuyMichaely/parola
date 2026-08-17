@@ -5,6 +5,10 @@ name: Capture live Duolingo
 # itself never runs on the residential machine.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/capture-duolingo.yml"
 
 permissions:
   contents: read
