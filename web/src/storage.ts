@@ -18,9 +18,9 @@ export interface CardStorage {
   deleteCard(id: number): Promise<void>;
 }
 
-const cardsKey = "parola:cards:v1";
-const endpointKey = "parola:storage-endpoint:v2";
-const storageModeKey = "parola:storage-mode:v1";
+const cardsKey = "parola:cards";
+const endpointKey = "parola:storage-endpoint";
+const storageModeKey = "parola:storage-mode";
 
 export type StorageMode = "browser" | "remote";
 

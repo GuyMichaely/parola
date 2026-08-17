@@ -25,7 +25,7 @@ Click the **Browser** / **Remote** storage control in the app header.
 
 ### Browser storage
 
-Leave the API endpoint blank. Cards are saved in this browser under the `parola:cards:v1` localStorage key.
+Leave the API endpoint blank. Cards are saved in this browser under the `parola:cards` localStorage key.
 
 On first use, the app seeds browser storage from `src/data/current-cards.json`.
 

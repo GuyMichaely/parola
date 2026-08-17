@@ -92,9 +92,9 @@ const typeLabels: Record<CardType, string> = {
 
 const cardTypes: CardType[] = ["noun", "verb", "adjective", "adverb"];
 
-const cardAdderTypeKey = "parola:card-adder:type:v1";
+const cardAdderTypeKey = "parola:card-adder:type";
 const deckTagPrefix = "__deck__:";
-const answerKeywordsKey = "parola:answer-keywords:v1";
+const answerKeywordsKey = "parola:answer-keywords";
 const defaultAnswerKeywords: AnswerKeywords = {
   noun: "n",
   verb: "v",
@@ -132,7 +132,7 @@ function writeAnswerKeywords(keywords: AnswerKeywords) {
 }
 
 function cardAdderDraftKey(type: CardType) {
-  return `parola:card-adder:${type}:v1`;
+  return `parola:card-adder:${type}`;
 }
 
 function readCardAdderType(): CardType {
