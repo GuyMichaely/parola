@@ -23,21 +23,41 @@ The main source boundaries are:
 
 ```text
 src/
-├── App.tsx                         application/session orchestration
-├── storage.ts                     card-storage contract and implementations
-├── cardTypes.ts                   shared card-type metadata
+├── App.tsx                         application and study-session orchestration
+├── cardTypes.ts                   shared card-type labels and ordering
+├── cards/
+│   ├── types.ts                   Flashcard/CardType domain model
+│   └── editorModel.ts             card editor rows, validation, conversion, drafts
+├── storage/
+│   ├── types.ts                   CardStorage CRUD contract
+│   ├── browser.ts                 localStorage implementation
+│   ├── remote.ts                  HTTP implementation
+│   ├── cardCodec.ts               storage-boundary normalization/parsing
+│   ├── settings.ts                persisted Browser/Remote configuration
+│   └── index.ts                   storage factory and public exports
+├── study/
+│   ├── order.ts                   study-item ordering/shuffling
+│   ├── verification.ts            typed-answer parsing and verification
+│   └── logic.ts                   study-module public exports
 └── components/
+    ├── AddCardModal.tsx            batch card creation
+    ├── BulkEditCardsModal.tsx      focused multi-card editing
+    ├── CardAnswer.tsx              prompt/answer/verification presentation
+    ├── CardEditorFields.tsx        reusable editor table fields
+    ├── CardEditors.tsx             editor-component public exports
+    ├── EditCardModal.tsx           focused single-card editing
+    ├── InventoryCardsEditor.tsx    editable inventory table
+    ├── SaveIndicator.tsx           persistence status UI
     ├── StorageSettingsModal.tsx    storage selection UI
     ├── StudyOptions.tsx            study options and answer-keyword settings
-    ├── StudyScope.tsx              study-scope selection UI
-    └── SaveIndicator.tsx           persistence status UI
+    └── StudyScope.tsx              study-scope selection UI
 ```
 
-`App.tsx` owns the application-level state and coordinates the study session, inventory, card editing, and the selected `CardStorage`. UI that can stand on a narrow prop contract belongs in a component module rather than in `App.tsx`.
+`App.tsx` owns cross-cutting application state: the active study session, the current card collection, storage selection, and coordination between the study and inventory views. Domain transformations, persistence implementations, verification logic, and self-contained UI live outside the application shell.
 
 ## Storage
 
-Card persistence is behind the `CardStorage` interface in `storage.ts`:
+Card persistence is behind one CRUD contract:
 
 ```text
 CardStorage
@@ -45,12 +65,18 @@ CardStorage
 └── RemoteStorage   -> HTTP API
 ```
 
+The rest of the application calls `listCards`, `createCards`, `updateCard`, and `deleteCard` without depending on the backing store.
+
 `createCardStorage("")` selects browser storage. A non-empty endpoint selects remote storage. The Browser/Remote setting controls whether the saved endpoint or an empty string is passed to that factory.
 
-The browser persists cards, the optional remote endpoint, and the selected Browser/Remote storage mode as independent localStorage values.
+Cards, the optional remote endpoint, and the selected Browser/Remote mode are separate browser-persisted values. Switching storage locations does not copy cards between them.
 
-Remote storage is accessed through the HTTP contract documented in `docs/REMOTE_API.md`. The frontend does not depend on a provider-specific SDK.
+Remote storage follows the provider-independent HTTP contract documented in `docs/REMOTE_API.md`.
+
+## API
+
+The API is an independent Node service. It implements the same card CRUD semantics over HTTP and persists its JSON data on the App Service filesystem. The web application has no Azure-specific SDK or API code.
 
 ## Deployment
 
-The static frontend is deployed with GitHub Pages. The API is deployed independently, so either side can be changed without coupling the frontend to a particular backend host.
+The frontend is built and deployed to GitHub Pages by `.github/workflows/deploy-web.yml`. The API is deployed independently to Azure App Service by `.github/workflows/deploy-api.yml` using GitHub OIDC.
