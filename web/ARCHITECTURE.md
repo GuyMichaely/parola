@@ -1,34 +1,30 @@
-# Architecture checkpoint
+# Architecture
 
-## Current direction
+Parola consists of a static React frontend and an optional remote card API.
 
-Parola is a static client application.
-
-```
-static host
+```text
+GitHub Pages
     |
     v
-Parola (React)
+Parola web (React + Vite)
     |
-    +--> browser localStorage (default)
+    +--> browser localStorage
     |
-    +--> optional remote HTTP card API
+    +--> remote HTTP card API
 ```
 
-## Deliberately removed
+## Web
 
-- Next.js runtime and routing
-- Next.js API routes
-- Node server deployment
-- SQLite runtime dependency
-- Docker requirement for the frontend
-- Google Cloud-specific application code
-- Azure-specific application code
+The frontend is a static Vite application. React manages the interactive UI; Vite and TypeScript are build-time tools. The production output is ordinary HTML, CSS, and JavaScript in `dist/`.
 
-## Deliberately retained
+The build uses relative asset URLs so the same output can be served from `/`, `/parola/`, or another static path.
 
-React is retained for now because the existing application is a large interactive component and removing React would be a separate rewrite with little effect on hosting complexity. React is now only a browser UI library; it no longer dictates deployment architecture.
+## Storage
 
-## Portability
+Browser card storage is the default. The browser persists cards, the optional remote endpoint, and the selected Browser/Remote storage mode as independent localStorage values.
 
-The compiled output is ordinary HTML/CSS/JavaScript. Remote storage is behind a small HTTP contract rather than a provider-specific SDK.
+Remote storage is accessed through the HTTP contract documented in `docs/REMOTE_API.md`. The frontend does not depend on a provider-specific SDK.
+
+## Deployment
+
+The static frontend is deployed with GitHub Pages. The API is deployed independently, so either side can be changed without coupling the frontend to a particular backend host.
