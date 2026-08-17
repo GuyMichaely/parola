@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: parola-extension-publish
+  cancel-in-progress: true
+
 env:
   EXTENSION_UPDATE_URL: https://guymichaely.com/parola/extension/updates.xml
   EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola-duolingo.crx
@@ -121,4 +125,6 @@ jobs:
             exit 0
           fi
           git commit -m "Publish Parola extension $VERSION"
-          git push
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
