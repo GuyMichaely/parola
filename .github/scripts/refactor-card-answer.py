@@ -14,7 +14,7 @@ block = re.sub(r"(?m)^function ([A-Za-z0-9_]+)", r"export function \1", block)
 module = '''import type { FormEvent } from "react";
 import type { CardType, Flashcard } from "../cards/types";
 import { typeLabels } from "../cardTypes";
-import type { AnswerKeywords } from "./StudyOptions";
+import { answerKeyword, type AnswerKeywords } from "./StudyOptions";
 import {
   inferArticle,
   verifyPowerAnswer,
