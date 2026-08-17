@@ -1,3 +1,4 @@
+# Static frontend deployment.
 name: Deploy Parola web
 
 on:
