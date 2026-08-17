@@ -1,5 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { createCardStorage, readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode, type CardStorage, type CardType, type Flashcard, type StorageMode } from "./storage";
+import { useEffect, useMemo, useState } from "react";
+import { createCardStorage, readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode, type CardStorage, type StorageMode } from "./storage";
+import type { CardType, Flashcard } from "./cards/types";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
 import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";
@@ -17,14 +18,8 @@ import { StorageSettingsModal } from "./components/StorageSettingsModal";
 import { StudyOptions, answerKeyword, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
 import { StudyScope, type ScopeMode, type StudyScopeOption } from "./components/StudyScope";
 import {
-  inferArticle,
-  normalizeAnswer,
-  standardNounPattern,
-  standardAdjectivePattern,
   shuffled,
   withEnglishPromptFirst,
-  verifyPowerAnswer,
-  verificationFields,
   type AnswerSyntaxMode,
   type StudyItem,
 } from "./study/logic";

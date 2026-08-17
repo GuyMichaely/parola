@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CardType } from "../storage";
+import type { CardType } from "../cards/types";
 import { typeLabels } from "../cardTypes";
 
 export type PromptLanguage = "english" | "italian";
