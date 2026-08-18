@@ -1,0 +1,53 @@
+name: Test organic Duolingo extension
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "extension/tests/organic-duolingo.mjs"
+      - "extension/tests/fixtures/duolingo-session-state.b64"
+      - ".github/workflows/test-organic-duolingo-extension.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parola-organic-duolingo-extension
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install browser dependencies
+        working-directory: extension
+        run: |
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
+          node --check tests/organic-duolingo.mjs
+
+      - name: Probe a real Duolingo lesson with Parola loaded
+        working-directory: extension
+        env:
+          DUOLINGO_CAPTURE_DIR: organic-duolingo-capture
+          DUOLINGO_SESSION_STATE_FILE: tests/fixtures/duolingo-session-state.b64
+        run: xvfb-run -a node tests/organic-duolingo.mjs
+
+      - name: Upload organic lesson artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: organic-duolingo-extension-probe
+          path: extension/organic-duolingo-capture
+          if-no-files-found: warn
+          retention-days: 7
