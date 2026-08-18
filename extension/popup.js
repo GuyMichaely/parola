@@ -148,6 +148,7 @@ async function captureDuolingoPageState(tabId) {
         title: document.title,
         hasPasswordInput: Boolean(document.querySelector('input[data-test="password-input"], input[type="password"]')),
         bodyStart: (document.body?.innerText || "").trim().toLocaleLowerCase().slice(0, 1200),
+        documentCookieNames: document.cookie.split(";").map((entry) => entry.trim().split("=", 1)[0]).filter(Boolean).sort(),
         localStorage: Object.fromEntries(Object.entries(localStorage)),
         sessionStorage: Object.fromEntries(Object.entries(sessionStorage)),
         indexedDB: await captureIndexedDB(),
@@ -165,39 +166,68 @@ function looksLoggedOut(pageState) {
   return (text.includes("get started") && text.includes("log in")) || text.includes("sign up with google");
 }
 
-async function captureCookies(tab) {
-  const granted = await chrome.permissions.getAll();
-  const allVisible = (await chrome.cookies.getAll({})).filter(isDuolingoCookie);
-  const byDomain = await chrome.cookies.getAll({ domain: "duolingo.com" });
-  const byUrl = await chrome.cookies.getAll({ url: tab.url });
-  const explicitJwt = (
-    await Promise.all([
-      chrome.cookies.get({ url: "https://duolingo.com/", name: "jwt_token" }),
-      chrome.cookies.get({ url: "https://www.duolingo.com/", name: "jwt_token" }),
-    ])
-  ).filter(Boolean);
+async function captureCookies(tab, pageState) {
+  const [granted, stores, apexHostAccess, wildcardHostAccess] = await Promise.all([
+    chrome.permissions.getAll(),
+    chrome.cookies.getAllCookieStores(),
+    chrome.permissions.contains({ origins: ["https://duolingo.com/*"] }),
+    chrome.permissions.contains({ origins: ["https://*.duolingo.com/*"] }),
+  ]);
+
+  const activeStore = stores.find((store) => store.tabIds.includes(tab.id));
+  if (!activeStore) {
+    throw new Error("Could not identify the Chrome cookie store used by the active Duolingo tab.");
+  }
+  const storeId = activeStore.id;
+
+  const [allVisible, byDomain, byUrl, apexJwt, wwwJwt] = await Promise.all([
+    chrome.cookies.getAll({ storeId }),
+    chrome.cookies.getAll({ domain: "duolingo.com", storeId }),
+    chrome.cookies.getAll({ url: tab.url, storeId }),
+    chrome.cookies.get({ url: "https://duolingo.com/", name: "jwt_token", storeId }),
+    chrome.cookies.get({ url: "https://www.duolingo.com/", name: "jwt_token", storeId }),
+  ]);
+
+  let partitionKey = null;
   let partitioned = [];
   try {
     const details = await chrome.cookies.getPartitionKey({ tabId: tab.id, frameId: 0 });
-    if (details?.partitionKey) {
+    partitionKey = details?.partitionKey || null;
+    if (partitionKey) {
       partitioned = await chrome.cookies.getAll({
-        url: tab.url,
-        partitionKey: details.partitionKey,
+        domain: "duolingo.com",
+        storeId,
+        partitionKey,
       });
     }
   } catch (error) {
     console.warn("Parola could not inspect partitioned Duolingo cookies", error);
   }
 
-  const cookies = mergeCookies(allVisible, byDomain, byUrl, explicitJwt, partitioned).filter(isDuolingoCookie);
+  const cookies = mergeCookies(
+    allVisible.filter(isDuolingoCookie),
+    byDomain,
+    byUrl,
+    [apexJwt, wwwJwt].filter(Boolean),
+    partitioned,
+  ).filter(isDuolingoCookie);
+
   return {
     cookies,
     diagnostics: {
       cookiePermissionGranted: (granted.permissions || []).includes("cookies"),
+      apexHostAccess,
+      wildcardHostAccess,
       grantedOrigins: granted.origins || [],
+      cookieStoreCount: stores.length,
+      activeStoreId: storeId,
+      activeStoreTabCount: activeStore.tabIds.length,
       cookieNames: [...new Set(cookies.map((cookie) => cookie.name))].sort(),
       cookieDomains: [...new Set(cookies.map((cookie) => cookie.domain))].sort(),
       jwtTokenVisible: cookies.some((cookie) => cookie.name === "jwt_token"),
+      jwtTokenVisibleToPage: (pageState?.documentCookieNames || []).includes("jwt_token"),
+      documentCookieNames: pageState?.documentCookieNames || [],
+      partitionKey,
       partitionedCookieCount: cookies.filter((cookie) => cookie.partitionKey).length,
     },
   };
@@ -214,7 +244,7 @@ async function prepareSessionExport() {
     throw new Error("This Duolingo tab appears to be logged out. Log into the disposable test account, then export again.");
   }
 
-  const cookieCapture = await captureCookies(tab);
+  const cookieCapture = await captureCookies(tab, pageState);
   const cookies = cookieCapture.cookies;
   if (!cookies.length) throw new Error("No Duolingo cookies were found for this browser profile.");
 
