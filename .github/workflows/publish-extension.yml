@@ -27,6 +27,7 @@ concurrency:
 env:
   EXTENSION_UPDATE_URL: https://guymichaely.com/extension/updates.xml
   EXTENSION_CRX_URL: https://guymichaely.com/extension/parola-duolingo.crx
+  EXTENSION_VERSION_URL: https://guymichaely.com/extension/version.json
 
 jobs:
   publish:
@@ -64,7 +65,18 @@ jobs:
           set -euo pipefail
           test -n "$PRIVATE_KEY"
 
-          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          CURRENT_VERSION="$(curl --fail --silent --show-error "$EXTENSION_VERSION_URL" | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')"
+          VERSION="$(python3 - "$CURRENT_VERSION" <<'PY'
+          import sys
+          parts = sys.argv[1].split(".")
+          if len(parts) != 3 or not all(part.isdigit() for part in parts):
+              raise SystemExit(f"Unexpected published extension version: {sys.argv[1]!r}")
+          major, minor, patch = map(int, parts)
+          print(f"{major}.{minor}.{patch + 1}")
+          PY
+          )"
+          echo "Publishing extension version $VERSION after $CURRENT_VERSION."
+
           RELEASE_DIR="$RUNNER_TEMP/parola-extension-release"
           BUILD_DIR="$RUNNER_TEMP/parola-duolingo"
           KEY_FILE="$RUNNER_TEMP/parola-extension.pem"
