@@ -10,8 +10,7 @@ on:
       - "extension/background.js"
       - "extension/review.html"
       - "extension/review.js"
-      - "extension/tests/organic-duolingo-e2e.mjs"
-      - "extension/tests/fixtures/duolingo-session-state.b64"
+      - "extension/tests/**"
       - ".github/workflows/test-organic-duolingo-extension.yml"
 
 permissions:
