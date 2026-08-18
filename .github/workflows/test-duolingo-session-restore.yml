@@ -6,6 +6,7 @@ on:
     branches:
       - main
     paths:
+      - extension/tests/fixtures/duolingo-session-state.b64
       - .github/trigger-duolingo-session-restore
 
 permissions:
@@ -27,7 +28,8 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .github/latest-duolingo-session-restore-run
-          git commit -m "Record latest Duolingo session restore run [skip ci]"
+          git commit -m "Record latest Duolingo session restore run [skip ci]" || true
+          git pull --rebase origin main
           git push
 
       - name: Set up Python
@@ -64,7 +66,7 @@ jobs:
       - name: Restore authenticated Duolingo session
         working-directory: extension
         env:
-          DUOLINGO_SESSION_STATE_B64: ${{ secrets.DUOLINGO_SESSION_STATE_B64 }}
+          DUOLINGO_SESSION_STATE_FILE: tests/fixtures/duolingo-session-state.b64
           DUOLINGO_CAPTURE_DIR: session-restore-capture
           DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
