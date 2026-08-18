@@ -52,16 +52,54 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Verify residential Chrome is reachable
+      - name: Prepare residential Chrome forwarder
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -r extension/tests/requirements-live.txt
+          cat >/tmp/parola-forward.py <<'PY'
+          import asyncio
+
+          async def relay(reader, writer):
+              try:
+                  while True:
+                      data = await reader.read(65536)
+                      if not data:
+                          break
+                      writer.write(data)
+                      await writer.drain()
+              except Exception:
+                  pass
+              finally:
+                  try:
+                      writer.close()
+                      await writer.wait_closed()
+                  except Exception:
+                      pass
+
+          async def handle(client_r, client_w):
+              try:
+                  remote_r, remote_w = await asyncio.open_connection('parola-residential-exit', 9222)
+              except Exception:
+                  client_w.close()
+                  return
+              await asyncio.gather(relay(client_r, remote_w), relay(remote_r, client_w))
+
+          async def main():
+              server = await asyncio.start_server(handle, '127.0.0.1', 9222)
+              async with server:
+                  await server.serve_forever()
+
+          asyncio.run(main())
+          PY
+          python /tmp/parola-forward.py >/tmp/parola-forward.out 2>/tmp/parola-forward.err &
+          echo $! >/tmp/parola-forward.pid
           for _ in $(seq 1 30); do
-            curl -fsS http://parola-residential-exit:9222/json/version >/dev/null && exit 0
+            curl -fsS http://127.0.0.1:9222/json/version >/dev/null && exit 0
             sleep 1
           done
-          echo "Could not reach residential Chrome" >&2
+          echo "Could not reach residential Chrome through Python forwarder" >&2
+          cat /tmp/parola-forward.err >&2 || true
           tailscale status || true
           exit 1
 
@@ -69,14 +107,14 @@ jobs:
         working-directory: extension
         env:
           DUOLINGO_CAPTURE_DIR: session-refresh-login
-          DUOLINGO_CDP_HOST: parola-residential-exit
+          DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
         run: python tests/duolingo-gold-replay.py
 
       - name: Export authenticated state into repository
         working-directory: extension
         env:
-          DUOLINGO_CDP_HOST: parola-residential-exit
+          DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
           DUOLINGO_SESSION_OUTPUT: tests/fixtures/duolingo-session-state.b64
         run: python tests/duolingo-export-session.py
@@ -100,3 +138,11 @@ jobs:
           path: extension/session-refresh-login
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Stop TCP forwarder
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/parola-forward.pid ]]; then
+            kill "$(cat /tmp/parola-forward.pid)" 2>/dev/null || true
+          fi
