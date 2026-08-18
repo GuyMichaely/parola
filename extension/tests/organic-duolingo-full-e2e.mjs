@@ -49,12 +49,46 @@ async function captureStartState(page, originalEvaluate, clickedStartText) {
   await page.screenshot({ path: path.join(outputDir, "start-transition.png"), fullPage: false });
 }
 
+async function clickNumberedChoice(page, originalEvaluate, details) {
+  const selector = '[data-test="challenge-choice"], [role="radio"], button';
+  const choices = await page.$$(selector);
+  const target = normalizeControlText(details.wanted);
+  for (const choice of choices) {
+    const info = await originalEvaluate((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        text: (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim(),
+        visible: style.display !== "none"
+          && style.visibility !== "hidden"
+          && Number(style.opacity || "1") > 0
+          && rect.width > 0
+          && rect.height > 0,
+        disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true",
+      };
+    }, choice);
+    if (!info.visible || info.disabled) continue;
+    const text = normalizeControlText(info.text);
+    const deindexed = text.replace(/^\d+\s+/, "").replace(/\s+\d+$/, "");
+    const matches = details.prefix
+      ? text.startsWith(target) || deindexed.startsWith(target)
+      : text === target || deindexed === target;
+    if (!matches) continue;
+    await choice.click();
+    return true;
+  }
+  return false;
+}
+
 async function hardenPageForOrganicStart(page) {
   const originalEvaluate = page.evaluate.bind(page);
   const originalWaitForFunction = page.waitForFunction.bind(page);
 
   page.evaluate = async (pageFunction, ...args) => {
     const details = args[0];
+    if (details?.wanted && typeof details?.selector === "string" && details.selector.includes("challenge-choice")) {
+      if (await clickNumberedChoice(page, originalEvaluate, details)) return true;
+    }
     if (details?.wanted === "START" && details?.prefix === true) {
       const buttons = await page.$$("button");
       for (const button of buttons) {
