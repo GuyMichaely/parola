@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import path from "node:path";
 import puppeteer from "puppeteer";
 
 const extensionRoot = path.resolve(process.cwd());
+let bridgeServer = null;
 
 const browser = await puppeteer.launch({
   headless: false,
@@ -88,6 +90,7 @@ try {
     el.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await review.select('select[data-field="cardType"]', "adjective");
+  await review.waitForSelector('input[data-detail="femininePlural"]');
   await new Promise((resolve) => setTimeout(resolve, 250));
   await review.click('button[data-action="approve"]');
   await review.waitForFunction(() => document.querySelector("#approved-summary")?.textContent === "1 approved");
@@ -98,8 +101,89 @@ try {
   assert.equal(reviewed.english, "green");
   assert.equal(reviewed.cardType, "adjective");
   assert.equal(reviewed.status, "approved");
+  assert.deepEqual(reviewed.details, {
+    masculineSingular: "verde",
+    feminineSingular: "verde",
+    masculinePlural: "verdi",
+    femininePlural: "verdi",
+  });
 
-  console.log(`Extension ${extensionId} loaded; detector staged ${detection.word}, recognized lesson completion, and persisted editable review metadata.`);
+  await popup.evaluate(() => chrome.runtime.sendMessage({
+    type: "detected-new-word",
+    detection: {
+      lessonId: "e2e-other-lesson",
+      lessonStartedAt: new Date().toISOString(),
+      word: "blu",
+      context: "una camicia blu",
+      url: "https://www.duolingo.com/lesson/other",
+      evidence: { newWordMarker: true, highlightedText: true },
+    },
+  }));
+  await review.evaluate(() => chrome.runtime.sendMessage({ type: "clear-staged", lessonId: "e2e-review-lesson" }));
+  const afterScopedClear = await review.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
+  assert.equal(afterScopedClear.staged.some((item) => item.lessonId === "e2e-review-lesson"), false);
+  assert.equal(afterScopedClear.staged.some((item) => item.lessonId === "e2e-other-lesson"), true, "clearing one lesson should preserve other staged lessons");
+
+  bridgeServer = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><html><body>Parola bridge fixture</body></html>");
+  });
+  await new Promise((resolve) => bridgeServer.listen(0, "127.0.0.1", resolve));
+  const address = bridgeServer.address();
+  assert.ok(address && typeof address === "object");
+
+  const bridge = await browser.newPage();
+  await bridge.goto(`http://127.0.0.1:${address.port}/`);
+  await bridge.evaluate(() => {
+    localStorage.clear();
+    window.__parolaImportListener = null;
+    window.chrome = {
+      runtime: {
+        onMessage: {
+          addListener(listener) {
+            window.__parolaImportListener = listener;
+          },
+        },
+      },
+    };
+  });
+  await bridge.addScriptTag({ path: path.join(extensionRoot, "content", "parola.js") });
+  const imported = await bridge.evaluate(() => new Promise((resolve, reject) => {
+    if (!window.__parolaImportListener) {
+      reject(new Error("Parola bridge did not register a message listener"));
+      return;
+    }
+    const card = {
+      id: 0,
+      type: "adjective",
+      english: "green",
+      italian: "verde",
+      setName: null,
+      tags: [],
+      details: {
+        masculineSingular: "verde",
+        feminineSingular: "verde",
+        masculinePlural: "verdi",
+        femininePlural: "verdi",
+      },
+    };
+    window.__parolaImportListener({ type: "import-parola-cards", cards: [card] }, {}, (response) => {
+      resolve({
+        response,
+        stored: JSON.parse(localStorage.getItem("parola:cards") || "[]"),
+      });
+    });
+  }));
+  assert.equal(imported.response.ok, true);
+  assert.equal(imported.response.storage, "browser");
+  assert.equal(imported.stored.length, 1);
+  assert.equal(imported.stored[0].id, 1);
+  assert.equal(imported.stored[0].english, "green");
+  assert.equal(imported.stored[0].italian, "verde");
+  assert.equal(imported.stored[0].details.femininePlural, "verdi");
+
+  console.log(`Extension ${extensionId} loaded; detector staged ${detection.word}, recognized lesson completion, persisted complete review metadata, and imported a studyable card into Parola browser storage.`);
 } finally {
+  if (bridgeServer) await new Promise((resolve) => bridgeServer.close(resolve));
   await browser.close();
 }
