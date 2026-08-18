@@ -11,6 +11,8 @@ on:
       - "extension/popup.js"
       - "extension/review.html"
       - "extension/review.js"
+      - "extension/session-export.html"
+      - "extension/session-export.js"
       - "extension/ui.css"
       - ".github/workflows/publish-extension.yml"
   workflow_dispatch:
@@ -70,10 +72,12 @@ jobs:
           rm -rf "$RELEASE_DIR" "$BUILD_DIR" "${BUILD_DIR}.crx"
           mkdir -p "$RELEASE_DIR" "$BUILD_DIR/content"
 
-          cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
+          cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/session-export.html extension/session-export.js extension/ui.css "$BUILD_DIR/"
           cp extension/content/*.js "$BUILD_DIR/content/"
           test -f "$BUILD_DIR/content/duolingo.js"
           test -f "$BUILD_DIR/content/parola.js"
+          test -f "$BUILD_DIR/session-export.html"
+          test -f "$BUILD_DIR/session-export.js"
 
           python3 - "$BUILD_DIR/manifest.json" "$VERSION" "${GITHUB_SHA::8}" <<'PY'
           import json, sys
