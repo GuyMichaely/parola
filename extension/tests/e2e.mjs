@@ -74,7 +74,10 @@ try {
   const typeSelector = `${gattoCard} select[data-field="cardType"]`;
 
   await review.focus(italianSelector);
-  await review.$eval(italianSelector, (input) => { input.value = "gattino"; });
+  await review.keyboard.down("Control");
+  await review.keyboard.press("A");
+  await review.keyboard.up("Control");
+  await review.keyboard.type("gattino");
   await review.keyboard.press("Tab");
   await review.waitForFunction(
     (selector) => document.activeElement === document.querySelector(selector),
