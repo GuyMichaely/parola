@@ -1,0 +1,88 @@
+name: Test Duolingo session restore
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/trigger-duolingo-session-restore
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Publish this run ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_RUN_ID" > .github/latest-duolingo-session-restore-run
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/latest-duolingo-session-restore-run
+          git commit -m "Record latest Duolingo session restore run [skip ci]"
+          git push
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: extension/tests/requirements-live.txt
+
+      - name: Start GitHub-hosted Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r extension/tests/requirements-live.txt
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable)"
+          "$CHROME" \
+            --headless=new \
+            --user-data-dir=/tmp/parola-session-profile \
+            --remote-debugging-port=9222 \
+            --remote-debugging-address=127.0.0.1 \
+            --no-first-run \
+            --no-default-browser-check \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            about:blank >/tmp/parola-session-chrome.out 2>/tmp/parola-session-chrome.err &
+          echo $! >/tmp/parola-session-chrome.pid
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9222/json/version >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/parola-session-chrome.err >&2 || true
+          exit 1
+
+      - name: Restore authenticated Duolingo session
+        working-directory: extension
+        env:
+          DUOLINGO_SESSION_STATE_B64: ${{ secrets.DUOLINGO_SESSION_STATE_B64 }}
+          DUOLINGO_CAPTURE_DIR: session-restore-capture
+          DUOLINGO_CDP_HOST: 127.0.0.1
+          DUOLINGO_CDP_PORT: "9222"
+        run: python tests/duolingo-restore-session.py
+
+      - name: Upload sanitized result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duolingo-session-restore-result
+          path: extension/session-restore-capture
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop Chrome
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/parola-session-chrome.pid ]]; then
+            kill "$(cat /tmp/parola-session-chrome.pid)" 2>/dev/null || true
+          fi
