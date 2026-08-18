@@ -7,6 +7,20 @@ function normalizeWord(value) {
   return String(value || "").normalize("NFC").trim().toLocaleLowerCase("it-IT");
 }
 
+function cleanDetails(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, String(item ?? "").normalize("NFC").trim()]));
+}
+
+function joinArticle(article, noun) {
+  const cleanArticle = String(article || "").trim();
+  const cleanNoun = String(noun || "").trim();
+  if (!cleanArticle) return cleanNoun;
+  return cleanArticle.endsWith("’") || cleanArticle.endsWith("'")
+    ? `${cleanArticle}${cleanNoun}`
+    : `${cleanArticle} ${cleanNoun}`;
+}
+
 async function readState() {
   const stored = await chrome.storage.local.get([stagedKey, diagnosticsKey]);
   return {
@@ -65,6 +79,7 @@ async function recordDetection(detection) {
       normalizedWord: normalized,
       english: "",
       cardType: "",
+      details: {},
       status: "pending",
       firstDetectedAt: now,
       lastDetectedAt: now,
@@ -125,27 +140,107 @@ async function captureCurrentTab() {
 }
 
 function cardFromStaged(item) {
-  const word = String(item.word || "").normalize("NFC").trim();
+  const detectedWord = String(item.word || "").normalize("NFC").trim();
   const english = String(item.english || "").trim();
   const type = String(item.cardType || "");
-  if (!word) throw new Error("Every approved item needs an Italian word.");
-  if (!english) throw new Error(`${word} needs an English translation before it can be added.`);
-  if (!cardTypes.has(type)) throw new Error(`${word} needs a part of speech before it can be added.`);
+  const d = cleanDetails(item.details);
+  if (!detectedWord) throw new Error("Every approved item needs an Italian word.");
+  if (!english) throw new Error(`${detectedWord} needs an English translation before it can be added.`);
+  if (!cardTypes.has(type)) throw new Error(`${detectedWord} needs a part of speech before it can be added.`);
 
-  const details = type === "noun"
-    ? { singular: word }
-    : type === "adjective"
-      ? { masculineSingular: word }
-      : {};
+  if (type === "noun") {
+    const gender = d.gender;
+    const singular = d.singular || detectedWord;
+    const plural = d.plural || "";
+    const definiteSingularArticle = d.definiteSingularArticle || "";
+    const definitePluralArticle = d.definitePluralArticle || "";
+    const indefiniteArticle = d.indefiniteArticle || "";
+    if (!new Set(["masculine", "feminine"]).has(gender)) {
+      throw new Error(`${detectedWord} needs a noun gender.`);
+    }
+    if (!singular && !plural) throw new Error(`${detectedWord} needs a singular or plural noun form.`);
+    if (!singular && (definiteSingularArticle || indefiniteArticle)) {
+      throw new Error(`${detectedWord} has singular articles but no singular noun form.`);
+    }
+    if (!plural && definitePluralArticle) {
+      throw new Error(`${detectedWord} has a plural article but no plural noun form.`);
+    }
+    return {
+      id: 0,
+      type,
+      english,
+      italian: singular || plural,
+      setName: null,
+      tags: [],
+      details: {
+        gender,
+        singular,
+        plural,
+        definiteSingularArticle,
+        definitePluralArticle,
+        indefiniteArticle,
+        definiteSingular: singular ? joinArticle(definiteSingularArticle, singular) : "",
+        definitePlural: plural ? joinArticle(definitePluralArticle, plural) : "",
+        indefinite: singular ? joinArticle(indefiniteArticle, singular) : "",
+      },
+    };
+  }
 
+  if (type === "verb") {
+    const fields = ["infinitive", "io", "tu", "luiLei", "noi", "voi", "loro", "participle"];
+    const missing = fields.find((field) => !d[field]);
+    if (missing) throw new Error(`${detectedWord} needs all verb forms before it can be added.`);
+    const auxiliary = d.auxiliary === "essere" ? "essere" : d.auxiliary === "avere" ? "avere" : "";
+    if (!auxiliary) throw new Error(`${detectedWord} needs an avere/essere auxiliary.`);
+    return {
+      id: 0,
+      type,
+      english,
+      italian: d.infinitive,
+      setName: null,
+      tags: [],
+      details: {
+        io: d.io,
+        tu: d.tu,
+        luiLei: d.luiLei,
+        noi: d.noi,
+        voi: d.voi,
+        loro: d.loro,
+        auxiliary,
+        participle: d.participle,
+      },
+    };
+  }
+
+  if (type === "adjective") {
+    const masculineSingular = d.masculineSingular || detectedWord;
+    const feminineSingular = d.feminineSingular || "";
+    const masculinePlural = d.masculinePlural || "";
+    const femininePlural = d.femininePlural || "";
+    if (![masculineSingular, feminineSingular, masculinePlural, femininePlural].every(Boolean)) {
+      throw new Error(`${detectedWord} needs all four adjective forms before it can be added.`);
+    }
+    return {
+      id: 0,
+      type,
+      english,
+      italian: masculineSingular,
+      setName: null,
+      tags: [],
+      details: { masculineSingular, feminineSingular, masculinePlural, femininePlural },
+    };
+  }
+
+  const form = d.form || detectedWord;
+  if (!form) throw new Error(`${detectedWord} needs an adverb form.`);
   return {
     id: 0,
     type,
     english,
-    italian: word,
+    italian: form,
     setName: null,
     tags: [],
-    details,
+    details: {},
   };
 }
 
@@ -234,6 +329,9 @@ async function handleMessage(message) {
       if (typeof message.english === "string") item.english = message.english.trim();
       if (typeof message.cardType === "string") {
         item.cardType = cardTypes.has(message.cardType) ? message.cardType : "";
+      }
+      if (message.details && typeof message.details === "object" && !Array.isArray(message.details)) {
+        item.details = cleanDetails(message.details);
       }
       await writeStaged(state.staged);
       return { ok: true };
