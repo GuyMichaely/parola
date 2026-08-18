@@ -37,7 +37,10 @@ function renderSummary(payload, encodedBytes) {
   container.replaceChildren();
   addSummaryItem(container, payload.cookies?.length || 0, "Duolingo cookies");
   addSummaryItem(container, httpOnlyCount, "HttpOnly cookies");
+  addSummaryItem(container, diagnostics.apexHostAccess && diagnostics.wildcardHostAccess ? "yes" : "no", "Duolingo host access");
+  addSummaryItem(container, diagnostics.jwtTokenVisibleToPage ? "yes" : "no", "jwt_token visible to page");
   addSummaryItem(container, diagnostics.jwtTokenVisible ? "yes" : "no", "jwt_token captured");
+  addSummaryItem(container, diagnostics.activeStoreId ?? "?", "Active cookie store");
   addSummaryItem(container, Object.keys(payload.localStorage || {}).length + Object.keys(payload.sessionStorage || {}).length, "Storage keys");
   addSummaryItem(container, encodedBytes, "Encoded bytes");
 }
@@ -51,7 +54,7 @@ async function prepare() {
   renderSummary(payload, encodedState.length);
   const jwtVisible = Boolean(payload.cookieDiagnostics?.jwtTokenVisible);
   document.getElementById("export-status").textContent = jwtVisible
-    ? "Ready. The authentication cookie was captured. This file contains login credentials; do not share it."
+    ? "Ready. The authentication cookie was captured."
     : "Warning: the authenticated tab was detected, but jwt_token was not visible to Parola. Do not upload this export yet.";
   document.getElementById("download-session").disabled = !jwtVisible;
   await chrome.storage.local.remove(sessionExportKey);
@@ -68,7 +71,7 @@ document.getElementById("download-session").addEventListener("click", () => {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  document.getElementById("export-status").textContent = "Downloaded. This file contains authentication credentials; keep it private.";
+  document.getElementById("export-status").textContent = "Downloaded. Replace extension/tests/fixtures/duolingo-session-state.b64, commit, and push.";
 });
 
 void prepare().catch((error) => {
