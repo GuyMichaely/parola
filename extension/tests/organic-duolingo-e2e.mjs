@@ -112,7 +112,10 @@ async function clickControlText(page, wanted, { prefix = false, selector = null 
     const candidates = [...document.querySelectorAll(query)].filter((element) => {
       if (!visible(element)) return false;
       const text = normalize(element.innerText || element.textContent);
-      return prefix ? text.startsWith(target) : text === target;
+      const deindexed = text.replace(/^\d+\s+/, "");
+      return prefix
+        ? text.startsWith(target) || deindexed.startsWith(target)
+        : text === target || deindexed === target;
     });
     candidates.sort((a, b) => a.children.length - b.children.length);
     const element = candidates[0];
