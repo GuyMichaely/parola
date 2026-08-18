@@ -35,11 +35,21 @@ async def main():
             tab,
             """(() => ({
               href: location.href,
-              hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]'))
+              pathname: location.pathname,
+              hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]')),
+              hasGetStarted: [...document.querySelectorAll('a,button')].some((el) =>
+                (el.textContent || '').trim().toUpperCase() === 'GET STARTED'
+              )
             }))()""",
         )
-        if state["hasLoginForm"] or "/log-in" in state["href"]:
-            raise RuntimeError("Chrome is not authenticated to Duolingo")
+        if (
+            state["hasLoginForm"]
+            or state["hasGetStarted"]
+            or not state["pathname"].startswith("/learn")
+        ):
+            raise RuntimeError(
+                f"Chrome is not authenticated to Duolingo /learn (landed at {state['href']})"
+            )
 
         cookies = await browser.cookies.get_all()
         cookie_json = []
