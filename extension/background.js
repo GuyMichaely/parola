@@ -254,9 +254,15 @@ async function handleMessage(message) {
     }
     case "import-staged":
       return importStaged(message);
-    case "clear-staged":
-      await writeStaged([]);
+    case "clear-staged": {
+      const state = await readState();
+      const lessonId = String(message.lessonId || "");
+      state.staged = lessonId
+        ? state.staged.filter((item) => item.lessonId !== lessonId)
+        : [];
+      await writeStaged(state.staged);
       return { ok: true };
+    }
     case "clear-diagnostics":
       await writeDiagnostics([]);
       return { ok: true };
