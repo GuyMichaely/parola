@@ -175,8 +175,15 @@ async function playerNextState(page) {
 async function dismissInterstitials(page) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const state = await playerNextState(page);
-    if (!state || state.disabled || !(state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) return;
-    await page.click('[data-test="player-next"]');
+    if (state && !state.disabled && (state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) {
+      await page.click('[data-test="player-next"]');
+      await sleep(850);
+      continue;
+    }
+    const fallback = await pageState(page);
+    const control = fallback.controls.find((item) => !item.disabled && (item.text.toUpperCase().startsWith("CONTINUE") || item.text.toUpperCase().startsWith("GOT IT")));
+    if (!control) return;
+    await clickText(page, control.text);
     await sleep(850);
   }
 }
@@ -187,6 +194,9 @@ async function submitAnswer(page) {
     return pageState(page);
   }
   if (!state || state.disabled || !state.text.startsWith("CHECK")) {
+    const fallback = await pageState(page);
+    const control = fallback.controls.find((item) => !item.disabled && (item.text.toUpperCase().startsWith("CONTINUE") || item.text.toUpperCase().startsWith("GOT IT")));
+    if (control) return fallback;
     throw new Error(`Expected an enabled CHECK button, got ${JSON.stringify(state)}`);
   }
   await page.click('[data-test="player-next"]');
