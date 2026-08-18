@@ -22,13 +22,17 @@ async def authenticated(tab):
         tab,
         """(() => ({
           href: location.href,
-          hasPassword: Boolean(document.querySelector('input[data-test="password-input"]'))
+          pathname: location.pathname,
+          hasPassword: Boolean(document.querySelector('input[data-test="password-input"]')),
+          hasGetStarted: [...document.querySelectorAll('a,button')].some((el) =>
+            (el.textContent || '').trim().toUpperCase() === 'GET STARTED'
+          )
         }))()""",
     )
     return (
         not state["hasPassword"]
-        and "/log-in" not in state["href"]
-        and "/login" not in state["href"]
+        and not state["hasGetStarted"]
+        and state["pathname"].startswith("/learn")
     ), state
 
 
@@ -54,16 +58,22 @@ async def main():
         deadline = time.monotonic() + TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             try:
+                # Successful Duolingo login normally lands on /learn. If the login tab
+                # lands elsewhere, explicitly probe /learn before accepting the session.
                 ok, state = await authenticated(tab)
+                if not ok and "/log-in" not in state["href"] and "/login" not in state["href"]:
+                    await tab.get("https://www.duolingo.com/learn")
+                    await tab.sleep(1)
+                    ok, state = await authenticated(tab)
                 if ok:
-                    print("Manual Duolingo authentication detected:", state["href"])
+                    print("Duolingo authentication detected:", state["href"])
                     return
             except Exception:
                 # Navigation can temporarily destroy the old execution context.
                 pass
             await asyncio.sleep(0.5)
 
-        raise RuntimeError("Timed out waiting for an authenticated Duolingo session")
+        raise RuntimeError("Timed out waiting for an authenticated Duolingo /learn session")
     finally:
         if browser is not None:
             try:
