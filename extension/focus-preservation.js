@@ -12,8 +12,16 @@ function describeControl(control) {
 }
 
 document.addEventListener("focusin", (event) => {
-  const control = event.target.closest?.("#staged-list [data-field], #staged-list [data-detail], #staged-list [data-action]");
-  focusedControl = control ? describeControl(control) : null;
+  const target = event.target;
+  const control = target.closest?.("#staged-list [data-field], #staged-list [data-detail], #staged-list [data-action]");
+  if (control) {
+    focusedControl = describeControl(control);
+    return;
+  }
+
+  if (target.matches?.("button, input, select, textarea, a[href], [tabindex]")) {
+    focusedControl = null;
+  }
 });
 
 new MutationObserver(() => {
