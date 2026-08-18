@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Export Duolingo CI session</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body>
+    <main class="review-shell session-export-shell">
+      <header class="review-header">
+        <div>
+          <span class="eyebrow">Parola for Duolingo</span>
+          <h1>Export GitHub login session</h1>
+          <p class="review-subtitle">This file contains the disposable test account's Duolingo cookies and page storage. Replace the repository fixture with it, commit, and push; GitHub-hosted tests will validate the restored session automatically.</p>
+        </div>
+      </header>
+
+      <section class="session-export-card">
+        <div id="export-summary" class="diagnostics-summary"></div>
+        <p id="export-status" class="status-line" role="status">Preparing export…</p>
+        <div class="button-stack session-export-actions">
+          <button id="download-session" class="primary" disabled>Download duolingo-session-state.b64</button>
+        </div>
+        <p class="fine-print">Repository destination: <code>extension/tests/fixtures/duolingo-session-state.b64</code></p>
+      </section>
+    </main>
+    <script type="module" src="session-export.js"></script>
+  </body>
+</html>
