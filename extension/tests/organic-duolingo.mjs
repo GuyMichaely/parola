@@ -19,10 +19,7 @@ function decodeSession(encoded) {
 }
 
 function cookieParam(cookie) {
-  const allowed = [
-    "name", "value", "url", "domain", "path", "secure", "httpOnly", "sameSite",
-    "expires", "priority", "sameParty", "sourceScheme", "sourcePort", "partitionKey",
-  ];
+  const allowed = ["name", "value", "url", "domain", "path", "secure", "httpOnly", "sameSite", "expires", "priority", "sameParty", "sourceScheme", "sourcePort", "partitionKey"];
   const result = {};
   for (const key of allowed) if (cookie[key] !== undefined && cookie[key] !== null) result[key] = cookie[key];
   if (cookie.session || !Number.isFinite(cookie.expires) || cookie.expires < 0) delete result.expires;
@@ -61,9 +58,8 @@ async function pageState(page) {
     while ((node = walker.nextNode())) {
       const text = String(node.nodeValue || "").replace(/\s+/g, " ").trim();
       if (text.toUpperCase() !== "NEW WORD" || !node.parentElement) continue;
-      const element = node.parentElement;
       const ancestors = [];
-      let current = element;
+      let current = node.parentElement;
       for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
         const style = getComputedStyle(current);
         ancestors.push({
@@ -80,16 +76,13 @@ async function pageState(page) {
     }
     return {
       href: location.href,
-      title: document.title,
       bodyText: bodyText.slice(0, 30000),
       newWordTextNodes,
       controls: [...document.querySelectorAll("button,a,[role='button'],input,textarea")]
         .filter(visible)
         .slice(0, 250)
         .map((element) => ({
-          tag: element.tagName,
           text: (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 400),
-          ariaLabel: element.getAttribute("aria-label"),
           dataTest: element.getAttribute("data-test"),
           disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true",
         })),
@@ -114,10 +107,10 @@ async function clickText(page, wanted, { prefix = false } = {}) {
     matches.sort((a, b) => a.children.length - b.children.length);
     const leaf = matches[0];
     if (!leaf) return false;
-    let clickable = leaf;
-    for (let depth = 0; clickable && depth < 6; depth += 1, clickable = clickable.parentElement) {
-      if (clickable.matches?.("button,a,[role='button'],[tabindex]") || getComputedStyle(clickable).cursor === "pointer") {
-        clickable.click();
+    let current = leaf;
+    for (let depth = 0; current && depth < 7; depth += 1, current = current.parentElement) {
+      if (current.matches?.("button,a,[role='button'],[tabindex]") || getComputedStyle(current).cursor === "pointer") {
+        current.click();
         return true;
       }
     }
@@ -127,38 +120,20 @@ async function clickText(page, wanted, { prefix = false } = {}) {
   if (!clicked) throw new Error(`Could not click visible text ${JSON.stringify(wanted)}`);
 }
 
-async function clickPlayerNext(page, expectedPrefix = null) {
-  await page.waitForFunction((prefix) => {
-    const button = document.querySelector('[data-test="player-next"]');
-    if (!button || button.matches(":disabled") || button.getAttribute("aria-disabled") === "true") return false;
-    if (!prefix) return true;
-    return (button.textContent || "").trim().toUpperCase().startsWith(prefix);
-  }, { timeout: 10000 }, expectedPrefix?.toUpperCase() || null);
-  await page.click('[data-test="player-next"]');
-}
-
 async function submitAndContinue(page) {
-  const button = await page.$('[data-test="player-next"]');
-  if (button) {
-    const state = await page.$eval('[data-test="player-next"]', (el) => ({
-      text: (el.textContent || "").trim().toUpperCase(),
-      disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true",
-    }));
-    if (!state.disabled && state.text.startsWith("CHECK")) {
-      await page.click('[data-test="player-next"]');
-    }
+  const nextState = async () => page.evaluate(() => {
+    const el = document.querySelector('[data-test="player-next"]');
+    return el ? { text: (el.textContent || "").trim().toUpperCase(), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" } : null;
+  });
+  let state = await nextState();
+  if (state && !state.disabled && state.text.startsWith("CHECK")) {
+    await page.click('[data-test="player-next"]');
+    await sleep(650);
   }
-  await sleep(650);
-  const next = await page.$('[data-test="player-next"]');
-  if (next) {
-    const state = await page.$eval('[data-test="player-next"]', (el) => ({
-      text: (el.textContent || "").trim().toUpperCase(),
-      disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true",
-    }));
-    if (!state.disabled && (state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) {
-      await page.click('[data-test="player-next"]');
-      await sleep(750);
-    }
+  state = await nextState();
+  if (state && !state.disabled && (state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) {
+    await page.click('[data-test="player-next"]');
+    await sleep(800);
   }
 }
 
@@ -167,51 +142,44 @@ function choiceText(choice) {
   return choice?.text ?? choice?.phrase ?? null;
 }
 
-async function solveChoiceIndices(page, challenge, indices) {
-  for (const index of indices) {
-    const value = choiceText(challenge.choices?.[index]);
-    if (!value) throw new Error(`Challenge ${challenge.type} has no text for choice ${index}`);
-    await clickText(page, value);
-    await sleep(120);
-  }
-}
-
 async function solveChallenge(page, challenge, solverState) {
+  const clickIndices = async (indices) => {
+    for (const index of indices) {
+      const value = choiceText(challenge.choices?.[index]);
+      if (!value) throw new Error(`Missing choice ${index} for ${challenge.type}`);
+      await clickText(page, value);
+      await sleep(120);
+    }
+  };
+
   switch (challenge.type) {
     case "select":
     case "assist":
     case "dialogue":
-    case "patternTapComplete": {
-      const index = challenge.correctIndex;
-      const value = choiceText(challenge.choices?.[index]);
-      if (!value) throw new Error(`Missing correct choice for ${challenge.type}`);
-      await clickText(page, value);
+    case "patternTapComplete":
+      await clickIndices([challenge.correctIndex]);
       await submitAndContinue(page);
       return;
-    }
     case "translate":
     case "tapComplete":
     case "listenTap":
-    case "listenSpeak": {
-      const indices = challenge.correctIndices || [];
-      await solveChoiceIndices(page, challenge, indices);
+    case "listenSpeak":
+      await clickIndices(challenge.correctIndices || []);
       await submitAndContinue(page);
       return;
-    }
     case "match":
-    case "listenMatch": {
+    case "listenMatch":
       for (const pair of challenge.pairs || []) {
         const learning = pair.learningToken ?? pair.learningWord ?? pair.learningPhrase;
         const from = pair.fromToken ?? pair.fromWord ?? pair.fromPhrase;
         if (!learning || !from) continue;
         await clickText(page, learning);
-        await sleep(100);
+        await sleep(90);
         await clickText(page, from);
         await sleep(180);
       }
       await submitAndContinue(page);
       return;
-    }
     case "speak": {
       if (solverState.speakingDisabled) return;
       const state = await pageState(page);
@@ -222,16 +190,14 @@ async function solveChallenge(page, challenge, solverState) {
         const confirm = (await pageState(page)).controls.find((item) => /TURN OFF|DISABLE|SKIP/.test(item.text.toUpperCase()));
         if (confirm) await clickText(page, confirm.text);
         solverState.speakingDisabled = true;
-        await sleep(800);
+        await sleep(900);
         return;
       }
       const skip = state.controls.find((item) => item.text.toUpperCase() === "SKIP");
-      if (skip) {
-        await clickText(page, "SKIP");
-        await submitAndContinue(page);
-        return;
-      }
-      throw new Error("Speaking challenge had no disable/skip control");
+      if (!skip) throw new Error("Speaking challenge had no disable/skip control");
+      await clickText(page, "SKIP");
+      await submitAndContinue(page);
+      return;
     }
     default: {
       const state = await pageState(page);
@@ -253,106 +219,95 @@ async function extensionState(browser, extensionId) {
   }
 }
 
+function scoreSession(session, bodyText) {
+  const challenge = session?.challenges?.[0];
+  if (!challenge) return -1;
+  const body = bodyText.toLocaleLowerCase();
+  let score = 0;
+  if (challenge.prompt && body.includes(String(challenge.prompt).toLocaleLowerCase())) score += 8;
+  for (const word of challenge.newWords || []) if (body.includes(String(word).toLocaleLowerCase())) score += 5;
+  for (const choice of challenge.choices || []) {
+    const text = choiceText(choice);
+    if (text && body.includes(String(text).toLocaleLowerCase())) score += 2;
+  }
+  return score;
+}
+
 async function main() {
-  const summary = {
-    test: "organic-duolingo-end-to-end",
-    authenticated: false,
-    lessonEntered: false,
-    lessonCompleted: false,
-    completionReviewOpened: false,
-    challengeLog: [],
-    newWordObservations: [],
-  };
+  const summary = { test: "organic-duolingo-end-to-end", authenticated: false, lessonEntered: false, lessonCompleted: false, completionReviewOpened: false, challengeLog: [], newWordObservations: [] };
+  const sessionCandidates = [];
   let browser;
   try {
     const payload = decodeSession(await readFile(sessionPath, "ascii"));
     summary.payloadVersion = payload.version;
     summary.cookieNames = (payload.cookies || []).map((cookie) => cookie.name).sort();
 
-    browser = await puppeteer.launch({
-      headless: false,
-      pipe: true,
-      ignoreDefaultArgs: ["--disable-extensions"],
-      args: ["--no-sandbox", "--disable-dev-shm-usage", `--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`],
-    });
-    const extensionTarget = await browser.waitForTarget(
-      (target) => target.type() === "service_worker" && target.url().startsWith("chrome-extension://"),
-      { timeout: 10000 },
-    );
+    browser = await puppeteer.launch({ headless: false, pipe: true, ignoreDefaultArgs: ["--disable-extensions"], args: ["--no-sandbox", "--disable-dev-shm-usage", `--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`] });
+    const extensionTarget = await browser.waitForTarget((target) => target.type() === "service_worker" && target.url().startsWith("chrome-extension://"), { timeout: 10000 });
     const extensionId = new URL(extensionTarget.url()).host;
     summary.extensionId = extensionId;
 
     const page = await browser.newPage();
+    page.on("response", async (response) => {
+      if (!response.url().endsWith("/2023-05-23/sessions") || response.status() !== 200) return;
+      try {
+        const data = await response.json();
+        if (Array.isArray(data?.challenges) && data.challenges.length) sessionCandidates.push(data);
+      } catch {
+        // Ignore unreadable prefetch responses.
+      }
+    });
+
     await restoreSession(page, payload);
     summary.authenticated = true;
     await page.waitForSelector('button[aria-label^="Lesson "]', { timeout: 10000 });
     summary.lessonControl = await page.$eval('button[aria-label^="Lesson "]', (button) => button.getAttribute("aria-label"));
     await page.click('button[aria-label^="Lesson "]');
-    await sleep(700);
-
-    const activeSessionPromise = page.waitForResponse(
-      (response) => response.url().endsWith("/2023-05-23/sessions") && response.request().method() === "POST" && response.status() === 200,
-      { timeout: 20000 },
-    );
+    await sleep(800);
     await clickText(page, "START", { prefix: true });
-    const sessionResponse = await activeSessionPromise;
-    const session = await sessionResponse.json();
+    await page.waitForFunction(() => location.pathname === "/lesson", { timeout: 20000 });
+    await sleep(2500);
+    summary.lessonEntered = true;
+
+    const first = await pageState(page);
+    await page.screenshot({ path: path.join(outputDir, "00-first-challenge.png"), fullPage: false });
+    await writeFile(path.join(outputDir, "00-first-challenge.json"), JSON.stringify(first, null, 2));
+    await sleep(1000);
+    const ranked = sessionCandidates.map((session) => ({ session, score: scoreSession(session, first.bodyText) })).sort((a, b) => b.score - a.score);
+    summary.sessionCandidateScores = ranked.map(({ session, score }) => ({ id: session.id, score, firstType: session.challenges?.[0]?.type, firstPrompt: session.challenges?.[0]?.prompt ?? null }));
+    const session = ranked[0]?.session;
+    if (!session || ranked[0].score <= 0) throw new Error("Could not identify the active prefetched lesson session");
     await writeFile(path.join(outputDir, "active-session.json"), JSON.stringify(session, null, 2));
     summary.sessionId = session.id;
-    summary.challengeCount = session.challenges?.length || 0;
-    summary.challengeTypes = (session.challenges || []).map((challenge) => challenge.type);
-
-    await page.waitForFunction(() => location.pathname === "/lesson", { timeout: 20000 });
-    await sleep(2200);
-    summary.lessonEntered = true;
-    summary.lessonUrl = page.url();
-    await page.screenshot({ path: path.join(outputDir, "00-first-challenge.png"), fullPage: false });
+    summary.challengeCount = session.challenges.length;
+    summary.challengeTypes = session.challenges.map((challenge) => challenge.type);
 
     const solverState = { speakingDisabled: false };
-    let screenshotIndex = 1;
-    for (let index = 0; index < (session.challenges || []).length; index += 1) {
+    let captureNumber = 1;
+    for (let index = 0; index < session.challenges.length; index += 1) {
       const challenge = session.challenges[index];
       if (challenge.type === "speak" && solverState.speakingDisabled) {
         summary.challengeLog.push({ index, type: challenge.type, skippedBecauseSpeakingDisabled: true });
         continue;
       }
-
       await sleep(350);
       const before = await pageState(page);
       const newWords = challenge.newWords || [];
-      const log = {
-        index,
-        id: challenge.id,
-        type: challenge.type,
-        prompt: challenge.prompt ?? null,
-        newWords,
-        beforeText: before.bodyText.slice(0, 3000),
-        newWordTextNodeCount: before.newWordTextNodes.length,
-      };
+      summary.challengeLog.push({ index, id: challenge.id, type: challenge.type, prompt: challenge.prompt ?? null, newWords, beforeText: before.bodyText.slice(0, 2500), newWordTextNodeCount: before.newWordTextNodes.length });
       if (newWords.length) {
-        const filename = `${String(screenshotIndex).padStart(2, "0")}-new-word-${index}-before.png`;
-        await page.screenshot({ path: path.join(outputDir, filename), fullPage: false });
-        await writeFile(path.join(outputDir, `${String(screenshotIndex).padStart(2, "0")}-new-word-${index}-before.json`), JSON.stringify(before, null, 2));
-        screenshotIndex += 1;
+        const stem = `${String(captureNumber).padStart(2, "0")}-new-word-${index}`;
+        await page.screenshot({ path: path.join(outputDir, `${stem}-before.png`), fullPage: false });
+        await writeFile(path.join(outputDir, `${stem}-before.json`), JSON.stringify(before, null, 2));
+        captureNumber += 1;
       }
 
       await solveChallenge(page, challenge, solverState);
       await sleep(500);
-
       if (newWords.length) {
-        const after = await pageState(page);
         const ext = await extensionState(browser, extensionId);
         const stagedWords = (ext.staged || []).map((item) => item.word);
-        summary.newWordObservations.push({
-          index,
-          expectedNewWords: newWords,
-          beforeMarkerTextNodes: before.newWordTextNodes.length,
-          afterText: after.bodyText.slice(0, 2000),
-          stagedWords,
-          expectedWordStaged: newWords.some((word) => stagedWords.some((staged) => staged.toLocaleLowerCase() === String(word).toLocaleLowerCase())),
-        });
+        summary.newWordObservations.push({ index, expectedNewWords: newWords, markerTextNodeCount: before.newWordTextNodes.length, stagedWords, expectedWordStaged: newWords.some((word) => stagedWords.some((staged) => staged.toLocaleLowerCase() === String(word).toLocaleLowerCase())) });
       }
-      summary.challengeLog.push(log);
     }
 
     await sleep(1800);
@@ -360,27 +315,15 @@ async function main() {
     await writeFile(path.join(outputDir, "completion-page.json"), JSON.stringify(completion, null, 2));
     await page.screenshot({ path: path.join(outputDir, "completion-page.png"), fullPage: false });
     summary.completionText = completion.bodyText.slice(0, 5000);
-    summary.lessonCompleted = /(?:LESSON|PRACTICE|LEVEL|UNIT)\s+COMPLETE/i.test(completion.bodyText) || /CONTINUE/i.test(completion.bodyText);
+    summary.lessonCompleted = /(?:LESSON|PRACTICE|LEVEL|UNIT)\s+COMPLETE/i.test(completion.bodyText);
 
     const finalState = await extensionState(browser, extensionId);
-    summary.finalStaged = (finalState.staged || []).map((item) => ({
-      word: item.word,
-      context: item.context,
-      lessonId: item.lessonId,
-      status: item.status,
-      detectionCount: item.detectionCount,
-    }));
-
+    summary.finalStaged = (finalState.staged || []).map((item) => ({ word: item.word, context: item.context, lessonId: item.lessonId, status: item.status, detectionCount: item.detectionCount }));
     const reviewTargets = browser.targets().filter((target) => target.url().startsWith(`chrome-extension://${extensionId}/review.html?lesson=`));
-    if (reviewTargets.length) {
-      summary.completionReviewOpened = true;
-      summary.completionReviewUrl = reviewTargets.at(-1).url();
-    }
-
-    summary.allSessionNewWords = [...new Set((session.challenges || []).flatMap((challenge) => challenge.newWords || []))];
-    summary.stagedExpectedNewWords = summary.allSessionNewWords.filter((word) =>
-      summary.finalStaged.some((item) => item.word.toLocaleLowerCase() === String(word).toLocaleLowerCase()),
-    );
+    summary.completionReviewOpened = reviewTargets.length > 0;
+    if (reviewTargets.length) summary.completionReviewUrl = reviewTargets.at(-1).url();
+    summary.allSessionNewWords = [...new Set(session.challenges.flatMap((challenge) => challenge.newWords || []))];
+    summary.stagedExpectedNewWords = summary.allSessionNewWords.filter((word) => summary.finalStaged.some((item) => item.word.toLocaleLowerCase() === String(word).toLocaleLowerCase()));
     console.log(JSON.stringify(summary));
   } catch (error) {
     summary.error = `${error?.name || "Error"}: ${error?.message || String(error)}`;
