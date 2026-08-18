@@ -1,5 +1,6 @@
 (() => {
   const seenFingerprints = new Set();
+  const lessonSessionKey = "parola-duolingo:lesson-session";
   let scanTimer = null;
 
   function normalizeText(value) {
@@ -98,6 +99,67 @@
     };
   }
 
+  function readLessonSession() {
+    try {
+      const stored = sessionStorage.getItem(lessonSessionKey);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      return parsed && typeof parsed.id === "string" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLessonSession(session) {
+    try {
+      sessionStorage.setItem(lessonSessionKey, JSON.stringify(session));
+    } catch {
+      // The in-memory detector still works if Duolingo blocks sessionStorage.
+    }
+  }
+
+  function ensureLessonSession() {
+    const existing = readLessonSession();
+    if (existing && !existing.completed) return existing;
+    const session = {
+      id: crypto.randomUUID(),
+      startedAt: new Date().toISOString(),
+      startUrl: location.href,
+      completed: false,
+    };
+    writeLessonSession(session);
+    return session;
+  }
+
+  function completionMarker() {
+    if (!document.body) return null;
+    const pattern = /^(?:LESSON|PRACTICE|LEVEL|UNIT)\s+COMPLETE!?$/;
+    for (const { node, text } of textNodes(document.body)) {
+      if (!pattern.test(text.toLocaleUpperCase("en-US"))) continue;
+      const element = node.parentElement;
+      if (element && visible(element)) return { element, text };
+    }
+    return null;
+  }
+
+  async function reportLessonComplete(marker) {
+    const session = readLessonSession();
+    if (!session || session.completed) return;
+    const completedAt = new Date().toISOString();
+    writeLessonSession({ ...session, completed: true, completedAt, completionText: marker.text });
+    try {
+      await chrome.runtime.sendMessage({
+        type: "lesson-complete",
+        lessonId: session.id,
+        completedAt,
+        url: location.href,
+        completionText: marker.text,
+      });
+    } catch (error) {
+      console.warn("Parola could not open the lesson review", error);
+    }
+  }
+
   function showToast(word) {
     const old = document.getElementById("parola-new-word-toast");
     old?.remove();
@@ -122,13 +184,16 @@
   }
 
   async function report(marker, root, candidate) {
+    const lesson = ensureLessonSession();
     const context = candidateContext(candidate.element, root);
     const exerciseText = normalizeText(root.innerText || root.textContent);
-    const fingerprint = [candidate.word, context, exerciseText.slice(0, 500), location.pathname].join("\u241f");
+    const fingerprint = [lesson.id, candidate.word, context, exerciseText.slice(0, 500), location.pathname].join("\u241f");
     if (seenFingerprints.has(fingerprint)) return;
     seenFingerprints.add(fingerprint);
 
     const detection = {
+      lessonId: lesson.id,
+      lessonStartedAt: lesson.startedAt,
       word: candidate.word,
       context,
       exerciseText,
@@ -164,6 +229,8 @@
         void report(marker, root, candidate);
       }
     }
+    const completed = completionMarker();
+    if (completed) void reportLessonComplete(completed);
   }
 
   function scheduleScan() {
