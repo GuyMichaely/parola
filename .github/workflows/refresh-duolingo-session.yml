@@ -18,7 +18,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -103,13 +103,22 @@ jobs:
           tailscale status || true
           exit 1
 
-      - name: Establish accepted Duolingo login
+      - name: Try automated accepted login pattern
+        continue-on-error: true
         working-directory: extension
         env:
           DUOLINGO_CAPTURE_DIR: session-refresh-login
           DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
         run: python tests/duolingo-gold-replay.py
+
+      - name: Ensure an authenticated Duolingo session exists
+        working-directory: extension
+        env:
+          DUOLINGO_CDP_HOST: 127.0.0.1
+          DUOLINGO_CDP_PORT: "9222"
+          DUOLINGO_AUTH_WAIT_SECONDS: "600"
+        run: python tests/duolingo-wait-for-auth.py
 
       - name: Export authenticated state into repository
         working-directory: extension
