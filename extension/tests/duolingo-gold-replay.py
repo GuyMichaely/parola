@@ -17,8 +17,7 @@ CTRL = 2
 
 
 def safe(value):
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
+    if value is None or isinstance(value, (str, int, float, bool)): return value
     if isinstance(value, dict): return {str(k): safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)): return [safe(v) for v in value]
     try: return safe(value.value)
@@ -76,7 +75,7 @@ async def press_ctrl_v(tab):
 async def main():
     browser = None
     network = []
-    summary = {"automation":"gold-pattern-replay", "emailMethod":"Input.insertText", "passwordMethod":"navigator.clipboard+Ctrl-V", "submitMethod":"mouse_click"}
+    summary = {"automation":"gold-pattern-replay", "emailMethod":"CDP Autofill.trigger", "passwordMethod":"navigator.clipboard+Ctrl-V", "submitMethod":"mouse_click"}
     def on_response(event):
         url = str(event.response.url)
         if "/login" in url: network.append({"url":url.split("?",1)[0], "status":int(event.response.status), "mimeType":str(event.response.mime_type or "")})
@@ -94,11 +93,14 @@ async def main():
         await tab.sleep(2)
         tab.add_handler(uc.cdp.network.ResponseReceived, on_response)
         await tab.send(uc.cdp.network.enable())
+        await tab.send(uc.cdp.autofill.enable())
         await install_trace(tab)
         email = await wait_for(tab, 'input[data-test="email-input"]')
         password = await wait_for(tab, 'input[data-test="password-input"]')
         await email.mouse_click()
-        await tab.send(uc.cdp.input_.insert_text(EMAIL))
+        address = uc.cdp.autofill.Address(fields=[uc.cdp.autofill.AddressField(name="EMAIL_ADDRESS", value=EMAIL)])
+        await tab.send(uc.cdp.autofill.trigger(email.backend_node_id, address=address))
+        await asyncio.sleep(0.3)
         await password.mouse_click()
         copied = await tab.evaluate("navigator.clipboard.writeText(" + json.dumps(PASSWORD) + ").then(() => true).catch(() => false)", await_promise=True, return_by_value=True)
         if not isinstance(copied, bool): copied = bool(getattr(copied, "value", False))
