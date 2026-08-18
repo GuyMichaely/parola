@@ -228,7 +228,15 @@ function findPromptChallenge(challenges, prompt, preferredTypes = []) {
 
 function findSolutionChallenge(challenges, translation) {
   const target = normalizedPhrase(translation);
-  return challenges.find((challenge) => challenge.solutionTranslation && normalizedPhrase(challenge.solutionTranslation) === target) || null;
+  return challenges.find((challenge) => {
+    const candidates = [
+      challenge.solutionTranslation,
+      challenge.metadata?.translation,
+      challenge.metadata?.best_translation,
+      challenge.metadata?.challenge_construction_insights?.best_solution,
+    ];
+    return candidates.some((value) => value && normalizedPhrase(value) === target);
+  }) || null;
 }
 
 function findChoiceScoredChallenge(challenges, types, body) {
