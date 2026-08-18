@@ -49,56 +49,6 @@ function mergeCookies(...groups) {
   return [...byIdentity.values()];
 }
 
-function base64ToBytes(value) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
-
-function bytesToBase64(bytes) {
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
-async function gunzipText(encoded) {
-  const stream = new Blob([base64ToBytes(encoded)]).stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Response(stream).text();
-}
-
-async function gzipText(value) {
-  const stream = new Blob([value]).stream().pipeThrough(new CompressionStream("gzip"));
-  return bytesToBase64(new Uint8Array(await new Response(stream).arrayBuffer()));
-}
-
-async function compactLocalStorage(storage) {
-  const compacted = { ...storage };
-  delete compacted["duo.clientSideGradingConfig"];
-  delete compacted["duo.clientSideGradingConfigTimestamp"];
-
-  const storedState = compacted["duo.state"];
-  if (!storedState) return compacted;
-  try {
-    const encoded = JSON.parse(storedState);
-    const envelope = JSON.parse(await gunzipText(encoded));
-    const redux = envelope?.state?.redux?.redux;
-    if (redux && typeof redux === "object") {
-      delete redux.courses;
-      delete redux.friends;
-      delete redux.goals;
-      delete redux.skills;
-    }
-    compacted["duo.state"] = JSON.stringify(await gzipText(JSON.stringify(envelope)));
-  } catch (error) {
-    console.warn("Parola could not compact duo.state; keeping the original value", error);
-  }
-  return compacted;
-}
-
 async function captureDuolingoPageState(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -248,7 +198,7 @@ async function prepareSessionExport() {
     exportedAt: new Date().toISOString(),
     sourceUrl: pageState.href,
     cookies: cookies.map(normalizeCookie),
-    localStorage: await compactLocalStorage(pageState.localStorage || {}),
+    localStorage: pageState.localStorage || {},
     sessionStorage: pageState.sessionStorage || {},
     indexedDB: pageState.indexedDB || [],
   };
