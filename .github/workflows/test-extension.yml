@@ -49,6 +49,7 @@ jobs:
           node --check content/parola.js
           node --check popup.js
           node --check review.js
+          node --check session-export.js
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
 
       - name: Run Chrome extension tests
