@@ -18,6 +18,68 @@ function normalizeControlText(value) {
     .toLocaleLowerCase();
 }
 
+function normalizeChallengeForSolver(challenge) {
+  if (
+    challenge?.sourceLanguage === "en"
+    && challenge?.targetLanguage === "it"
+    && Array.isArray(challenge.correctSolutions)
+    && challenge.correctSolutions.length
+  ) {
+    return {
+      ...challenge,
+      solutionTranslation: challenge.prompt,
+      prompt: challenge.correctSolutions[0],
+    };
+  }
+  return challenge;
+}
+
+function normalizeSessionPayload(data) {
+  if (!data || !Array.isArray(data.challenges)) return data;
+  const pools = [
+    data.challenges,
+    data.adaptiveChallenges,
+    data.mistakesReplacementChallenges,
+    data.adaptiveInterleavedChallenges,
+  ];
+  const merged = [];
+  const seen = new Set();
+  for (const challenge of pools.flatMap((pool) => Array.isArray(pool) ? pool : [])) {
+    const normalized = normalizeChallengeForSolver(challenge);
+    const key = normalized?.id || JSON.stringify([
+      normalized?.type,
+      normalized?.prompt,
+      normalized?.solutionTranslation,
+    ]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(normalized);
+  }
+  return { ...data, challenges: merged };
+}
+
+function hardenSessionResponses(page) {
+  const originalOn = page.on.bind(page);
+  page.on = (eventName, listener) => {
+    if (eventName !== "response") return originalOn(eventName, listener);
+    return originalOn("response", (response) => {
+      if (!response.url().endsWith("/2023-05-23/sessions") || response.status() !== 200) {
+        return listener(response);
+      }
+      const proxy = new Proxy(response, {
+        get(target, property) {
+          if (property === "json") {
+            return async () => normalizeSessionPayload(await target.json());
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      return listener(proxy);
+    });
+  };
+}
+
 async function captureStartState(page, originalEvaluate, clickedStartText) {
   await new Promise((resolve) => setTimeout(resolve, 1200));
   const snapshot = await originalEvaluate((clickedText) => {
@@ -81,6 +143,7 @@ async function clickNumberedChoice(page, originalEvaluate, details) {
 }
 
 async function hardenPageForOrganicStart(page) {
+  hardenSessionResponses(page);
   const originalEvaluate = page.evaluate.bind(page);
   const originalWaitForFunction = page.waitForFunction.bind(page);
 
@@ -151,6 +214,13 @@ function normalize(value) {
 }
 
 const cardPlans = [
+  { detected: "pollo", italian: "pollo", english: "chicken", type: "noun", gender: "masculine" },
+  { detected: "panino", italian: "panino", english: "sandwich", type: "noun", gender: "masculine" },
+  { detected: "panini", italian: "panino", english: "sandwich", type: "noun", gender: "masculine" },
+  { detected: "fagiolo", italian: "fagiolo", english: "bean", type: "noun", gender: "masculine" },
+  { detected: "fagioli", italian: "fagiolo", english: "bean", type: "noun", gender: "masculine" },
+  { detected: "buono", italian: "buono", english: "good", type: "adjective" },
+  { detected: "buoni", italian: "buono", english: "good", type: "adjective" },
   { detected: "polpetta", italian: "polpetta", english: "meatball", type: "noun", gender: "feminine" },
   { detected: "patata", italian: "patata", english: "potato", type: "noun", gender: "feminine" },
   { detected: "polpette", italian: "polpetta", english: "meatball", type: "noun", gender: "feminine" },
