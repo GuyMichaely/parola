@@ -9,6 +9,7 @@ const outputDir = path.resolve(process.env.DUOLINGO_CAPTURE_DIR || "organic-duol
 const sessionPath = path.resolve(process.env.DUOLINGO_SESSION_STATE_FILE || "tests/fixtures/duolingo-session-state.b64");
 const origin = "https://www.duolingo.com";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const completionPattern = /^(?:LESSON|PRACTICE|LEVEL|UNIT)\s+COMPLETE!?$/im;
 
 await mkdir(outputDir, { recursive: true });
 
@@ -77,7 +78,6 @@ async function state(page) {
       }));
     const tapTokens = controls.filter((item) => item.dataTest && /(?:^|-)challenge-tap-token$/.test(item.dataTest) && item.text);
     const choices = controls.filter((item) => item.dataTest === "challenge-choice" && item.text);
-    const markerVisible = [...document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)].some?.(() => false);
     let newWord = false;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
@@ -95,7 +95,6 @@ async function state(page) {
       tapTokens,
       choices,
       newWord,
-      markerVisible,
     };
   });
 }
@@ -137,14 +136,15 @@ async function nextButton(page) {
 
 async function dismissFeedback(page) {
   for (let i = 0; i < 10; i += 1) {
+    const current = await state(page);
+    if (completionPattern.test(current.text)) return;
     const next = await nextButton(page);
     if (next && !next.disabled && /^(CONTINUE|GOT IT)/.test(next.text)) {
       await page.click('[data-test="player-next"]');
       await sleep(800);
       continue;
     }
-    const s = await state(page);
-    const fallback = s.controls.find((item) => !item.disabled && /^(CONTINUE|GOT IT)/i.test(item.text));
+    const fallback = current.controls.find((item) => !item.disabled && /^(CONTINUE|GOT IT)/i.test(item.text));
     if (!fallback) return;
     await clickControlText(page, fallback.text);
     await sleep(800);
@@ -274,7 +274,7 @@ function screenPlan(screen, challenges, lexicon) {
   const lines = screen.text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   const body = screen.text;
 
-  if (/^(?:LESSON|PRACTICE|LEVEL|UNIT)\s+COMPLETE!?$/im.test(body)) return { kind: "complete", challenge: null, answer: [] };
+  if (completionPattern.test(body)) return { kind: "complete", challenge: null, answer: [] };
 
   if (body.includes("Speak this sentence")) {
     const index = lines.indexOf("Speak this sentence");
