@@ -19,28 +19,22 @@ CTRL = 2
 def safe(value):
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, dict):
-        return {str(k): safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [safe(v) for v in value]
-    try:
-        return safe(value.value)
-    except Exception:
-        return str(value)
+    if isinstance(value, dict): return {str(k): safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)): return [safe(v) for v in value]
+    try: return safe(value.value)
+    except Exception: return str(value)
 
 
 async def evaluate_json(tab, expression):
     encoded = await tab.evaluate(f"JSON.stringify(({expression}))", return_by_value=True)
-    if not isinstance(encoded, str):
-        encoded = getattr(encoded, "value", encoded)
+    if not isinstance(encoded, str): encoded = getattr(encoded, "value", encoded)
     return json.loads(encoded) if encoded is not None else None
 
 
 async def wait_for(tab, selector, attempts=20):
     for _ in range(attempts):
         element = await tab.select(selector)
-        if element:
-            return element
+        if element: return element
         await asyncio.sleep(0.25)
     raise RuntimeError(f"Missing element: {selector}")
 
@@ -83,15 +77,15 @@ async def main():
     browser = None
     network = []
     summary = {"automation":"gold-pattern-replay", "emailMethod":"Input.insertText", "passwordMethod":"navigator.clipboard+Ctrl-V", "submitMethod":"mouse_click"}
-
     def on_response(event):
         url = str(event.response.url)
-        if "/login" in url:
-            network.append({"url": url.split("?", 1)[0], "status": int(event.response.status), "mimeType": str(event.response.mime_type or "")})
-
+        if "/login" in url: network.append({"url":url.split("?",1)[0], "status":int(event.response.status), "mimeType":str(event.response.mime_type or "")})
     try:
         browser = await uc.start(config=uc.Config(host=CDP_HOST, port=CDP_PORT))
-        await browser.grant_all_permissions()
+        await browser.send(uc.cdp.browser.grant_permissions([
+            uc.cdp.browser.PermissionType.CLIPBOARD_READ_WRITE,
+            uc.cdp.browser.PermissionType.CLIPBOARD_SANITIZED_WRITE,
+        ], origin="https://www.duolingo.com"))
         tab = await browser.get("https://www.duolingo.com/", new_tab=True)
         await tab.sleep(1)
         await tab.send(uc.cdp.network.clear_browser_cookies())
@@ -101,26 +95,20 @@ async def main():
         tab.add_handler(uc.cdp.network.ResponseReceived, on_response)
         await tab.send(uc.cdp.network.enable())
         await install_trace(tab)
-
         email = await wait_for(tab, 'input[data-test="email-input"]')
         password = await wait_for(tab, 'input[data-test="password-input"]')
         await email.mouse_click()
         await tab.send(uc.cdp.input_.insert_text(EMAIL))
         await password.mouse_click()
         copied = await tab.evaluate("navigator.clipboard.writeText(" + json.dumps(PASSWORD) + ").then(() => true).catch(() => false)", await_promise=True, return_by_value=True)
-        if not isinstance(copied, bool):
-            copied = bool(getattr(copied, "value", False))
+        if not isinstance(copied, bool): copied = bool(getattr(copied, "value", False))
         summary["clipboardWriteSucceeded"] = copied
-        if not copied:
-            raise RuntimeError("Could not seed browser-host clipboard")
+        if not copied: raise RuntimeError("Could not seed browser-host clipboard")
         await press_ctrl_v(tab)
         await asyncio.sleep(0.3)
-
         before = await state(tab)
         summary["beforeSubmit"] = {k:v for k,v in before.items() if k != "body"}
-        if before["emailLength"] != len(EMAIL) or before["passwordLength"] != len(PASSWORD):
-            raise RuntimeError("Replay did not produce exact credential lengths")
-
+        if before["emailLength"] != len(EMAIL) or before["passwordLength"] != len(PASSWORD): raise RuntimeError("Replay did not produce exact credential lengths")
         submit = await wait_for(tab, 'button[data-test="register-button"]')
         await submit.mouse_click()
         deadline = time.monotonic() + 12
@@ -128,25 +116,19 @@ async def main():
         while time.monotonic() < deadline:
             try:
                 final = await state(tab)
-                if not final["loginFormPresent"] and "/log-in" not in final["href"]:
-                    break
-                if "wrong username or password" in final["body"]:
-                    break
-            except Exception:
-                pass
+                if not final["loginFormPresent"] and "/log-in" not in final["href"]: break
+                if "wrong username or password" in final["body"]: break
+            except Exception: pass
             await asyncio.sleep(0.25)
-
         summary["final"] = {k:v for k,v in final.items() if k != "body"}
         summary["wrongCredentials"] = "wrong username or password" in final.get("body", "")
         summary["loggedIn"] = not final["loginFormPresent"] and "/log-in" not in final["href"]
         summary["loginResponses"] = network
-        try:
-            summary["inputEvents"] = await evaluate_json(tab, "window.__parolaReplayEvents || []")
-        except Exception as error:
-            summary["traceReadError"] = f"{type(error).__name__}: {error}"
-        await tab.save_screenshot(filename=str(OUTPUT_DIR / "after-replay.png"))
-        if not summary["loggedIn"]:
-            raise RuntimeError("Gold-pattern automated replay did not log in")
+        try: summary["inputEvents"] = await evaluate_json(tab, "window.__parolaReplayEvents || []")
+        except Exception as error: summary["traceReadError"] = f"{type(error).__name__}: {error}"
+        try: await tab.save_screenshot(filename=str(OUTPUT_DIR / "after-replay.png"))
+        except Exception: pass
+        if not summary["loggedIn"]: raise RuntimeError("Gold-pattern automated replay did not log in")
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"
         raise
@@ -161,5 +143,4 @@ async def main():
             except Exception: pass
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == "__main__": asyncio.run(main())
