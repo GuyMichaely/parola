@@ -34,6 +34,7 @@ jobs:
         run: |
           node --check background.js
           node --check content/duolingo.js
+          node --check content/parola.js
           node --check popup.js
           node --check review.js
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
