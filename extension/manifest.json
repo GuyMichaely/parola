@@ -24,6 +24,11 @@
       "matches": ["https://www.duolingo.com/*", "https://duolingo.com/*"],
       "js": ["content/duolingo.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://guymichaely.com/parola/*"],
+      "js": ["content/parola.js"],
+      "run_at": "document_idle"
     }
   ]
 }
