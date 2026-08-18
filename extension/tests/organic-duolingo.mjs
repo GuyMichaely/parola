@@ -120,21 +120,32 @@ async function clickText(page, wanted, { prefix = false } = {}) {
   if (!clicked) throw new Error(`Could not click visible text ${JSON.stringify(wanted)}`);
 }
 
-async function submitAndContinue(page) {
-  const nextState = async () => page.evaluate(() => {
+async function playerNextState(page) {
+  return page.evaluate(() => {
     const el = document.querySelector('[data-test="player-next"]');
-    return el ? { text: (el.textContent || "").trim().toUpperCase(), disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true" } : null;
+    return el ? {
+      text: (el.textContent || "").trim().toUpperCase(),
+      disabled: el.matches(":disabled") || el.getAttribute("aria-disabled") === "true",
+    } : null;
   });
-  let state = await nextState();
+}
+
+async function dismissInterstitials(page) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const state = await playerNextState(page);
+    if (!state || state.disabled || !(state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) return;
+    await page.click('[data-test="player-next"]');
+    await sleep(850);
+  }
+}
+
+async function submitAndContinue(page) {
+  let state = await playerNextState(page);
   if (state && !state.disabled && state.text.startsWith("CHECK")) {
     await page.click('[data-test="player-next"]');
     await sleep(650);
   }
-  state = await nextState();
-  if (state && !state.disabled && (state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) {
-    await page.click('[data-test="player-next"]');
-    await sleep(800);
-  }
+  await dismissInterstitials(page);
 }
 
 function choiceText(choice) {
@@ -186,11 +197,14 @@ async function solveChallenge(page, challenge, solverState) {
       const disable = state.controls.find((item) => item.text.toUpperCase().includes("CAN'T SPEAK"));
       if (disable) {
         await clickText(page, disable.text);
-        await sleep(450);
+        await sleep(500);
         const confirm = (await pageState(page)).controls.find((item) => /TURN OFF|DISABLE|SKIP/.test(item.text.toUpperCase()));
-        if (confirm) await clickText(page, confirm.text);
+        if (confirm) {
+          await clickText(page, confirm.text);
+          await sleep(450);
+        }
         solverState.speakingDisabled = true;
-        await sleep(900);
+        await dismissInterstitials(page);
         return;
       }
       const skip = state.controls.find((item) => item.text.toUpperCase() === "SKIP");
@@ -290,6 +304,7 @@ async function main() {
         summary.challengeLog.push({ index, type: challenge.type, skippedBecauseSpeakingDisabled: true });
         continue;
       }
+      await dismissInterstitials(page);
       await sleep(350);
       const before = await pageState(page);
       const newWords = challenge.newWords || [];
@@ -310,6 +325,7 @@ async function main() {
       }
     }
 
+    await dismissInterstitials(page);
     await sleep(1800);
     const completion = await pageState(page);
     await writeFile(path.join(outputDir, "completion-page.json"), JSON.stringify(completion, null, 2));
