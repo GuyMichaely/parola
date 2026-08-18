@@ -42,28 +42,25 @@ Live GitHub-hosted tests restore the disposable Duolingo account's authenticated
 
 ### Refreshing the Duolingo CI session
 
-When the committed session expires, run this from the repository root on a machine with Chrome/Chromium and Python 3:
+Refreshing the CI login no longer requires a self-hosted runner, Tailscale, a Chrome remote-debugging port, Python, or a special disposable browser profile.
 
-```bash
-bash scripts/refresh-duolingo-session-local.sh
-```
+1. In the normal Chrome profile where Parola for Duolingo is installed, open Duolingo and log into the disposable test account normally.
+2. While a logged-in Duolingo tab is active, open the Parola extension popup.
+3. Click **Export GitHub login session**.
+4. On the export page, click **Download duolingo-session-state.b64**.
+5. Replace `extension/tests/fixtures/duolingo-session-state.b64` in this repository with the downloaded file.
+6. Commit and push the replacement file.
 
-The helper creates a temporary Python virtual environment and a disposable Chrome profile, opens Duolingo, waits up to ten minutes for an authenticated session, exports the Duolingo cookies/localStorage/sessionStorage needed by CI, commits the refreshed state, and pushes it. The temporary browser profile and Python environment are deleted when the script exits.
+The extension reads Duolingo localStorage/sessionStorage from the active tab and uses Chrome's `cookies` extension API to include Duolingo cookies, including HttpOnly cookies that page JavaScript cannot read. The export page writes the same gzip + base64 fixture format that the GitHub-hosted restore tests already consume.
 
-By default the login is manual. To try the known Autofill + password-paste automation first and fall back to manual login if Duolingo rejects it, use:
+When the fixture changes on `main`, the hosted session-restore and live-extension workflows verify that a fresh GitHub-hosted browser can restore it. If the export came from a logged-out Duolingo page, the extension refuses to create the file; the hosted restore test is a second independent guard against accidentally committing an unauthenticated session.
 
-```bash
-bash scripts/refresh-duolingo-session-local.sh --auto-login
-```
-
-Use `--no-push` to create the refresh commit without pushing it. Once the state-file commit reaches `main`, the hosted session-restore/live tests verify that the state still reaches authenticated Duolingo.
-
-This refresh procedure does not require the local machine to be registered as a GitHub Actions runner and does not require Tailscale.
+The session file belongs to the disposable testing account and is deliberately committed to the repository for simplicity.
 
 ## Distribution
 
 Signed Linux releases are produced with the `PAROLA_EXTENSION_PRIVATE_KEY` Actions secret. The extension checks the update manifest at:
 
-`https://raw.githubusercontent.com/GuyMichaely/parola/main/web/public/extension/updates.xml`
+`https://guymichaely.com/extension/updates.xml`
 
-The signed CRX and update metadata are committed under `web/public/extension/`. The signing key determines the permanent extension ID and must remain unchanged between releases.
+The signed CRX and update metadata are published under `https://guymichaely.com/extension/`. The signing key determines the permanent extension ID and must remain unchanged between releases.
