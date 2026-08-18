@@ -11,7 +11,8 @@
       <header class="review-header">
         <div>
           <span class="eyebrow">Parola for Duolingo</span>
-          <h1>Review staged words</h1>
+          <h1 id="review-title">Review staged words</h1>
+          <p id="review-subtitle" class="review-subtitle">Check what Parola detected before adding anything to your inventory.</p>
         </div>
         <code id="version"></code>
       </header>
@@ -19,12 +20,22 @@
       <section>
         <div class="section-heading">
           <div>
-            <h2>Staged</h2>
-            <p>Approve words you want to keep for the Parola import step; discard false positives.</p>
+            <h2>New words</h2>
+            <p>Edit the detected Italian text if necessary, add an English translation and part of speech, then approve the words you want.</p>
           </div>
-          <button id="clear-staged" class="danger-subtle">Clear staged</button>
+          <div class="inline-actions">
+            <button id="approve-all">Approve all</button>
+            <button id="clear-staged" class="danger-subtle">Clear shown words</button>
+          </div>
         </div>
         <div id="staged-list" class="card-list"></div>
+        <div class="review-import-bar">
+          <div>
+            <strong id="approved-summary">0 approved</strong>
+            <span id="import-status" class="status-line" role="status"></span>
+          </div>
+          <button id="add-approved" class="primary">Add approved to Parola</button>
+        </div>
       </section>
 
       <section class="diagnostics-section">
