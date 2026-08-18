@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
     paths:
+      - "extension/content/duolingo.js"
+      - "extension/background.js"
+      - "extension/review.html"
+      - "extension/review.js"
       - "extension/tests/organic-duolingo.mjs"
       - "extension/tests/fixtures/duolingo-session-state.b64"
       - ".github/workflows/test-organic-duolingo-extension.yml"
@@ -19,7 +23,7 @@ concurrency:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
