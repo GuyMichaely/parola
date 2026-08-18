@@ -257,6 +257,13 @@ function findChoiceScoredChallenge(challenges, types, body) {
   return candidates[0]?.score > 0 ? candidates[0].challenge : null;
 }
 
+function answerForChoiceChallenge(challenge) {
+  const indices = challenge.correctIndices?.length
+    ? challenge.correctIndices
+    : [challenge.correctIndex].filter(Number.isInteger);
+  return indices.map((index) => choiceText(challenge.choices?.[index])).filter(Boolean);
+}
+
 function planForState(state, challenges) {
   const body = state.bodyText;
   const lines = nonEmptyLines(body);
@@ -276,7 +283,15 @@ function planForState(state, challenges) {
     const quoted = header.match(/[“"]([^”"]+)[”"]/u)?.[1] || "";
     const challenge = findPromptChallenge(challenges, quoted, ["select"]);
     if (!challenge) throw new Error(`Could not match select prompt ${JSON.stringify(quoted)}`);
-    return { kind: "select", challenge, answer: [choiceText(challenge.choices?.[challenge.correctIndex])] };
+    return { kind: "select", challenge, answer: answerForChoiceChallenge(challenge) };
+  }
+
+  if (body.includes("Select the correct meaning")) {
+    const headerIndex = lines.findIndex((line) => line === "Select the correct meaning");
+    const prompt = lines[headerIndex + 1] || "";
+    const challenge = findPromptChallenge(challenges, prompt, ["assist"]);
+    if (!challenge) throw new Error(`Could not match meaning prompt ${JSON.stringify(prompt)}`);
+    return { kind: "assist", challenge, answer: answerForChoiceChallenge(challenge) };
   }
 
   if (body.includes("Write this in English")) {
@@ -285,7 +300,7 @@ function planForState(state, challenges) {
     const challenge = findPromptChallenge(challenges, prompt, ["translate", "speak"]);
     if (!challenge) throw new Error(`Could not match English-translation prompt ${JSON.stringify(prompt)}`);
     const answer = challenge.type === "translate"
-      ? (challenge.correctTokens?.length ? challenge.correctTokens : (challenge.correctIndices || []).map((index) => choiceText(challenge.choices?.[index])).filter(Boolean))
+      ? (challenge.correctTokens?.length ? challenge.correctTokens : answerForChoiceChallenge(challenge))
       : phraseTokens(challenge.solutionTranslation);
     return { kind: "word-bank", challenge, answer };
   }
@@ -301,29 +316,35 @@ function planForState(state, challenges) {
   if (body.includes("Tap what you hear")) {
     const challenge = findChoiceScoredChallenge(challenges, ["listenTap", "listenSpeak"], body);
     if (!challenge) throw new Error("Could not match listen-tap challenge");
-    const answer = challenge.correctTokens?.length
-      ? challenge.correctTokens
-      : (challenge.correctIndices || []).map((index) => choiceText(challenge.choices?.[index])).filter(Boolean);
+    const answer = challenge.correctTokens?.length ? challenge.correctTokens : answerForChoiceChallenge(challenge);
     return { kind: "listen-tap", challenge, answer };
   }
 
   if (body.includes("Fill in the blank")) {
     const challenge = findChoiceScoredChallenge(challenges, ["tapComplete", "patternTapComplete"], body);
     if (!challenge) throw new Error("Could not match fill-in-the-blank challenge");
-    const indices = challenge.correctIndices?.length ? challenge.correctIndices : [challenge.correctIndex].filter(Number.isInteger);
-    return { kind: "tap-complete", challenge, answer: indices.map((index) => choiceText(challenge.choices?.[index])).filter(Boolean) };
+    return { kind: "tap-complete", challenge, answer: answerForChoiceChallenge(challenge) };
   }
 
   if (body.includes("Complete the chat")) {
     const challenge = findChoiceScoredChallenge(challenges, ["dialogue"], body);
     if (!challenge) throw new Error("Could not match dialogue challenge");
-    return { kind: "dialogue", challenge, answer: [choiceText(challenge.choices?.[challenge.correctIndex])] };
+    return { kind: "dialogue", challenge, answer: answerForChoiceChallenge(challenge) };
   }
 
   if (body.includes("Select the matching pairs")) {
     const challenge = findChoiceScoredChallenge(challenges, ["match", "listenMatch"], body);
     if (!challenge) throw new Error("Could not match matching-pairs challenge");
     return { kind: "match", challenge, answer: challenge.pairs || [] };
+  }
+
+  const genericChoice = findChoiceScoredChallenge(
+    challenges,
+    ["assist", "select", "patternTapComplete", "tapComplete", "dialogue"],
+    body,
+  );
+  if (genericChoice) {
+    return { kind: "generic-choice", challenge: genericChoice, answer: answerForChoiceChallenge(genericChoice) };
   }
 
   throw new Error(`Unsupported live Duolingo screen: ${body.slice(0, 1200)}`);
