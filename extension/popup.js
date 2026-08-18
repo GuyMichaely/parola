@@ -49,6 +49,11 @@ function mergeCookies(...groups) {
   return [...byIdentity.values()];
 }
 
+function isDuolingoCookie(cookie) {
+  const domain = String(cookie?.domain || "").replace(/^\./, "").toLocaleLowerCase();
+  return domain === "duolingo.com" || domain.endsWith(".duolingo.com");
+}
+
 async function captureDuolingoPageState(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -161,8 +166,16 @@ function looksLoggedOut(pageState) {
 }
 
 async function captureCookies(tab) {
+  const granted = await chrome.permissions.getAll();
+  const allVisible = (await chrome.cookies.getAll({})).filter(isDuolingoCookie);
   const byDomain = await chrome.cookies.getAll({ domain: "duolingo.com" });
   const byUrl = await chrome.cookies.getAll({ url: tab.url });
+  const explicitJwt = (
+    await Promise.all([
+      chrome.cookies.get({ url: "https://duolingo.com/", name: "jwt_token" }),
+      chrome.cookies.get({ url: "https://www.duolingo.com/", name: "jwt_token" }),
+    ])
+  ).filter(Boolean);
   let partitioned = [];
   try {
     const details = await chrome.cookies.getPartitionKey({ tabId: tab.id, frameId: 0 });
@@ -175,7 +188,19 @@ async function captureCookies(tab) {
   } catch (error) {
     console.warn("Parola could not inspect partitioned Duolingo cookies", error);
   }
-  return mergeCookies(byDomain, byUrl, partitioned);
+
+  const cookies = mergeCookies(allVisible, byDomain, byUrl, explicitJwt, partitioned).filter(isDuolingoCookie);
+  return {
+    cookies,
+    diagnostics: {
+      cookiePermissionGranted: (granted.permissions || []).includes("cookies"),
+      grantedOrigins: granted.origins || [],
+      cookieNames: [...new Set(cookies.map((cookie) => cookie.name))].sort(),
+      cookieDomains: [...new Set(cookies.map((cookie) => cookie.domain))].sort(),
+      jwtTokenVisible: cookies.some((cookie) => cookie.name === "jwt_token"),
+      partitionedCookieCount: cookies.filter((cookie) => cookie.partitionKey).length,
+    },
+  };
 }
 
 async function prepareSessionExport() {
@@ -189,7 +214,8 @@ async function prepareSessionExport() {
     throw new Error("This Duolingo tab appears to be logged out. Log into the disposable test account, then export again.");
   }
 
-  const cookies = await captureCookies(tab);
+  const cookieCapture = await captureCookies(tab);
+  const cookies = cookieCapture.cookies;
   if (!cookies.length) throw new Error("No Duolingo cookies were found for this browser profile.");
 
   const payload = {
@@ -198,6 +224,7 @@ async function prepareSessionExport() {
     exportedAt: new Date().toISOString(),
     sourceUrl: pageState.href,
     cookies: cookies.map(normalizeCookie),
+    cookieDiagnostics: cookieCapture.diagnostics,
     localStorage: pageState.localStorage || {},
     sessionStorage: pageState.sessionStorage || {},
     indexedDB: pageState.indexedDB || [],
