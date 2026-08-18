@@ -20,13 +20,26 @@ async function encodePayload(payload) {
   return bytesToBase64(await gzipBytes(raw));
 }
 
+function addSummaryItem(container, value, label) {
+  const row = document.createElement("div");
+  const strong = document.createElement("strong");
+  const span = document.createElement("span");
+  strong.textContent = String(value);
+  span.textContent = label;
+  row.append(strong, span);
+  container.append(row);
+}
+
 function renderSummary(payload, encodedBytes) {
   const httpOnlyCount = (payload.cookies || []).filter((cookie) => cookie.httpOnly).length;
-  document.getElementById("export-summary").innerHTML = `
-    <div><strong>${payload.cookies?.length || 0}</strong><span>Duolingo cookies</span></div>
-    <div><strong>${httpOnlyCount}</strong><span>HttpOnly cookies</span></div>
-    <div><strong>${Object.keys(payload.localStorage || {}).length + Object.keys(payload.sessionStorage || {}).length}</strong><span>Storage keys</span></div>
-    <div><strong>${encodedBytes}</strong><span>Encoded bytes</span></div>`;
+  const diagnostics = payload.cookieDiagnostics || {};
+  const container = document.getElementById("export-summary");
+  container.replaceChildren();
+  addSummaryItem(container, payload.cookies?.length || 0, "Duolingo cookies");
+  addSummaryItem(container, httpOnlyCount, "HttpOnly cookies");
+  addSummaryItem(container, diagnostics.jwtTokenVisible ? "yes" : "no", "jwt_token captured");
+  addSummaryItem(container, Object.keys(payload.localStorage || {}).length + Object.keys(payload.sessionStorage || {}).length, "Storage keys");
+  addSummaryItem(container, encodedBytes, "Encoded bytes");
 }
 
 async function prepare() {
@@ -36,8 +49,11 @@ async function prepare() {
 
   encodedState = `${await encodePayload(payload)}\n`;
   renderSummary(payload, encodedState.length);
-  document.getElementById("export-status").textContent = "Ready. Download the file and replace the repository session fixture with it.";
-  document.getElementById("download-session").disabled = false;
+  const jwtVisible = Boolean(payload.cookieDiagnostics?.jwtTokenVisible);
+  document.getElementById("export-status").textContent = jwtVisible
+    ? "Ready. The authentication cookie was captured. This file contains login credentials; do not share it."
+    : "Warning: the authenticated tab was detected, but jwt_token was not visible to Parola. Do not upload this export yet.";
+  document.getElementById("download-session").disabled = !jwtVisible;
   await chrome.storage.local.remove(sessionExportKey);
 }
 
@@ -52,7 +68,7 @@ document.getElementById("download-session").addEventListener("click", () => {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  document.getElementById("export-status").textContent = "Downloaded. Replace extension/tests/fixtures/duolingo-session-state.b64, commit, and push.";
+  document.getElementById("export-status").textContent = "Downloaded. This file contains authentication credentials; keep it private.";
 });
 
 void prepare().catch((error) => {
