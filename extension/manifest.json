@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Parola Capture",
-  "version": "0.1.0",
-  "version_name": "source",
+  "version": "0.2.0",
+  "version_name": "0.2.0",
   "description": "Stage Italian words and contexts for review and import into Parola.",
-  "update_url": "https://guymichaely.com/extension/updates.xml",
+  "update_url": "https://guymichaely.com/parola/extension/updates.xml",
   "permissions": ["storage", "activeTab", "contextMenus"],
   "host_permissions": [
     "https://guymichaely.com/parola/*"

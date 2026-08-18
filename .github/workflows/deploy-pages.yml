@@ -1,0 +1,152 @@
+name: Deploy Parola Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "extension/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+env:
+  EXTENSION_ID: kekniohgmpmijldjfamhjehnbmkmiajg
+  EXTENSION_UPDATE_URL: https://guymichaely.com/parola/extension/updates.xml
+  EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola.crx
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web app
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install extension test dependencies and Chrome
+        working-directory: extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
+          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate and test extension
+        working-directory: extension
+        run: |
+          node --check background.js
+          node --check content/parola.js
+          node --check popup.js
+          node --check review.js
+          node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
+          xvfb-run -a npm test
+
+      - name: Assemble Pages site and signed extension
+        env:
+          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_KEY"
+
+          SITE_DIR="$RUNNER_TEMP/parola-pages"
+          BUILD_DIR="$RUNNER_TEMP/parola-extension"
+          KEY_FILE="$RUNNER_TEMP/parola-extension.pem"
+
+          rm -rf "$SITE_DIR" "$BUILD_DIR" "${BUILD_DIR}.crx"
+          mkdir -p "$SITE_DIR/extension" "$BUILD_DIR/content"
+          cp -a web/dist/. "$SITE_DIR/"
+
+          cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
+          cp extension/content/*.js "$BUILD_DIR/content/"
+          test -f "$BUILD_DIR/content/parola.js"
+
+          VERSION="$(python3 - "$BUILD_DIR/manifest.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as f:
+              manifest = json.load(f)
+          print(manifest["version"])
+          PY
+          )"
+          PACKAGE_VERSION="$(node -p "require('./extension/package.json').version")"
+          test "$VERSION" = "$PACKAGE_VERSION"
+
+          printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          "$CHROME_PATH" --headless=new --no-sandbox \
+            --pack-extension="$BUILD_DIR" \
+            --pack-extension-key="$KEY_FILE"
+
+          CRX_FILE="${BUILD_DIR}.crx"
+          test -s "$CRX_FILE"
+
+          HEX_ID="$(openssl rsa -in "$KEY_FILE" -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | xxd -p -c 256 | cut -c1-32)"
+          BUILT_EXTENSION_ID="$(python3 - "$HEX_ID" <<'PY'
+          import sys
+          print(''.join(chr(ord('a') + int(ch, 16)) for ch in sys.argv[1]))
+          PY
+          )"
+          test "$BUILT_EXTENSION_ID" = "$EXTENSION_ID"
+
+          cp "$CRX_FILE" "$SITE_DIR/extension/parola.crx"
+          cat > "$SITE_DIR/extension/updates.xml" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+            <app appid="$EXTENSION_ID">
+              <updatecheck codebase="$EXTENSION_CRX_URL" version="$VERSION" />
+            </app>
+          </gupdate>
+          EOF
+          cat > "$SITE_DIR/extension/version.json" <<EOF
+          {
+            "id": "$EXTENSION_ID",
+            "version": "$VERSION",
+            "commit": "$GITHUB_SHA",
+            "updateUrl": "$EXTENSION_UPDATE_URL",
+            "crxUrl": "$EXTENSION_CRX_URL"
+          }
+          EOF
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/parola-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

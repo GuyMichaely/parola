@@ -9,7 +9,7 @@ Parola Capture is a Chrome extension for collecting Italian words while studying
 - Captures are deduplicated by normalized Italian text and kept in extension-local staging storage.
 - Open **Review staged words** to edit the Italian form, English meaning, part of speech, and grammatical details, then approve and import cards into Parola.
 
-The extension no longer inspects Duolingo's DOM, logs into Duolingo for CI, or tries to determine which words Duolingo considers new.
+The extension does not inspect Duolingo's DOM or automate a Duolingo session.
 
 ## Debugging manual tests
 
@@ -29,8 +29,16 @@ npm install
 npm test
 ```
 
-The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, the shared selection-staging path, review persistence, debug logging, and the Parola browser-storage bridge. It deliberately does not automate a live Duolingo lesson.
+The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, the shared selection-staging path, review persistence, debug logging, and the Parola browser-storage bridge.
 
 ## Release
 
-`.github/workflows/publish-extension.yml` runs the deterministic tests, packages the extension with the existing signing key, and publishes the CRX/update feed to `guymichaely.com/extension/`. Release versions increment from the last successfully published `version.json`, so failed publish attempts do not consume version numbers.
+The extension release is part of the repository's single GitHub Pages deployment. `.github/workflows/deploy-pages.yml` runs the deterministic tests, packages the extension with the existing signing key, verifies the expected extension ID, and publishes alongside the web app.
+
+Canonical release locations:
+
+- update feed: `https://guymichaely.com/parola/extension/updates.xml`
+- CRX: `https://guymichaely.com/parola/extension/parola.crx`
+- release metadata: `https://guymichaely.com/parola/extension/version.json`
+
+The release version is source-controlled in both `manifest.json` and `package.json`; they must match. Bump them together when extension behavior changes. CI packages the exact source version rather than synthesizing a version from workflow state.

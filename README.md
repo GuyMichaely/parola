@@ -1,13 +1,23 @@
 # Parola
 
-Italian flashcard suite with three independently useful parts:
+Parola is an Italian flashcard suite with three independently understandable parts:
 
-- `web/` — static React/Vite flashcard frontend, deployed to GitHub Pages.
-- `api/` — optional Node card-storage API, deployed to Azure App Service.
-- `extension/` — Chrome capture extension for staging Italian words/contexts, reviewing card details, and importing approved cards into Parola.
+- `web/` — static React/Vite frontend.
+- `extension/` — Chrome extension for staging words and contexts before review/import.
+- `api/` — optional Node card-storage API.
 
-The web app uses browser `localStorage` by default and can instead use any HTTP endpoint implementing `web/docs/REMOTE_API.md`.
+## Production
 
-The extension is deliberately user-driven: capture a word from its popup, capture a word in sentence context with `*target*` markup, or stage highlighted text from the browser context menu. It keeps an exportable local debug event log for diagnosing manual tests.
+The public repository is the canonical source for both the web app and extension release.
 
-See `web/README.md` and `web/ARCHITECTURE.md` for the frontend, and `extension/README.md` for extension development and testing.
+- Web app: `https://guymichaely.com/parola/`
+- Extension update feed: `https://guymichaely.com/parola/extension/updates.xml`
+- Signed extension CRX: `https://guymichaely.com/parola/extension/parola.crx`
+
+`.github/workflows/deploy-pages.yml` builds the web app, tests and signs the extension, assembles both into one GitHub Pages artifact, and deploys that artifact from this repository.
+
+The optional API is deployed separately to Azure by `.github/workflows/deploy-api.yml`.
+
+The frontend uses browser `localStorage` by default and can instead use any HTTP endpoint implementing `web/docs/REMOTE_API.md`.
+
+See `web/README.md`, `web/ARCHITECTURE.md`, and `extension/README.md` for development details.

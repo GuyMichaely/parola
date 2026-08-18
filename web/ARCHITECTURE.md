@@ -1,16 +1,20 @@
 # Architecture
 
-Parola consists of a static React frontend and an optional remote card API.
+Parola consists of a static React frontend, a Chrome capture extension, and an optional remote card API.
 
 ```text
-GitHub Pages
+GitHub Pages (GuyMichaely/parola)
     |
-    v
-Parola web (React + Vite)
+    +--> Parola web (React + Vite)
+    |      |
+    |      +--> browser localStorage
+    |      |
+    |      +--> remote HTTP card API
     |
-    +--> browser localStorage
-    |
-    +--> remote HTTP card API
+    +--> signed Chrome extension release
+           |
+           +--> stages words/contexts
+           +--> imports approved cards into Parola web
 ```
 
 ## Web
@@ -55,6 +59,12 @@ src/
 
 `App.tsx` owns cross-cutting application state: the active study session, the current card collection, storage selection, and coordination between the study and inventory views. Domain transformations, persistence implementations, verification logic, and self-contained UI live outside the application shell.
 
+## Extension
+
+The Chrome extension is source-controlled under `extension/`. It stages user-selected Italian words and context, provides a review UI, and sends approved typed cards to the hosted Parola page through its content script.
+
+The extension release version is explicit source state in `extension/manifest.json` and `extension/package.json`. The single Pages workflow tests the extension, signs it with the repository secret, verifies the expected extension ID, and places its release files under the Pages artifact's `extension/` directory.
+
 ## Storage
 
 Card persistence is behind one CRUD contract:
@@ -79,4 +89,4 @@ The API is an independent Node service. It implements the same card CRUD semanti
 
 ## Deployment
 
-The frontend is built and deployed to GitHub Pages by `.github/workflows/deploy-web.yml`. The API is deployed independently to Azure App Service by `.github/workflows/deploy-api.yml` using GitHub OIDC.
+`.github/workflows/deploy-pages.yml` builds the web app, tests/signs the extension, assembles both into one GitHub Pages artifact, and deploys that artifact directly from this repository. The API is deployed independently to Azure App Service by `.github/workflows/deploy-api.yml` using GitHub OIDC.
