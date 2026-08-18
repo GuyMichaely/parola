@@ -14,7 +14,7 @@ await mkdir(outputDir, { recursive: true });
 
 function decodeSession(encoded) {
   const payload = JSON.parse(gunzipSync(Buffer.from(encoded.trim(), "base64")).toString("utf8"));
-  if (payload?.version !== 1 || payload?.origin !== origin) throw new Error("Unsupported Duolingo session-state payload");
+  if (![1, 2].includes(payload?.version) || payload?.origin !== origin) throw new Error("Unsupported Duolingo session-state payload");
   return payload;
 }
 
@@ -34,7 +34,7 @@ function cookieParam(cookie) {
 async function restoreSession(page, payload) {
   const client = await page.createCDPSession();
   await client.send("Network.enable");
-  await page.goto(`${origin}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(`${origin}/robots.txt`, { waitUntil: "domcontentloaded", timeout: 30000 });
   await client.send("Network.clearBrowserCookies");
   await client.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
   await client.send("Network.setCookies", { cookies: (payload.cookies || []).map(cookieParam) });
@@ -158,6 +158,7 @@ async function main() {
   let browser = null;
   try {
     const payload = decodeSession(await readFile(sessionPath, "ascii"));
+    summary.payloadVersion = payload.version;
     summary.cookieCount = payload.cookies?.length || 0;
     summary.localStorageKeyCount = Object.keys(payload.localStorage || {}).length;
     summary.sessionStorageKeyCount = Object.keys(payload.sessionStorage || {}).length;
