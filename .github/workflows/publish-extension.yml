@@ -71,7 +71,9 @@ jobs:
           mkdir -p "$RELEASE_DIR" "$BUILD_DIR/content"
 
           cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
-          cp extension/content/duolingo.js "$BUILD_DIR/content/"
+          cp extension/content/*.js "$BUILD_DIR/content/"
+          test -f "$BUILD_DIR/content/duolingo.js"
+          test -f "$BUILD_DIR/content/parola.js"
 
           python3 - "$BUILD_DIR/manifest.json" "$VERSION" "${GITHUB_SHA::8}" <<'PY'
           import json, sys
@@ -167,7 +169,7 @@ jobs:
           cp -a "$RUNNER_TEMP/parola-extension-release/." public-site/extension/
 
           git -C public-site config user.name "github-actions[bot]"
-          git -C public-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C public-site config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C public-site add extension
 
           if git -C public-site diff --cached --quiet; then
