@@ -43,16 +43,16 @@ npm install
 npm test
 ```
 
-The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, selection staging, review persistence, debug events, and the Parola browser-storage bridge.
+The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, selection staging, review focus/persistence, debug events, and the Parola browser-storage bridge.
 
 ## Release
 
-The extension release is part of the repository's single GitHub Pages deployment. `.github/workflows/deploy-pages.yml` runs the deterministic tests, packages the extension with the existing signing key, verifies the expected extension ID, and publishes alongside the web app.
+Extension releases are independent from the Parola web deployment. `.github/workflows/release-extension.yml` runs the deterministic tests, packages the extension with the existing signing key, verifies the expected extension ID, and publishes signed release assets through GitHub Releases.
 
 Canonical release locations:
 
-- update feed: `https://guymichaely.com/parola/extension/updates.xml`
-- CRX: `https://guymichaely.com/parola/extension/parola.crx`
-- release metadata: `https://guymichaely.com/parola/extension/version.json`
+- update feed: `https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml`
+- CRX: `https://github.com/GuyMichaely/parola/releases/latest/download/parola.crx`
+- release metadata: `https://github.com/GuyMichaely/parola/releases/latest/download/version.json`
 
 The release version is source-controlled in both `manifest.json` and `package.json`; they must match. Bump them together when extension behavior changes. CI packages the exact source version rather than synthesizing a version from workflow state.
