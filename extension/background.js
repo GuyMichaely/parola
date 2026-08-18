@@ -1,9 +1,9 @@
 const stagedKey = "parola-extension:staged";
-const diagnosticsKey = "parola-extension:diagnostics";
+const eventsKey = "parola-extension:debug-events";
 const parolaUrl = "https://guymichaely.com/parola/";
 const contextMenuId = "parola-stage-selection";
 const cardTypes = new Set(["noun", "verb", "adjective", "adverb"]);
-const maxDiagnostics = 500;
+const maxEvents = 500;
 
 function normalizeWord(value) {
   return String(value || "").normalize("NFC").trim().toLocaleLowerCase("it-IT");
@@ -24,10 +24,10 @@ function joinArticle(article, noun) {
 }
 
 async function readState() {
-  const stored = await chrome.storage.local.get([stagedKey, diagnosticsKey]);
+  const stored = await chrome.storage.local.get([stagedKey, eventsKey]);
   return {
     staged: Array.isArray(stored[stagedKey]) ? stored[stagedKey] : [],
-    diagnostics: Array.isArray(stored[diagnosticsKey]) ? stored[diagnosticsKey] : [],
+    events: Array.isArray(stored[eventsKey]) ? stored[eventsKey] : [],
   };
 }
 
@@ -36,26 +36,25 @@ async function writeStaged(staged) {
   await updateBadge(staged);
 }
 
-async function writeDiagnostics(diagnostics) {
-  await chrome.storage.local.set({ [diagnosticsKey]: diagnostics.slice(-maxDiagnostics) });
+async function writeEvents(events) {
+  await chrome.storage.local.set({ [eventsKey]: events.slice(-maxEvents) });
 }
 
-async function appendDiagnostic(kind, data = {}) {
-  const stored = await chrome.storage.local.get(diagnosticsKey);
-  const diagnostics = Array.isArray(stored[diagnosticsKey]) ? stored[diagnosticsKey] : [];
-  diagnostics.push({
+async function appendEvent(type, data = {}) {
+  const stored = await chrome.storage.local.get(eventsKey);
+  const events = Array.isArray(stored[eventsKey]) ? stored[eventsKey] : [];
+  events.push({
     id: crypto.randomUUID(),
-    kind,
-    capturedAt: new Date().toISOString(),
+    type,
+    at: new Date().toISOString(),
     ...data,
   });
-  await writeDiagnostics(diagnostics);
+  await writeEvents(events);
 }
 
 async function updateBadge(stagedOverride) {
   const staged = stagedOverride ?? (await readState()).staged;
-  const count = staged.filter((item) => item.status !== "discarded").length;
-  await chrome.action.setBadgeText({ text: count ? String(count) : "" });
+  await chrome.action.setBadgeText({ text: staged.length ? String(staged.length) : "" });
 }
 
 function parseInput(rawValue) {
@@ -87,11 +86,10 @@ async function stageCapture({ word, context = "", source = "popup", sourceUrl = 
   const state = await readState();
   const now = new Date().toISOString();
   const normalized = normalizeWord(cleanWord);
-  let item = state.staged.find((candidate) => candidate.normalizedWord === normalized && candidate.status !== "discarded");
+  let item = state.staged.find((candidate) => candidate.normalizedWord === normalized);
 
   if (item) {
-    item.lastDetectedAt = now;
-    item.detectionCount = (item.detectionCount || 1) + 1;
+    item.updatedAt = now;
     item.contexts = Array.isArray(item.contexts) ? item.contexts : [];
     if (cleanContext && !item.contexts.includes(cleanContext)) item.contexts.push(cleanContext);
     item.sources = Array.isArray(item.sources) ? item.sources : [];
@@ -106,9 +104,8 @@ async function stageCapture({ word, context = "", source = "popup", sourceUrl = 
       cardType: "",
       details: {},
       status: "pending",
-      firstDetectedAt: now,
-      lastDetectedAt: now,
-      detectionCount: 1,
+      createdAt: now,
+      updatedAt: now,
       contexts: cleanContext ? [cleanContext] : [],
       sources: source ? [source] : [],
       sourceUrl: String(sourceUrl || ""),
@@ -117,8 +114,7 @@ async function stageCapture({ word, context = "", source = "popup", sourceUrl = 
   }
 
   await writeStaged(state.staged);
-  await appendDiagnostic("positive-detection", {
-    event: "stage-capture",
+  await appendEvent("capture-staged", {
     source,
     sourceUrl: String(sourceUrl || ""),
     word: cleanWord,
@@ -132,23 +128,23 @@ async function stageCapture({ word, context = "", source = "popup", sourceUrl = 
 }
 
 function cardFromStaged(item) {
-  const detectedWord = String(item.word || "").normalize("NFC").trim();
+  const word = String(item.word || "").normalize("NFC").trim();
   const english = String(item.english || "").trim();
   const type = String(item.cardType || "");
   const d = cleanDetails(item.details);
-  if (!detectedWord) throw new Error("Every approved item needs an Italian word.");
-  if (!english) throw new Error(`${detectedWord} needs an English translation before it can be added.`);
-  if (!cardTypes.has(type)) throw new Error(`${detectedWord} needs a part of speech before it can be added.`);
+  if (!word) throw new Error("Every approved item needs an Italian word.");
+  if (!english) throw new Error(`${word} needs an English translation before it can be added.`);
+  if (!cardTypes.has(type)) throw new Error(`${word} needs a part of speech before it can be added.`);
 
   if (type === "noun") {
     const gender = d.gender;
-    const singular = d.singular || detectedWord;
+    const singular = d.singular || word;
     const plural = d.plural || "";
     const definiteSingularArticle = d.definiteSingularArticle || "";
     const definitePluralArticle = d.definitePluralArticle || "";
     const indefiniteArticle = d.indefiniteArticle || "";
-    if (!new Set(["masculine", "feminine"]).has(gender)) throw new Error(`${detectedWord} needs a noun gender.`);
-    if (!singular && !plural) throw new Error(`${detectedWord} needs a singular or plural noun form.`);
+    if (!new Set(["masculine", "feminine"]).has(gender)) throw new Error(`${word} needs a noun gender.`);
+    if (!singular && !plural) throw new Error(`${word} needs a singular or plural noun form.`);
     return {
       id: 0,
       type,
@@ -173,9 +169,9 @@ function cardFromStaged(item) {
   if (type === "verb") {
     const fields = ["infinitive", "io", "tu", "luiLei", "noi", "voi", "loro", "participle"];
     const missing = fields.find((field) => !d[field]);
-    if (missing) throw new Error(`${detectedWord} needs all verb forms before it can be added.`);
+    if (missing) throw new Error(`${word} needs all verb forms before it can be added.`);
     const auxiliary = d.auxiliary === "essere" ? "essere" : d.auxiliary === "avere" ? "avere" : "";
-    if (!auxiliary) throw new Error(`${detectedWord} needs an avere/essere auxiliary.`);
+    if (!auxiliary) throw new Error(`${word} needs an avere/essere auxiliary.`);
     return {
       id: 0,
       type,
@@ -197,12 +193,12 @@ function cardFromStaged(item) {
   }
 
   if (type === "adjective") {
-    const masculineSingular = d.masculineSingular || detectedWord;
+    const masculineSingular = d.masculineSingular || word;
     const feminineSingular = d.feminineSingular || "";
     const masculinePlural = d.masculinePlural || "";
     const femininePlural = d.femininePlural || "";
     if (![masculineSingular, feminineSingular, masculinePlural, femininePlural].every(Boolean)) {
-      throw new Error(`${detectedWord} needs all four adjective forms before it can be added.`);
+      throw new Error(`${word} needs all four adjective forms before it can be added.`);
     }
     return {
       id: 0,
@@ -215,8 +211,8 @@ function cardFromStaged(item) {
     };
   }
 
-  const form = d.form || detectedWord;
-  if (!form) throw new Error(`${detectedWord} needs an adverb form.`);
+  const form = d.form || word;
+  if (!form) throw new Error(`${word} needs an adverb form.`);
   return { id: 0, type, english, italian: form, setName: null, tags: [], details: {} };
 }
 
@@ -264,7 +260,7 @@ async function importStaged(message) {
   if (items.some((item) => item.status !== "approved")) throw new Error("Only approved words can be added to Parola.");
   const cards = items.map(cardFromStaged);
 
-  await appendDiagnostic("import-start", { ids: [...requestedIds], cardCount: cards.length });
+  await appendEvent("import-start", { ids: [...requestedIds], cardCount: cards.length });
   const tab = await chrome.tabs.create({ url: parolaUrl, active: true });
   if (!tab.id) throw new Error("Could not open Parola.");
   await waitForTabComplete(tab.id);
@@ -272,7 +268,7 @@ async function importStaged(message) {
 
   state.staged = state.staged.filter((item) => !requestedIds.has(String(item.id)));
   await writeStaged(state.staged);
-  await appendDiagnostic("import-success", {
+  await appendEvent("import-success", {
     ids: [...requestedIds],
     cardCount: cards.length,
     storage: imported.storage || "browser",
@@ -312,11 +308,11 @@ async function handleMessage(message) {
       const state = await readState();
       const manifest = chrome.runtime.getManifest();
       return {
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: new Date().toISOString(),
         extension: { id: chrome.runtime.id, name: manifest.name, version: manifest.version, versionName: manifest.version_name || null },
         staged: state.staged,
-        events: state.diagnostics,
+        events: state.events,
       };
     }
     case "update-staged": {
@@ -330,8 +326,9 @@ async function handleMessage(message) {
       if (typeof message.english === "string") item.english = message.english.trim();
       if (typeof message.cardType === "string") item.cardType = cardTypes.has(message.cardType) ? message.cardType : "";
       if (message.details && typeof message.details === "object" && !Array.isArray(message.details)) item.details = cleanDetails(message.details);
+      item.updatedAt = new Date().toISOString();
       await writeStaged(state.staged);
-      await appendDiagnostic("review-update", { stagedId: item.id, fields: Object.keys(message).filter((key) => !["type", "id"].includes(key)) });
+      await appendEvent("review-update", { stagedId: item.id, fields: Object.keys(message).filter((key) => !["type", "id"].includes(key)) });
       return { ok: true };
     }
     case "set-staged-status": {
@@ -339,8 +336,9 @@ async function handleMessage(message) {
       const item = state.staged.find((candidate) => candidate.id === message.id);
       if (!item) throw new Error("Staged word not found.");
       item.status = message.status === "approved" ? "approved" : "pending";
+      item.updatedAt = new Date().toISOString();
       await writeStaged(state.staged);
-      await appendDiagnostic("review-status", { stagedId: item.id, status: item.status });
+      await appendEvent("review-status", { stagedId: item.id, status: item.status });
       return { ok: true };
     }
     case "discard-staged": {
@@ -348,7 +346,7 @@ async function handleMessage(message) {
       const item = state.staged.find((candidate) => candidate.id === message.id);
       state.staged = state.staged.filter((candidate) => candidate.id !== message.id);
       await writeStaged(state.staged);
-      await appendDiagnostic("stage-discard", { stagedId: message.id, word: item?.word || "" });
+      await appendEvent("stage-discard", { stagedId: message.id, word: item?.word || "" });
       return { ok: true };
     }
     case "import-staged":
@@ -358,11 +356,11 @@ async function handleMessage(message) {
       const cleared = state.staged.length;
       state.staged = [];
       await writeStaged(state.staged);
-      await appendDiagnostic("stage-clear", { cleared });
+      await appendEvent("stage-clear", { cleared });
       return { ok: true };
     }
-    case "clear-diagnostics":
-      await writeDiagnostics([]);
+    case "clear-debug-events":
+      await writeEvents([]);
       return { ok: true };
     case "open-review":
       await chrome.tabs.create({ url: chrome.runtime.getURL("review.html") });
@@ -387,7 +385,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     source: "selection",
     sourceUrl: tab?.url || info.pageUrl || "",
     rawInput: info.selectionText,
-  }).catch((error) => appendDiagnostic("error", {
+  }).catch((error) => appendEvent("error", {
     operation: "context-menu-stage",
     message: error instanceof Error ? error.message : String(error),
   }));
@@ -396,7 +394,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void handleMessage(message).then(sendResponse).catch(async (error) => {
     const text = error instanceof Error ? error.message : String(error);
     try {
-      await appendDiagnostic("error", { operation: message?.type || "unknown-message", message: text });
+      await appendEvent("error", { operation: message?.type || "unknown-message", message: text });
     } catch {}
     sendResponse({ error: text });
   });

@@ -52,16 +52,21 @@ try {
   assert.deepEqual(state.staged.map((item) => item.word), ["gatto", "panino", "pollo"]);
   assert.deepEqual(state.staged[1].contexts, ["Vorrei un panino, per favore."]);
   assert.equal(state.staged[2].sourceUrl, "https://example.test/lesson");
+  assert.ok(state.staged.every((item) => item.createdAt && item.updatedAt));
+  assert.ok(Array.isArray(state.events));
 
   const debug = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-debug-bundle" }));
-  assert.equal(debug.formatVersion, 1);
+  assert.equal(debug.formatVersion, 2);
   assert.equal(debug.staged.length, 3);
-  assert.ok(debug.events.some((event) => event.event === "stage-capture" && event.word === "panino"));
-  assert.ok(debug.events.some((event) => event.kind === "error" && event.operation === "stage-input"));
+  assert.ok(debug.events.some((event) => event.type === "capture-staged" && event.word === "panino"));
+  assert.ok(debug.events.some((event) => event.type === "error" && event.operation === "stage-input"));
 
   const review = await browser.newPage();
   await review.goto(`chrome-extension://${extensionId}/review.html`);
   await review.waitForSelector('.staged-card[data-id] input[data-field="word"]');
+  const reviewText = await review.$eval("body", (element) => element.textContent || "");
+  assert.match(reviewText, /Italian/);
+  assert.match(reviewText, /Context:/);
   const gattoId = await review.$eval('.staged-card[data-id] input[data-field="word"]', (input) => input.closest(".staged-card").dataset.id);
   const gattoCard = `.staged-card[data-id="${gattoId}"]`;
   await review.$eval(`${gattoCard} input[data-field="english"]`, (input) => {
@@ -85,6 +90,8 @@ try {
   assert.equal(gatto.cardType, "noun");
   assert.equal(gatto.details.gender, "masculine");
   assert.equal(gatto.status, "approved");
+  assert.ok(reviewedState.events.some((event) => event.type === "review-update" && event.stagedId === gattoId));
+  assert.ok(reviewedState.events.some((event) => event.type === "review-status" && event.stagedId === gattoId));
 
   bridgeServer = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -130,7 +137,7 @@ try {
   assert.equal(imported.stored.length, 1);
   assert.equal(imported.stored[0].italian, "gatto");
 
-  console.log(`Extension ${extensionId} loaded; popup input, starred-sentence capture, selection staging, review state, debug logging, and the Parola browser-storage bridge passed deterministic tests.`);
+  console.log(`Extension ${extensionId} loaded; capture, staging, review state, debug events, and the Parola browser-storage bridge passed deterministic tests.`);
 } finally {
   if (bridgeServer) await new Promise((resolve) => bridgeServer.close(resolve));
   await browser.close();

@@ -1,5 +1,4 @@
 let currentState = null;
-const lessonId = new URLSearchParams(location.search).get("lesson") || "";
 const typeLabels = {
   noun: "Noun",
   verb: "Verb",
@@ -21,9 +20,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function shownItems(state = currentState) {
-  const staged = state?.staged || [];
-  return lessonId ? staged.filter((item) => item.lessonId === lessonId) : staged;
+function stagedItems(state = currentState) {
+  return state?.staged || [];
 }
 
 function typeOptions(selected) {
@@ -193,7 +191,7 @@ function stagedCard(item) {
         </div>
         <div class="review-fields">
           <label>
-            <span>Detected Italian</span>
+            <span>Italian</span>
             <input data-field="word" value="${escapeHtml(item.word)}" autocomplete="off" />
           </label>
           <label>
@@ -206,8 +204,7 @@ function stagedCard(item) {
           </label>
         </div>
         <div class="grammar-panel">${grammaticalFields(item)}</div>
-        <p class="captured-context">Duolingo context: ${escapeHtml(context)}</p>
-        <small>Detected ${item.detectionCount || 1} ${item.detectionCount === 1 ? "time" : "times"}</small>
+        <p class="captured-context">Context: ${escapeHtml(context)}</p>
       </div>
       <div class="inline-actions staged-actions">
         <button data-action="approve" class="${approved ? "" : "primary"}">${approved ? "Unapprove" : "Approve"}</button>
@@ -217,8 +214,7 @@ function stagedCard(item) {
 }
 
 function updateImportSummary() {
-  const visible = shownItems();
-  const approved = visible.filter((item) => item.status === "approved");
+  const approved = stagedItems().filter((item) => item.status === "approved");
   document.getElementById("approved-summary").textContent = `${approved.length} approved`;
   document.getElementById("add-approved").disabled = approved.length === 0;
 }
@@ -226,23 +222,20 @@ function updateImportSummary() {
 function render(state) {
   currentState = state;
   document.getElementById("version").textContent = state.version;
-  if (lessonId) {
-    document.getElementById("review-title").textContent = "Lesson complete";
-    document.getElementById("review-subtitle").textContent = "Review the new words Parola found in this lesson, complete their card details, then add the approved ones to your inventory.";
-  }
 
-  const visible = shownItems(state);
+  const staged = stagedItems(state);
   const list = document.getElementById("staged-list");
-  list.innerHTML = visible.length
-    ? visible.map(stagedCard).join("")
+  list.innerHTML = staged.length
+    ? staged.map(stagedCard).join("")
     : '<div class="empty-card">No staged words are waiting for review.</div>';
 
-  const positives = state.diagnostics.filter((item) => item.kind === "positive-detection").length;
-  const manual = state.diagnostics.filter((item) => item.kind === "manual-false-negative-snapshot").length;
-  document.getElementById("diagnostics-summary").innerHTML = `
-    <div><strong>${state.diagnostics.length}</strong><span>Total records</span></div>
-    <div><strong>${positives}</strong><span>Positive detections</span></div>
-    <div><strong>${manual}</strong><span>Manual snapshots</span></div>`;
+  const events = state.events || [];
+  const captures = events.filter((event) => event.type === "capture-staged").length;
+  const errors = events.filter((event) => event.type === "error").length;
+  document.getElementById("debug-summary").innerHTML = `
+    <div><strong>${events.length}</strong><span>Total events</span></div>
+    <div><strong>${captures}</strong><span>Captures staged</span></div>
+    <div><strong>${errors}</strong><span>Errors</span></div>`;
   updateImportSummary();
 }
 
@@ -287,7 +280,7 @@ function updateAdjectiveDetails(details, field, value) {
   };
 }
 
-function syncDetectedWord(item, value) {
+function syncItalianWord(item, value) {
   const oldWord = String(item.word || "");
   const nextDetails = { ...(item.details || {}) };
   if (item.cardType === "noun" && (!nextDetails.singular || nextDetails.singular === oldWord)) {
@@ -330,7 +323,7 @@ async function persistControl(control) {
     return true;
   }
   if (field === "word") {
-    const details = syncDetectedWord(item, value);
+    const details = syncItalianWord(item, value);
     item.word = value;
     item.details = details;
     await send({ type: "update-staged", id, word: value, details });
@@ -376,7 +369,7 @@ document.getElementById("staged-list").addEventListener("click", async (event) =
 
 document.getElementById("approve-all").addEventListener("click", async () => {
   try {
-    for (const item of shownItems()) {
+    for (const item of stagedItems()) {
       if (item.status !== "approved") {
         await send({ type: "set-staged-status", id: item.id, status: "approved" });
       }
@@ -388,7 +381,7 @@ document.getElementById("approve-all").addEventListener("click", async () => {
 });
 
 document.getElementById("add-approved").addEventListener("click", async () => {
-  const approved = shownItems().filter((item) => item.status === "approved");
+  const approved = stagedItems().filter((item) => item.status === "approved");
   if (!approved.length) return;
 
   const button = document.getElementById("add-approved");
@@ -408,25 +401,25 @@ document.getElementById("add-approved").addEventListener("click", async () => {
 });
 
 document.getElementById("clear-staged").addEventListener("click", async () => {
-  const visible = shownItems();
-  if (!visible.length) return;
-  if (!confirm(`Clear ${visible.length === 1 ? "this staged word" : "these staged words"}? Diagnostics will be kept.`)) return;
-  await send({ type: "clear-staged", lessonId });
+  const staged = stagedItems();
+  if (!staged.length) return;
+  if (!confirm(`Clear ${staged.length === 1 ? "this staged word" : "all staged words"}? Debug events will be kept.`)) return;
+  await send({ type: "clear-staged" });
   await refresh();
 });
 
-document.getElementById("clear-diagnostics").addEventListener("click", async () => {
-  if (!confirm("Clear all detector diagnostics?")) return;
-  await send({ type: "clear-diagnostics" });
+document.getElementById("clear-debug-events").addEventListener("click", async () => {
+  if (!confirm("Clear all debug events?")) return;
+  await send({ type: "clear-debug-events" });
   await refresh();
 });
 
-document.getElementById("export-diagnostics").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(currentState?.diagnostics || [], null, 2)], { type: "application/json" });
+document.getElementById("export-debug-events").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(currentState?.events || [], null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `parola-duolingo-diagnostics-${new Date().toISOString().replaceAll(":", "-")}.json`;
+  anchor.download = `parola-debug-events-${new Date().toISOString().replaceAll(":", "-")}.json`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });

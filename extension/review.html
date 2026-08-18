@@ -11,8 +11,8 @@
       <header class="review-header">
         <div>
           <span class="eyebrow">Parola Capture</span>
-          <h1 id="review-title">Review staged words</h1>
-          <p id="review-subtitle" class="review-subtitle">Complete the card details for anything you want to add to your Parola inventory.</p>
+          <h1>Review staged words</h1>
+          <p class="review-subtitle">Complete the card details for anything you want to add to your Parola inventory.</p>
         </div>
         <code id="version"></code>
       </header>
@@ -38,18 +38,18 @@
         </div>
       </section>
 
-      <section class="diagnostics-section">
+      <section class="debug-section">
         <div class="section-heading">
           <div>
             <h2>Debug log</h2>
-            <p>Staging, review, import, and error events are retained locally so a manual test can be diagnosed later.</p>
+            <p>Capture, review, import, and error events are retained locally so a manual test can be diagnosed later.</p>
           </div>
           <div class="inline-actions">
-            <button id="export-diagnostics">Export event JSON</button>
-            <button id="clear-diagnostics" class="danger-subtle">Clear events</button>
+            <button id="export-debug-events">Export event JSON</button>
+            <button id="clear-debug-events" class="danger-subtle">Clear events</button>
           </div>
         </div>
-        <div id="diagnostics-summary" class="diagnostics-summary"></div>
+        <div id="debug-summary" class="debug-summary"></div>
       </section>
     </main>
     <script type="module" src="review.js"></script>
