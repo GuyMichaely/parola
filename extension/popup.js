@@ -32,18 +32,172 @@ function normalizeCookie(cookie) {
   return result;
 }
 
+function cookieIdentity(cookie) {
+  return JSON.stringify([
+    cookie.name,
+    cookie.domain,
+    cookie.path,
+    cookie.storeId,
+    cookie.partitionKey?.topLevelSite || "",
+    Boolean(cookie.partitionKey?.hasCrossSiteAncestor),
+  ]);
+}
+
+function mergeCookies(...groups) {
+  const byIdentity = new Map();
+  for (const cookie of groups.flat()) byIdentity.set(cookieIdentity(cookie), cookie);
+  return [...byIdentity.values()];
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function gunzipText(encoded) {
+  const stream = new Blob([base64ToBytes(encoded)]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).text();
+}
+
+async function gzipText(value) {
+  const stream = new Blob([value]).stream().pipeThrough(new CompressionStream("gzip"));
+  return bytesToBase64(new Uint8Array(await new Response(stream).arrayBuffer()));
+}
+
+async function compactLocalStorage(storage) {
+  const compacted = { ...storage };
+  delete compacted["duo.clientSideGradingConfig"];
+  delete compacted["duo.clientSideGradingConfigTimestamp"];
+
+  const storedState = compacted["duo.state"];
+  if (!storedState) return compacted;
+  try {
+    const encoded = JSON.parse(storedState);
+    const envelope = JSON.parse(await gunzipText(encoded));
+    const redux = envelope?.state?.redux?.redux;
+    if (redux && typeof redux === "object") {
+      delete redux.courses;
+      delete redux.friends;
+      delete redux.goals;
+      delete redux.skills;
+    }
+    compacted["duo.state"] = JSON.stringify(await gzipText(JSON.stringify(envelope)));
+  } catch (error) {
+    console.warn("Parola could not compact duo.state; keeping the original value", error);
+  }
+  return compacted;
+}
+
 async function captureDuolingoPageState(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => ({
-      href: location.href,
-      pathname: location.pathname,
-      title: document.title,
-      hasPasswordInput: Boolean(document.querySelector('input[data-test="password-input"], input[type="password"]')),
-      bodyStart: (document.body?.innerText || "").trim().toLocaleLowerCase().slice(0, 1200),
-      localStorage: Object.fromEntries(Object.entries(localStorage)),
-      sessionStorage: Object.fromEntries(Object.entries(sessionStorage)),
-    }),
+    func: async () => {
+      function requestResult(request) {
+        return new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
+        });
+      }
+
+      function openDatabase(name) {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(name);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error(`Could not open IndexedDB database ${name}`));
+        });
+      }
+
+      async function captureIndexedDB() {
+        if (typeof indexedDB.databases !== "function") return [];
+        const databaseInfos = await indexedDB.databases();
+        const result = [];
+        const encoder = new TextEncoder();
+        const maxStoreBytes = 128_000;
+        const maxTotalBytes = 512_000;
+        let capturedBytes = 0;
+
+        for (const info of databaseInfos) {
+          if (!info.name) continue;
+          let database;
+          try {
+            database = await openDatabase(info.name);
+            const databaseResult = {
+              name: database.name,
+              version: database.version,
+              stores: [],
+            };
+            for (const storeName of [...database.objectStoreNames]) {
+              const transaction = database.transaction(storeName, "readonly");
+              const store = transaction.objectStore(storeName);
+              const records = await requestResult(store.getAll());
+              const keys = await requestResult(store.getAllKeys());
+              let serializableRecords = null;
+              let serializableKeys = null;
+              let approximateBytes = 0;
+              try {
+                const recordsJson = JSON.stringify(records);
+                const keysJson = JSON.stringify(keys);
+                approximateBytes = encoder.encode(recordsJson).length + encoder.encode(keysJson).length;
+                if (approximateBytes <= maxStoreBytes && capturedBytes + approximateBytes <= maxTotalBytes) {
+                  serializableRecords = JSON.parse(recordsJson);
+                  serializableKeys = JSON.parse(keysJson);
+                  capturedBytes += approximateBytes;
+                }
+              } catch {
+                // Keep schema/count metadata even when a value is not JSON-serializable.
+              }
+              databaseResult.stores.push({
+                name: store.name,
+                keyPath: store.keyPath,
+                autoIncrement: store.autoIncrement,
+                indexes: [...store.indexNames].map((indexName) => {
+                  const index = store.index(indexName);
+                  return {
+                    name: index.name,
+                    keyPath: index.keyPath,
+                    multiEntry: index.multiEntry,
+                    unique: index.unique,
+                  };
+                }),
+                entryCount: records.length,
+                approximateBytes,
+                captured: Boolean(serializableRecords && serializableKeys),
+                records: serializableRecords,
+                keys: serializableKeys,
+              });
+            }
+            result.push(databaseResult);
+          } catch (error) {
+            result.push({ name: info.name, version: info.version || 1, error: String(error), stores: [] });
+          } finally {
+            database?.close();
+          }
+        }
+        return result;
+      }
+
+      return {
+        href: location.href,
+        pathname: location.pathname,
+        title: document.title,
+        hasPasswordInput: Boolean(document.querySelector('input[data-test="password-input"], input[type="password"]')),
+        bodyStart: (document.body?.innerText || "").trim().toLocaleLowerCase().slice(0, 1200),
+        localStorage: Object.fromEntries(Object.entries(localStorage)),
+        sessionStorage: Object.fromEntries(Object.entries(sessionStorage)),
+        indexedDB: await captureIndexedDB(),
+      };
+    },
   });
   return result;
 }
@@ -54,6 +208,24 @@ function looksLoggedOut(pageState) {
   if (/\/log-in(?:\/|$)/.test(pageState.pathname || "")) return true;
   const text = pageState.bodyStart || "";
   return (text.includes("get started") && text.includes("log in")) || text.includes("sign up with google");
+}
+
+async function captureCookies(tab) {
+  const byDomain = await chrome.cookies.getAll({ domain: "duolingo.com" });
+  const byUrl = await chrome.cookies.getAll({ url: tab.url });
+  let partitioned = [];
+  try {
+    const details = await chrome.cookies.getPartitionKey({ tabId: tab.id, frameId: 0 });
+    if (details?.partitionKey) {
+      partitioned = await chrome.cookies.getAll({
+        url: tab.url,
+        partitionKey: details.partitionKey,
+      });
+    }
+  } catch (error) {
+    console.warn("Parola could not inspect partitioned Duolingo cookies", error);
+  }
+  return mergeCookies(byDomain, byUrl, partitioned);
 }
 
 async function prepareSessionExport() {
@@ -67,17 +239,18 @@ async function prepareSessionExport() {
     throw new Error("This Duolingo tab appears to be logged out. Log into the disposable test account, then export again.");
   }
 
-  const cookies = await chrome.cookies.getAll({ domain: "duolingo.com" });
+  const cookies = await captureCookies(tab);
   if (!cookies.length) throw new Error("No Duolingo cookies were found for this browser profile.");
 
   const payload = {
-    version: 1,
+    version: 2,
     origin: "https://www.duolingo.com",
     exportedAt: new Date().toISOString(),
     sourceUrl: pageState.href,
     cookies: cookies.map(normalizeCookie),
-    localStorage: pageState.localStorage || {},
+    localStorage: await compactLocalStorage(pageState.localStorage || {}),
     sessionStorage: pageState.sessionStorage || {},
+    indexedDB: pageState.indexedDB || [],
   };
 
   await chrome.storage.local.set({ [sessionExportKey]: payload });
