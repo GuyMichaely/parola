@@ -53,6 +53,7 @@ jobs:
 
           mkdir -p /tmp/parola-github-hosted-profile
           "$CHROME" \
+            --headless=new \
             --user-data-dir=/tmp/parola-github-hosted-profile \
             --remote-debugging-port=9222 \
             --remote-debugging-address=127.0.0.1 \
