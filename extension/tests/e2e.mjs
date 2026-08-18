@@ -32,6 +32,30 @@ try {
   assert.match(await popup.title(), /Parola/i);
   assert.equal(await popup.$eval("#staged-count", (el) => el.textContent), "0");
 
+  await popup.evaluate(() => chrome.storage.local.set({
+    "parola-extension:duolingo-session-export": {
+      version: 1,
+      origin: "https://www.duolingo.com",
+      exportedAt: "2026-08-18T00:00:00.000Z",
+      sourceUrl: "https://www.duolingo.com/learn",
+      cookies: [
+        { name: "session-test", value: "abc", domain: ".duolingo.com", path: "/", secure: true, httpOnly: true, session: true },
+        { name: "client-test", value: "xyz", domain: ".duolingo.com", path: "/", secure: true, httpOnly: false, session: true },
+      ],
+      localStorage: { alpha: "one" },
+      sessionStorage: { beta: "two" },
+    },
+  }));
+  const exportPage = await browser.newPage();
+  await exportPage.goto(`chrome-extension://${extensionId}/session-export.html`);
+  await exportPage.waitForFunction(() => document.querySelector("#download-session")?.disabled === false, { timeout: 5000 });
+  const exportSummary = await exportPage.$eval("#export-summary", (el) => el.textContent);
+  assert.match(exportSummary, /2\s*Duolingo cookies/);
+  assert.match(exportSummary, /1\s*HttpOnly cookies/);
+  assert.match(exportSummary, /2\s*Storage keys/);
+  assert.match(await exportPage.$eval("#export-status", (el) => el.textContent), /Ready/);
+  await exportPage.close();
+
   const fixture = await readFile(path.join(extensionRoot, "tests", "fixture.html"), "utf8");
   const page = await browser.newPage();
   await page.setContent(fixture);
@@ -182,7 +206,7 @@ try {
   assert.equal(imported.stored[0].italian, "verde");
   assert.equal(imported.stored[0].details.femininePlural, "verdi");
 
-  console.log(`Extension ${extensionId} loaded; detector staged ${detection.word}, recognized lesson completion, persisted complete review metadata, and imported a studyable card into Parola browser storage.`);
+  console.log(`Extension ${extensionId} loaded; session export encoded, detector staged ${detection.word}, lesson completion was recognized, complete review metadata persisted, and a studyable card imported into Parola browser storage.`);
 } finally {
   if (bridgeServer) await new Promise((resolve) => bridgeServer.close(resolve));
   await browser.close();
