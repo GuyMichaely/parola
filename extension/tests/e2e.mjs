@@ -69,12 +69,36 @@ try {
   assert.match(reviewText, /Context:/);
   const gattoId = await review.$eval('.staged-card[data-id] input[data-field="word"]', (input) => input.closest(".staged-card").dataset.id);
   const gattoCard = `.staged-card[data-id="${gattoId}"]`;
-  await review.$eval(`${gattoCard} input[data-field="english"]`, (input) => {
-    input.value = "cat";
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await review.select(`${gattoCard} select[data-field="cardType"]`, "noun");
+  const italianSelector = `${gattoCard} input[data-field="word"]`;
+  const englishSelector = `${gattoCard} input[data-field="english"]`;
+  const typeSelector = `${gattoCard} select[data-field="cardType"]`;
+
+  await review.focus(italianSelector);
+  await review.$eval(italianSelector, (input) => { input.value = "gattino"; });
+  await review.keyboard.press("Tab");
+  await review.waitForFunction(
+    (selector) => document.activeElement === document.querySelector(selector),
+    { timeout: 5000 },
+    englishSelector,
+  );
+
+  await review.keyboard.type("cat");
+  await review.keyboard.press("Tab");
+  await review.waitForFunction(
+    (selector) => document.activeElement === document.querySelector(selector),
+    { timeout: 5000 },
+    typeSelector,
+  );
+
+  await review.select(typeSelector, "noun");
   await review.waitForSelector(`${gattoCard} select[data-detail="gender"]`);
+  await review.keyboard.press("Tab");
+  await review.waitForFunction(
+    (selector) => document.activeElement === document.querySelector(selector),
+    { timeout: 5000 },
+    `${gattoCard} select[data-detail="gender"]`,
+  );
+
   await review.select(`${gattoCard} select[data-detail="gender"]`, "masculine");
   await new Promise((resolve) => setTimeout(resolve, 300));
   await review.click(`${gattoCard} button[data-action="approve"]`);
@@ -86,6 +110,7 @@ try {
 
   const reviewedState = await review.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
   const gatto = reviewedState.staged.find((item) => item.id === gattoId);
+  assert.equal(gatto.word, "gattino");
   assert.equal(gatto.english, "cat");
   assert.equal(gatto.cardType, "noun");
   assert.equal(gatto.details.gender, "masculine");
@@ -137,7 +162,7 @@ try {
   assert.equal(imported.stored.length, 1);
   assert.equal(imported.stored[0].italian, "gatto");
 
-  console.log(`Extension ${extensionId} loaded; capture, staging, review state, debug events, and the Parola browser-storage bridge passed deterministic tests.`);
+  console.log(`Extension ${extensionId} loaded; capture, staging, review focus/state, debug events, and the Parola browser-storage bridge passed deterministic tests.`);
 } finally {
   if (bridgeServer) await new Promise((resolve) => bridgeServer.close(resolve));
   await browser.close();
