@@ -18,6 +18,37 @@ function normalizeControlText(value) {
     .toLocaleLowerCase();
 }
 
+async function captureStartState(page, originalEvaluate, clickedStartText) {
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const snapshot = await originalEvaluate((clickedText) => {
+    function visible(element) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") > 0
+        && rect.width > 0
+        && rect.height > 0;
+    }
+    return {
+      href: location.href,
+      pathname: location.pathname,
+      clickedStartText: clickedText,
+      bodyText: (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 20_000),
+      visibleButtons: [...document.querySelectorAll("button")]
+        .filter(visible)
+        .map((button) => ({
+          text: (button.innerText || button.textContent || "").replace(/\s+/g, " ").trim().slice(0, 500),
+          dataTest: button.getAttribute("data-test"),
+          ariaLabel: button.getAttribute("aria-label"),
+          disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
+        })),
+    };
+  }, clickedStartText);
+  await writeFile(path.join(outputDir, "start-transition.json"), JSON.stringify(snapshot, null, 2));
+  await page.screenshot({ path: path.join(outputDir, "start-transition.png"), fullPage: false });
+}
+
 async function hardenPageForOrganicStart(page) {
   const originalEvaluate = page.evaluate.bind(page);
   const originalWaitForFunction = page.waitForFunction.bind(page);
@@ -42,6 +73,7 @@ async function hardenPageForOrganicStart(page) {
         }, button);
         if (!info.visible || info.disabled || !normalizeControlText(info.text).startsWith("start")) continue;
         await button.click();
+        await captureStartState(page, originalEvaluate, info.text);
         return true;
       }
     }
