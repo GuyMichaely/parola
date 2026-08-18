@@ -79,9 +79,16 @@ jobs:
 
           async def handle(client_r, client_w):
               try:
-                  remote_r, remote_w = await asyncio.open_connection('parola-residential-exit', 9222)
+                  remote_r, remote_w = await asyncio.wait_for(
+                      asyncio.open_connection('parola-residential-exit', 9222),
+                      timeout=4,
+                  )
               except Exception:
                   client_w.close()
+                  try:
+                      await client_w.wait_closed()
+                  except Exception:
+                      pass
                   return
               await asyncio.gather(relay(client_r, remote_w), relay(remote_r, client_w))
 
@@ -94,8 +101,10 @@ jobs:
           PY
           python /tmp/parola-forward.py >/tmp/parola-forward.out 2>/tmp/parola-forward.err &
           echo $! >/tmp/parola-forward.pid
-          for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:9222/json/version >/dev/null && exit 0
+          for _ in $(seq 1 12); do
+            if curl --connect-timeout 3 --max-time 5 -fsS http://127.0.0.1:9222/json/version >/dev/null; then
+              exit 0
+            fi
             sleep 1
           done
           echo "Could not reach residential Chrome through Python forwarder" >&2
