@@ -60,6 +60,19 @@ jobs:
           DUOLINGO_SESSION_STATE_FILE: tests/fixtures/duolingo-session-state.b64
         run: xvfb-run -a node tests/organic-duolingo.mjs
 
+      - name: Summarize organic lesson result
+        if: always()
+        shell: bash
+        run: |
+          if test -f extension/organic-duolingo-capture/summary.json; then
+            {
+              echo '## Organic Duolingo E2E summary'
+              echo '```json'
+              cat extension/organic-duolingo-capture/summary.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload organic lesson artifact
         if: always()
         uses: actions/upload-artifact@v4
