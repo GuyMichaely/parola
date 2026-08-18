@@ -48,8 +48,11 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Install live-test dependencies
-        run: python -m pip install -r extension/tests/requirements-live.txt
+      - name: Install and validate live-test dependencies
+        working-directory: extension
+        run: |
+          python -m pip install -r tests/requirements-live.txt
+          python -m py_compile tests/live-duolingo.py
 
       - name: Run extension against authenticated Duolingo origin
         working-directory: extension
