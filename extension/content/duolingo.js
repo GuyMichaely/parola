@@ -74,25 +74,29 @@
     return best;
   }
 
-  function semanticHintCandidate(root) {
+  function semanticHintCandidates(root) {
+    const result = [];
+    const seen = new Set();
     for (const hint of root.querySelectorAll?.('[data-test="hint-token"][aria-label]') || []) {
       const word = normalizeText(hint.getAttribute("aria-label"));
       if (!validWord(word) || !visible(hint)) continue;
 
-      // Real Duolingo new vocabulary tokens carry three visual-decoration children.
-      // Ordinary clickable translation-hint tokens are empty. This is substantially
-      // more precise than looking for purple text, because the prompt itself is split
-      // into single-character spans whose styling otherwise causes false positives.
+      // Real Duolingo new vocabulary tokens carry visual-decoration children.
+      // Ordinary clickable translation-hint overlays are empty. Some exercises
+      // introduce multiple words at once, so preserve every decorated token.
       if (hint.childElementCount === 0) continue;
+      const normalized = word.toLocaleLowerCase("it-IT");
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
 
-      return {
+      result.push({
         element: hint,
         word,
         color: getComputedStyle(hint).color,
         source: "new-word-hint-token",
-      };
+      });
     }
-    return null;
+    return result;
   }
 
   function selectFeedbackCandidate(root) {
@@ -118,8 +122,8 @@
   }
 
   function newWordCandidates(root) {
-    const hint = semanticHintCandidate(root);
-    if (hint) return [hint];
+    const hints = semanticHintCandidates(root);
+    if (hints.length) return hints;
 
     const select = selectFeedbackCandidate(root);
     if (select) return [select];
@@ -243,7 +247,7 @@
     const lesson = ensureLessonSession();
     const context = candidateContext(candidate.element, root);
     const exerciseText = normalizeText(root.innerText || root.textContent);
-    const fingerprint = [lesson.id, candidate.word, context, exerciseText.slice(0, 500), location.pathname].join("\u241f");
+    const fingerprint = [lesson.id, candidate.word.toLocaleLowerCase("it-IT"), context, describeElement(root).dataTest || location.pathname].join("\u241f");
     if (seenFingerprints.has(fingerprint)) return;
     seenFingerprints.add(fingerprint);
 
