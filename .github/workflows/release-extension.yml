@@ -1,0 +1,162 @@
+name: Release Parola Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+      - ".github/workflows/release-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parola-extension-release
+  cancel-in-progress: false
+
+env:
+  EXTENSION_ID: kekniohgmpmijldjfamhjehnbmkmiajg
+  EXTENSION_UPDATE_URL: https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml
+  EXTENSION_CRX_URL: https://github.com/GuyMichaely/parola/releases/latest/download/parola.crx
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install extension test dependencies and Chrome
+        working-directory: extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts
+          npx puppeteer browsers install chrome
+          CHROME_PATH="$(find "$HOME/.cache/puppeteer/chrome" -type f -path '*/chrome-linux64/chrome' -perm -u+x | sort | tail -n 1)"
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate and test extension
+        working-directory: extension
+        run: |
+          node --check background.js
+          node --check content/parola.js
+          node --check focus-preservation.js
+          node --check popup.js
+          node --check review.js
+          node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
+          xvfb-run -a npm test
+
+      - name: Package signed extension and release metadata
+        env:
+          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_KEY"
+
+          BUILD_DIR="$RUNNER_TEMP/parola-extension"
+          RELEASE_DIR="$RUNNER_TEMP/parola-extension-release"
+          KEY_FILE="$RUNNER_TEMP/parola-extension.pem"
+
+          rm -rf "$BUILD_DIR" "$RELEASE_DIR" "${BUILD_DIR}.crx"
+          mkdir -p "$BUILD_DIR/content" "$RELEASE_DIR"
+
+          cp extension/manifest.json extension/background.js extension/focus-preservation.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
+          cp extension/content/*.js "$BUILD_DIR/content/"
+
+          VERSION="$(node -p "require('./extension/package.json').version")"
+          MANIFEST_VERSION="$(node -p "require('./extension/manifest.json').version")"
+          test "$VERSION" = "$MANIFEST_VERSION"
+
+          printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          "$CHROME_PATH" --headless=new --no-sandbox \
+            --pack-extension="$BUILD_DIR" \
+            --pack-extension-key="$KEY_FILE"
+
+          CRX_FILE="${BUILD_DIR}.crx"
+          test -s "$CRX_FILE"
+
+          HEX_ID="$(openssl rsa -in "$KEY_FILE" -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | xxd -p -c 256 | cut -c1-32)"
+          BUILT_EXTENSION_ID="$(python3 - "$HEX_ID" <<'PY'
+          import sys
+          print(''.join(chr(ord('a') + int(ch, 16)) for ch in sys.argv[1]))
+          PY
+          )"
+          test "$BUILT_EXTENSION_ID" = "$EXTENSION_ID"
+
+          cp "$CRX_FILE" "$RELEASE_DIR/parola.crx"
+          cat > "$RELEASE_DIR/updates.xml" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+            <app appid="$EXTENSION_ID">
+              <updatecheck codebase="$EXTENSION_CRX_URL" version="$VERSION" />
+            </app>
+          </gupdate>
+          EOF
+          cat > "$RELEASE_DIR/version.json" <<EOF
+          {
+            "id": "$EXTENSION_ID",
+            "version": "$VERSION",
+            "commit": "$GITHUB_SHA",
+            "updateUrl": "$EXTENSION_UPDATE_URL",
+            "crxUrl": "$EXTENSION_CRX_URL"
+          }
+          EOF
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_DIR=$RELEASE_DIR" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="v$VERSION"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Parola Capture $VERSION" \
+              --notes "Signed Parola Capture extension $VERSION."
+          fi
+
+          RELEASE_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)"
+
+          for name in parola.crx updates.xml version.json; do
+            ASSET_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate --jq ".[] | select(.name == \"$name\") | .id" | head -n 1)"
+            if [ -n "$ASSET_ID" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+            fi
+          done
+
+          upload_asset() {
+            local path="$1"
+            local name="$2"
+            local content_type="$3"
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: $content_type" \
+              --data-binary "@$path" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
+              >/dev/null
+          }
+
+          upload_asset "$RELEASE_DIR/parola.crx" parola.crx application/x-chrome-extension
+          upload_asset "$RELEASE_DIR/updates.xml" updates.xml application/xml
+          upload_asset "$RELEASE_DIR/version.json" version.json application/json
