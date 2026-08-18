@@ -52,36 +52,31 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Prepare residential Chrome tunnel
+      - name: Verify residential Chrome is reachable
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -r extension/tests/requirements-live.txt
-          if ! command -v socat >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y socat
-          fi
-          socat TCP-LISTEN:9222,bind=127.0.0.1,reuseaddr,fork TCP:parola-residential-exit:9222 &
-          echo $! >/tmp/parola-cdp-socat.pid
           for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:9222/json/version >/dev/null && exit 0
+            curl -fsS http://parola-residential-exit:9222/json/version >/dev/null && exit 0
             sleep 1
           done
           echo "Could not reach residential Chrome" >&2
+          tailscale status || true
           exit 1
 
       - name: Establish accepted Duolingo login
         working-directory: extension
         env:
           DUOLINGO_CAPTURE_DIR: session-refresh-login
-          DUOLINGO_CDP_HOST: 127.0.0.1
+          DUOLINGO_CDP_HOST: parola-residential-exit
           DUOLINGO_CDP_PORT: "9222"
         run: python tests/duolingo-gold-replay.py
 
       - name: Export authenticated state into repository
         working-directory: extension
         env:
-          DUOLINGO_CDP_HOST: 127.0.0.1
+          DUOLINGO_CDP_HOST: parola-residential-exit
           DUOLINGO_CDP_PORT: "9222"
           DUOLINGO_SESSION_OUTPUT: tests/fixtures/duolingo-session-state.b64
         run: python tests/duolingo-export-session.py
@@ -105,11 +100,3 @@ jobs:
           path: extension/session-refresh-login
           if-no-files-found: warn
           retention-days: 7
-
-      - name: Stop CDP tunnel
-        if: always()
-        shell: bash
-        run: |
-          if [[ -f /tmp/parola-cdp-socat.pid ]]; then
-            kill "$(cat /tmp/parola-cdp-socat.pid)" 2>/dev/null || true
-          fi
