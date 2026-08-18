@@ -25,9 +25,9 @@ A staged item contains the editable card candidate plus capture context:
 
 Staging is intentionally user-driven and global to the extension.
 
-## Debugging manual tests
+## Manual testing and debugging
 
-The extension records a bounded local debug-event log covering capture, review changes, imports, and errors. Click **Export debug log** in the popup to download a JSON bundle containing:
+Extension behavior is tested manually with the signed extension. The extension records a bounded local debug-event log covering capture, review changes, imports, and errors. Click **Export debug log** in the popup to download a JSON bundle containing:
 
 - extension ID/version;
 - current staged items;
@@ -35,19 +35,11 @@ The extension records a bounded local debug-event log covering capture, review c
 
 When a manual test behaves incorrectly, reproduce the problem once, export the debug log, and provide that JSON with a short description of what you expected and observed.
 
-## Deterministic tests
-
-```bash
-cd extension
-npm install
-npm test
-```
-
-The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, selection staging, review focus/persistence, debug events, and the Parola browser-storage bridge.
+CI performs lightweight static validation of the JavaScript source and manifest. It does not launch the extension or run browser automation.
 
 ## Release
 
-Extension releases are independent from the Parola web deployment. `.github/workflows/release-extension.yml` runs the deterministic tests, packages the extension with the existing signing key, verifies the expected extension ID, and publishes signed release assets through GitHub Releases.
+Extension releases are independent from the Parola web deployment. `.github/workflows/release-extension.yml` statically validates the extension source, packages it with the existing signing key, verifies the expected extension ID, and publishes signed release assets through GitHub Releases.
 
 Canonical release locations:
 
@@ -55,4 +47,4 @@ Canonical release locations:
 - CRX: `https://github.com/GuyMichaely/parola/releases/latest/download/parola.crx`
 - release metadata: `https://github.com/GuyMichaely/parola/releases/latest/download/version.json`
 
-The release version is source-controlled in both `manifest.json` and `package.json`; they must match. Bump them together when extension behavior changes. CI packages the exact source version rather than synthesizing a version from workflow state.
+The release version is source-controlled in `manifest.json`. CI packages that exact version rather than synthesizing a version from workflow state.

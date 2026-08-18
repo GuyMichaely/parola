@@ -11,10 +11,12 @@ Parola is an Italian flashcard suite with three independently understandable par
 The public repository is the canonical source for both the web app and extension release.
 
 - Web app: `https://guymichaely.com/parola/`
-- Extension update feed: `https://guymichaely.com/parola/extension/updates.xml`
-- Signed extension CRX: `https://guymichaely.com/parola/extension/parola.crx`
+- Extension update feed: `https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml`
+- Signed extension CRX: `https://github.com/GuyMichaely/parola/releases/latest/download/parola.crx`
 
-`.github/workflows/deploy-pages.yml` builds the web app, tests and signs the extension, assembles both into one GitHub Pages artifact, and deploys that artifact from this repository.
+`.github/workflows/release-extension.yml` statically validates and signs the extension, verifies its fixed extension ID, and publishes release assets through GitHub Releases.
+
+`.github/workflows/deploy-pages.yml` builds and deploys the web app. During the current extension-feed migration it also publishes the temporary compatibility feed under `/parola/extension/`; that bridge can be removed once installed clients have updated to the GitHub Releases feed.
 
 The optional API is deployed separately to Azure by `.github/workflows/deploy-api.yml`.
 
