@@ -19,7 +19,6 @@ jobs:
   capture:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -74,22 +73,22 @@ jobs:
             tailscale status
             exit 1
           fi
-          python -c 'import nodriver; print("nodriver", nodriver.__version__)'
 
-      - name: Compare accepted and rejected login requests
+      - name: Test authenticated session transplant
         working-directory: extension
         env:
-          DUOLINGO_CAPTURE_DIR: request-diff-capture
+          DUOLINGO_CAPTURE_DIR: session-transplant-capture
           DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
-        run: python tests/duolingo-request-diff.py
+          CHROME_PATH: /usr/bin/google-chrome
+        run: python tests/duolingo-session-transplant.py
 
-      - name: Upload request diff
+      - name: Upload session transplant result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: duolingo-request-diff
-          path: extension/request-diff-capture
+          name: duolingo-session-transplant
+          path: extension/session-transplant-capture
           if-no-files-found: warn
           retention-days: 14
 
