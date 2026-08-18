@@ -69,6 +69,50 @@ async function restoreSession(page, payload) {
   return state;
 }
 
+async function captureLearnDiagnostics(page) {
+  const diagnostics = await page.evaluate(() => {
+    function isVisible(element) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") > 0
+        && rect.width > 0
+        && rect.height > 0;
+    }
+    const seen = new Set();
+    const interactives = [];
+    for (const element of document.querySelectorAll("a,button,[role='button']")) {
+      if (!isVisible(element) || seen.has(element)) continue;
+      seen.add(element);
+      const rect = element.getBoundingClientRect();
+      interactives.push({
+        tag: element.tagName,
+        text: (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300),
+        ariaLabel: element.getAttribute("aria-label"),
+        dataTest: element.getAttribute("data-test"),
+        role: element.getAttribute("role"),
+        href: element instanceof HTMLAnchorElement ? element.href : null,
+        disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true",
+        rect: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+      });
+    }
+    return {
+      href: location.href,
+      title: document.title,
+      bodyText: (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 30000),
+      interactives,
+    };
+  });
+  await writeFile(path.join(outputDir, "00-learn-diagnostics.json"), JSON.stringify(diagnostics, null, 2));
+  return diagnostics;
+}
+
 async function injectSmokeExercise(page) {
   await page.evaluate((word) => {
     document.getElementById("parola-live-smoke")?.remove();
@@ -142,6 +186,8 @@ async function main() {
     summary.authenticated = true;
     summary.duolingoUrl = authState.href;
     await page.screenshot({ path: path.join(outputDir, "00-authenticated-learn.png"), fullPage: false });
+    const diagnostics = await captureLearnDiagnostics(page);
+    summary.learnInteractiveCount = diagnostics.interactives.length;
 
     await injectSmokeExercise(page);
     await new Promise((resolve) => setTimeout(resolve, 1000));
