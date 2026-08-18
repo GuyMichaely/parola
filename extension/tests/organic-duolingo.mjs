@@ -252,7 +252,7 @@ function planForState(state, challenges) {
 
   if (body.includes("Which one of these is")) {
     const header = lines.find((line) => line.includes("Which one of these is")) || "";
-    const quoted = header.match(/[“\"]([^”\"]+)[”\"]/u)?.[1] || "";
+    const quoted = header.match(/[“"]([^”"]+)[”"]/u)?.[1] || "";
     const challenge = findPromptChallenge(challenges, quoted, ["select"]);
     if (!challenge) throw new Error(`Could not match select prompt ${JSON.stringify(quoted)}`);
     return { kind: "select", challenge, answer: [choiceText(challenge.choices?.[challenge.correctIndex])] };
