@@ -1,7 +1,5 @@
 name: Capture live Duolingo
 
-# GitHub runs the automation driver. A dedicated Chrome process runs on the
-# residential machine and exposes only its CDP port privately through Tailscale.
 on:
   workflow_dispatch:
   push:
@@ -78,20 +76,20 @@ jobs:
           fi
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
 
-      - name: Replay successful Duolingo input pattern automatically
+      - name: Compare accepted and rejected login requests
         working-directory: extension
         env:
-          DUOLINGO_CAPTURE_DIR: gold-replay-capture
+          DUOLINGO_CAPTURE_DIR: request-diff-capture
           DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
-        run: python tests/duolingo-gold-replay.py
+        run: python tests/duolingo-request-diff.py
 
-      - name: Upload replay trace
+      - name: Upload request diff
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: duolingo-gold-replay
-          path: extension/gold-replay-capture
+          name: duolingo-request-diff
+          path: extension/request-diff-capture
           if-no-files-found: warn
           retention-days: 14
 
