@@ -34,24 +34,35 @@ try {
 
   await popup.evaluate(() => chrome.storage.local.set({
     "parola-extension:duolingo-session-export": {
-      version: 1,
+      version: 2,
       origin: "https://www.duolingo.com",
       exportedAt: "2026-08-18T00:00:00.000Z",
       sourceUrl: "https://www.duolingo.com/learn",
       cookies: [
+        { name: "jwt_token", value: "test-jwt", domain: ".duolingo.com", path: "/", secure: true, httpOnly: false, session: false },
         { name: "session-test", value: "abc", domain: ".duolingo.com", path: "/", secure: true, httpOnly: true, session: true },
         { name: "client-test", value: "xyz", domain: ".duolingo.com", path: "/", secure: true, httpOnly: false, session: true },
       ],
+      cookieDiagnostics: {
+        cookiePermissionGranted: true,
+        grantedOrigins: ["https://duolingo.com/*", "https://*.duolingo.com/*"],
+        cookieNames: ["client-test", "jwt_token", "session-test"],
+        cookieDomains: [".duolingo.com"],
+        jwtTokenVisible: true,
+        partitionedCookieCount: 0,
+      },
       localStorage: { alpha: "one" },
       sessionStorage: { beta: "two" },
+      indexedDB: [],
     },
   }));
   const exportPage = await browser.newPage();
   await exportPage.goto(`chrome-extension://${extensionId}/session-export.html`);
   await exportPage.waitForFunction(() => document.querySelector("#download-session")?.disabled === false, { timeout: 5000 });
   const exportSummary = await exportPage.$eval("#export-summary", (el) => el.textContent);
-  assert.match(exportSummary, /2\s*Duolingo cookies/);
+  assert.match(exportSummary, /3\s*Duolingo cookies/);
   assert.match(exportSummary, /1\s*HttpOnly cookies/);
+  assert.match(exportSummary, /yes\s*jwt_token captured/);
   assert.match(exportSummary, /2\s*Storage keys/);
   assert.match(await exportPage.$eval("#export-status", (el) => el.textContent), /Ready/);
   await exportPage.close();
