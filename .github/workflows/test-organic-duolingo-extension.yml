@@ -10,7 +10,7 @@ on:
       - "extension/background.js"
       - "extension/review.html"
       - "extension/review.js"
-      - "extension/tests/organic-duolingo.mjs"
+      - "extension/tests/organic-duolingo-e2e.mjs"
       - "extension/tests/fixtures/duolingo-session-state.b64"
       - ".github/workflows/test-organic-duolingo-extension.yml"
 
@@ -51,14 +51,14 @@ jobs:
         run: |
           npm install --ignore-scripts
           npx puppeteer browsers install chrome
-          node --check tests/organic-duolingo.mjs
+          node --check tests/organic-duolingo-e2e.mjs
 
-      - name: Probe a real Duolingo lesson with Parola loaded
+      - name: Run a complete real Duolingo lesson with Parola loaded
         working-directory: extension
         env:
           DUOLINGO_CAPTURE_DIR: organic-duolingo-capture
           DUOLINGO_SESSION_STATE_FILE: tests/fixtures/duolingo-session-state.b64
-        run: xvfb-run -a node tests/organic-duolingo.mjs
+        run: xvfb-run -a node tests/organic-duolingo-e2e.mjs
 
       - name: Summarize organic lesson result
         if: always()
