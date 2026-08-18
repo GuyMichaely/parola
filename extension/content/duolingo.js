@@ -2,6 +2,7 @@
   const seenFingerprints = new Set();
   const lessonSessionKey = "parola-duolingo:lesson-session";
   let scanTimer = null;
+  let memoryLessonSession = null;
 
   function normalizeText(value) {
     return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
@@ -107,19 +108,25 @@
   function readLessonSession() {
     try {
       const stored = sessionStorage.getItem(lessonSessionKey);
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      return parsed && typeof parsed.id === "string" ? parsed : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed.id === "string") {
+          memoryLessonSession = parsed;
+          return parsed;
+        }
+      }
     } catch {
-      return null;
+      // Fall through to the in-memory copy.
     }
+    return memoryLessonSession;
   }
 
   function writeLessonSession(session) {
+    memoryLessonSession = session;
     try {
       sessionStorage.setItem(lessonSessionKey, JSON.stringify(session));
     } catch {
-      // The in-memory detector still works if Duolingo blocks sessionStorage.
+      // The in-memory copy keeps the detector working if page storage is unavailable.
     }
   }
 
