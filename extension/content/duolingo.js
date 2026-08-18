@@ -12,6 +12,11 @@
     return text.length <= max ? text : `${text.slice(0, max)}\n<!-- truncated -->`;
   }
 
+  function newSessionId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
   function visible(element) {
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
@@ -122,7 +127,7 @@
     const existing = readLessonSession();
     if (existing && !existing.completed) return existing;
     const session = {
-      id: crypto.randomUUID(),
+      id: newSessionId(),
       startedAt: new Date().toISOString(),
       startUrl: location.href,
       completed: false,
