@@ -20,7 +20,7 @@ concurrency:
 
 env:
   EXTENSION_ID: kekniohgmpmijldjfamhjehnbmkmiajg
-  EXTENSION_UPDATE_URL: https://guymichaely.com/parola/extension/updates.xml
+  EXTENSION_UPDATE_URL: https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml
   EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola.crx
 
 jobs:
@@ -60,6 +60,7 @@ jobs:
         run: |
           node --check background.js
           node --check content/parola.js
+          node --check focus-preservation.js
           node --check popup.js
           node --check review.js
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
@@ -81,7 +82,7 @@ jobs:
           mkdir -p "$SITE_DIR/extension" "$BUILD_DIR/content"
           cp -a web/dist/. "$SITE_DIR/"
 
-          cp extension/manifest.json extension/background.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
+          cp extension/manifest.json extension/background.js extension/focus-preservation.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
           cp extension/content/*.js "$BUILD_DIR/content/"
           test -f "$BUILD_DIR/content/parola.js"
 
