@@ -9,7 +9,12 @@ import nodriver as uc
 
 CDP_HOST = os.environ.get("DUOLINGO_CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("DUOLINGO_CDP_PORT", "9222"))
-OUTPUT = Path(os.environ.get("DUOLINGO_SESSION_OUTPUT", "duolingo-session-state.b64")).resolve()
+OUTPUT = Path(
+    os.environ.get(
+        "DUOLINGO_SESSION_OUTPUT",
+        "tests/fixtures/duolingo-session-state.b64",
+    )
+).resolve()
 ORIGIN = "https://www.duolingo.com"
 
 
@@ -60,7 +65,8 @@ async def main():
         }
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         encoded = base64.b64encode(gzip.compress(raw, compresslevel=9)).decode("ascii")
-        OUTPUT.write_text(encoded, encoding="ascii")
+        OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+        OUTPUT.write_text(encoded + "\n", encoding="ascii")
         print(
             json.dumps(
                 {
