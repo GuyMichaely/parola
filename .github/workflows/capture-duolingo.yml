@@ -49,55 +49,38 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r extension/tests/requirements-live.txt
-
           if ! command -v socat >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y socat
           fi
-
-          socat \
-            TCP-LISTEN:9222,bind=127.0.0.1,reuseaddr,fork \
-            TCP:parola-residential-exit:9222 &
+          socat TCP-LISTEN:9222,bind=127.0.0.1,reuseaddr,fork TCP:parola-residential-exit:9222 &
           echo $! > /tmp/parola-cdp-socat.pid
-
           READY=false
           for _ in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:9222/json/version >/tmp/parola-chrome-version.json; then
-              READY=true
-              break
-            fi
+            if curl -fsS http://127.0.0.1:9222/json/version >/tmp/parola-chrome-version.json; then READY=true; break; fi
             sleep 1
           done
-
           if [[ "$READY" != "true" ]]; then
             echo "Could not reach the residential Chrome CDP endpoint." >&2
             tailscale status
             exit 1
           fi
-
           python -c 'import nodriver; print("nodriver", nodriver.__version__)'
-          python - <<'PY'
-          import json
-          with open('/tmp/parola-chrome-version.json', encoding='utf-8') as f:
-              data = json.load(f)
-          print('Remote browser:', data.get('Browser'))
-          PY
 
-      - name: Capture sanitized manual Duolingo login trace
+      - name: Replay successful Duolingo input pattern automatically
         working-directory: extension
         env:
-          DUOLINGO_CAPTURE_DIR: manual-login-trace
+          DUOLINGO_CAPTURE_DIR: gold-replay-capture
           DUOLINGO_CDP_HOST: 127.0.0.1
           DUOLINGO_CDP_PORT: "9222"
-          DUOLINGO_MANUAL_TRACE_TIMEOUT_SECONDS: "600"
-        run: python tests/duolingo-manual-trace.py
+        run: python tests/duolingo-gold-replay.py
 
-      - name: Upload manual login trace
+      - name: Upload replay trace
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: duolingo-manual-login-trace
-          path: extension/manual-login-trace
+          name: duolingo-gold-replay
+          path: extension/gold-replay-capture
           if-no-files-found: warn
           retention-days: 14
 
