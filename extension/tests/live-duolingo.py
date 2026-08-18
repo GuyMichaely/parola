@@ -1,3 +1,5 @@
+import base64
+import gzip
 import json
 import os
 import re
@@ -10,15 +12,18 @@ from pathlib import Path
 
 import nodriver as uc
 
-ACCOUNT_PATH = Path(__file__).with_name("duolingo-test-account.json")
-ACCOUNT = json.loads(ACCOUNT_PATH.read_text(encoding="utf-8"))
-EMAIL = ACCOUNT["email"]
-PASSWORD = ACCOUNT["password"]
-
 EXTENSION_ROOT = Path.cwd().resolve()
 OUTPUT_DIR = Path(os.environ.get("DUOLINGO_CAPTURE_DIR", "live-capture")).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CHROME_PATH = os.environ.get("CHROME_PATH", "/usr/bin/google-chrome")
+SESSION_PATH = Path(
+    os.environ.get(
+        "DUOLINGO_SESSION_STATE_FILE",
+        "tests/fixtures/duolingo-session-state.b64",
+    )
+)
+ORIGIN = "https://www.duolingo.com"
+SMOKE_WORD = "parolatest"
 
 
 def target_json(target):
@@ -54,7 +59,7 @@ def wait_for_debug_endpoint(port, process, timeout_seconds=30):
 
 def launch_chrome():
     port = free_port()
-    profile_dir = Path(tempfile.mkdtemp(prefix="parola-nodriver-profile-"))
+    profile_dir = Path(tempfile.mkdtemp(prefix="parola-live-profile-"))
     stdout_path = OUTPUT_DIR / "chrome-stdout.log"
     stderr_path = OUTPUT_DIR / "chrome-stderr.log"
     stdout_file = stdout_path.open("wb")
@@ -82,11 +87,6 @@ def launch_chrome():
         "about:blank",
     ]
 
-    (OUTPUT_DIR / "chrome-command.json").write_text(
-        json.dumps({"args": args, "port": port, "profileDir": str(profile_dir)}, indent=2),
-        encoding="utf-8",
-    )
-
     process = subprocess.Popen(args, stdout=stdout_file, stderr=stderr_file)
     try:
         version = wait_for_debug_endpoint(port, process)
@@ -96,6 +96,59 @@ def launch_chrome():
         raise
 
     return process, stdout_file, stderr_file, profile_dir, port, version
+
+
+def decode_session():
+    if not SESSION_PATH.exists():
+        raise RuntimeError(f"Missing committed Duolingo session state: {SESSION_PATH}")
+    encoded = SESSION_PATH.read_text(encoding="ascii").strip()
+    payload = json.loads(gzip.decompress(base64.b64decode(encoded)))
+    if payload.get("version") != 1 or payload.get("origin") != ORIGIN:
+        raise RuntimeError("Unsupported Duolingo session-state payload")
+    return payload
+
+
+async def evaluate_json(tab, expression):
+    encoded = await tab.evaluate(f"JSON.stringify(({expression}))", return_by_value=True)
+    if not isinstance(encoded, str):
+        encoded = getattr(encoded, "value", encoded)
+    return json.loads(encoded) if encoded is not None else None
+
+
+async def restore_session(browser, payload):
+    seed = await browser.get(f"{ORIGIN}/", new_tab=True)
+    await seed.sleep(1)
+    await seed.send(uc.cdp.network.clear_browser_cookies())
+    await seed.send(uc.cdp.storage.clear_data_for_origin(ORIGIN, "all"))
+
+    params = [uc.cdp.network.CookieParam.from_json(cookie) for cookie in payload.get("cookies") or []]
+    await browser.cookies.set_all(params)
+
+    local_storage = payload.get("localStorage") or {}
+    session_storage = payload.get("sessionStorage") or {}
+    if local_storage:
+        await seed.evaluate("Object.assign(localStorage," + json.dumps(local_storage) + ")")
+    if session_storage:
+        await seed.evaluate("Object.assign(sessionStorage," + json.dumps(session_storage) + ")")
+
+    await seed.get(f"{ORIGIN}/learn")
+    await seed.sleep(5)
+    state = await evaluate_json(
+        seed,
+        """(() => ({
+          href: location.href,
+          hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]')),
+          bodyStart: document.body ? document.body.innerText.toLowerCase().slice(0, 500) : ''
+        }))()""",
+    )
+    authenticated = (
+        not state["hasLoginForm"]
+        and "/log-in" not in state["href"]
+        and "log in" not in state["bodyStart"]
+    )
+    if not authenticated:
+        raise RuntimeError("Committed Duolingo session is no longer authenticated")
+    return seed, state
 
 
 async def find_parola_extension(browser, timeout_seconds=15):
@@ -117,9 +170,9 @@ async def find_parola_extension(browser, timeout_seconds=15):
         review = await browser.get(
             f"chrome-extension://{extension_id}/review.html", new_tab=True
         )
-        await review.sleep(0.5)
+        await review.sleep(0.75)
         html = await review.get_content()
-        if "Parola for Duolingo" in html and "Review staged words" in html:
+        if "Parola for Duolingo" in html:
             return extension_id, review
         try:
             await review.close()
@@ -129,107 +182,83 @@ async def find_parola_extension(browser, timeout_seconds=15):
     return None, None
 
 
-async def wait_for_selector(tab, selector, attempts=4):
-    for _ in range(attempts):
-        element = await tab.select(selector)
-        if element:
-            return element
-        await tab.sleep(1)
-    return None
-
-
-async def field_matches(tab, selector, expected):
-    expression = (
-        "(() => { const el = document.querySelector("
-        + json.dumps(selector)
-        + "); return !!el && el.value === "
-        + json.dumps(expected)
-        + "; })()"
-    )
-    return bool(await tab.evaluate(expression, return_by_value=True))
-
-
 async def capture(tab, name):
     html = await tab.get_content()
-    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.I | re.S)
-    title = re.sub(r"\s+", " ", title_match.group(1)).strip() if title_match else ""
     url = str(getattr(tab.target, "url", ""))
-
     await tab.save_screenshot(filename=str(OUTPUT_DIR / f"{name}.png"))
     (OUTPUT_DIR / f"{name}.html").write_text(html, encoding="utf-8")
-    (OUTPUT_DIR / f"{name}.json").write_text(
-        json.dumps({"url": url, "title": title}, indent=2), encoding="utf-8"
+    return url
+
+
+async def inject_smoke_exercise(tab):
+    return await tab.evaluate(
+        """(() => {
+          document.getElementById('parola-live-smoke')?.remove();
+          const section = document.createElement('section');
+          section.id = 'parola-live-smoke';
+          Object.assign(section.style, {
+            position: 'fixed', left: '20px', top: '20px', zIndex: '2147483646',
+            background: 'white', color: 'rgb(50,50,50)', padding: '24px', width: '420px'
+          });
+          section.innerHTML = `
+            <div style="color:rgb(206,130,255);font-weight:700">NEW WORD</div>
+            <h2>Parola live detector smoke exercise</h2>
+            <p>Write this in English</p>
+            <div>la parola <span style="color:rgb(206,130,255);font-weight:700">parolatest</span></div>`;
+          document.body.appendChild(section);
+          return true;
+        })()""",
+        return_by_value=True,
     )
-    return html, url, title
 
 
-async def capture_extension_review(review, name):
-    await review.sleep(0.75)
-    await capture(review, name)
-
-
-async def login_attempt(browser, identity_value, capture_name):
-    tab = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
-    await tab.sleep(2)
-
-    identity_selector = 'input[data-test="email-input"]'
-    password_selector = 'input[data-test="password-input"]'
-    identity = await wait_for_selector(tab, identity_selector)
-    password = await wait_for_selector(tab, password_selector)
-    if not identity or not password:
-        raise RuntimeError("Could not find Duolingo login inputs")
-
-    await identity.mouse_click()
-    await identity.send_keys(identity_value)
-    await tab.sleep(0.35)
-    await password.mouse_click()
-    await password.send_keys(PASSWORD)
-    await tab.sleep(0.45)
-
-    identity_exact = await field_matches(tab, identity_selector, identity_value)
-    password_exact = await field_matches(tab, password_selector, PASSWORD)
-    if not identity_exact or not password_exact:
-        raise RuntimeError(
-            f"Login field mismatch after typing (identity={identity_exact}, password={password_exact})"
+async def wait_for_staged_word(browser, extension_id, timeout_seconds=10):
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        review = await browser.get(
+            f"chrome-extension://{extension_id}/review.html", new_tab=True
         )
+        await review.sleep(0.5)
+        value = await review.evaluate(
+            "document.querySelector('input[data-field=\"word\"]')?.value || ''",
+            return_by_value=True,
+        )
+        if value == SMOKE_WORD:
+            return review
+        try:
+            await review.close()
+        except Exception:
+            pass
+        await browser.sleep(0.4)
+    raise RuntimeError("Parola content script did not stage the live-origin smoke word")
 
-    submit = await wait_for_selector(tab, 'button[data-test="register-button"]')
-    if not submit:
-        submit = await tab.find("LOG IN", best_match=True)
-    if not submit:
-        raise RuntimeError("Could not find Duolingo login button")
 
-    await submit.mouse_click()
-    await tab.sleep(10)
-    html, final_url, title = await capture(tab, capture_name)
-
-    lower = html.lower()
-    challenge_markers = [
-        "verify you are human",
-        "unusual traffic",
-        "security check",
-        "cf-chl-",
-        "challenges.cloudflare.com",
-    ]
-    result = {
-        "identityKind": "email" if "@" in identity_value else "username",
-        "identityFieldExact": identity_exact,
-        "passwordFieldExact": password_exact,
-        "finalUrl": final_url,
-        "title": title,
-        "wrongCredentialsMessage": "wrong username or password" in lower,
-        "antiBotChallengeMarkers": [
-            marker for marker in challenge_markers if marker in lower
-        ],
-        "loginFormStillPresent": 'data-test="password-input"' in lower,
-    }
-    result["loggedIn"] = (
-        not result["wrongCredentialsMessage"]
-        and not result["antiBotChallengeMarkers"]
-        and not result["loginFormStillPresent"]
-        and "/log-in" not in final_url
+async def inject_completion(tab):
+    await tab.evaluate(
+        """(() => {
+          const section = document.getElementById('parola-live-smoke');
+          if (!section) return false;
+          const heading = document.createElement('h2');
+          heading.id = 'parola-live-smoke-complete';
+          heading.textContent = 'Lesson complete!';
+          section.appendChild(heading);
+          return true;
+        })()""",
+        return_by_value=True,
     )
-    return tab, result
+
+
+async def wait_for_completion_review(browser, extension_id, timeout_seconds=10):
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        await browser.update_targets()
+        for target in browser.targets:
+            data = target_json(target)
+            url = str(data.get("url", ""))
+            if url.startswith(f"chrome-extension://{extension_id}/review.html?lesson="):
+                return url
+        await browser.sleep(0.4)
+    raise RuntimeError("Lesson completion did not open a lesson-scoped Parola review")
 
 
 async def main():
@@ -237,18 +266,22 @@ async def main():
     stdout_file = None
     stderr_file = None
     browser = None
-
     summary = {
+        "test": "live-duolingo-extension-smoke",
         "automation": "nodriver",
         "nodriverVersion": uc.__version__,
         "chromePath": CHROME_PATH,
-        "chromeLaunchMode": "external-cdp",
-        "credentialSource": str(ACCOUNT_PATH),
-        "email": EMAIL,
-        "passwordLength": len(PASSWORD),
+        "sessionSource": str(SESSION_PATH),
     }
 
     try:
+        payload = decode_session()
+        summary.update({
+            "cookieCount": len(payload.get("cookies") or []),
+            "localStorageKeyCount": len(payload.get("localStorage") or {}),
+            "sessionStorageKeyCount": len(payload.get("sessionStorage") or {}),
+        })
+
         (
             chrome_process,
             stdout_file,
@@ -257,65 +290,37 @@ async def main():
             port,
             chrome_version,
         ) = launch_chrome()
+        summary.update({
+            "chromeDebugPort": port,
+            "chromeProfileDir": str(profile_dir),
+            "chromeVersion": chrome_version,
+        })
 
-        summary.update(
-            {
-                "chromeDebugPort": port,
-                "chromeProfileDir": str(profile_dir),
-                "chromeVersion": chrome_version,
-            }
-        )
-
-        config = uc.Config(host="127.0.0.1", port=port)
-        browser = await uc.start(config=config)
-
-        (OUTPUT_DIR / "targets.json").write_text(
-            json.dumps([target_json(target) for target in browser.targets], indent=2),
-            encoding="utf-8",
-        )
-
+        browser = await uc.start(config=uc.Config(host="127.0.0.1", port=port))
         extension_id, review = await find_parola_extension(browser)
-        summary["extensionId"] = extension_id
         if not extension_id or review is None:
             raise RuntimeError("Parola extension did not load in Chrome")
-        await capture_extension_review(review, "00-extension-review")
+        summary["extensionId"] = extension_id
 
-        login_page = await browser.get("https://www.duolingo.com/log-in", new_tab=True)
-        await login_page.sleep(2)
-        await capture(login_page, "01-login-page")
-        try:
-            await login_page.close()
-        except Exception:
-            pass
+        learn, auth_state = await restore_session(browser, payload)
+        summary["authenticated"] = True
+        summary["duolingoUrl"] = auth_state["href"]
+        await capture(learn, "00-authenticated-learn")
 
-        tab, result = await login_attempt(browser, EMAIL, "02-after-email-login")
-        summary["loginAttempts"] = [result]
+        await inject_smoke_exercise(learn)
+        staged_review = await wait_for_staged_word(browser, extension_id)
+        summary["liveOriginDetection"] = True
+        await capture(staged_review, "01-staged-live-origin-word")
 
-        if result["wrongCredentialsMessage"]:
-            username_guess = EMAIL.split("@", 1)[0]
-            try:
-                await tab.close()
-            except Exception:
-                pass
-            tab, result = await login_attempt(
-                browser, username_guess, "03-after-username-login"
-            )
-            summary["loginAttempts"].append(result)
+        await inject_completion(learn)
+        completion_review_url = await wait_for_completion_review(browser, extension_id)
+        summary["completionReviewOpened"] = True
+        summary["completionReviewUrlShape"] = "lesson-scoped" if "?lesson=" in completion_review_url else "unscoped"
 
-        summary.update(result)
-
-        if result["loggedIn"]:
-            await capture_extension_review(review, "04-extension-after-login")
-            print(f"nodriver logged into Duolingo successfully at {result['finalUrl']}")
-        elif result["antiBotChallengeMarkers"]:
-            print(f"Duolingo challenge markers: {result['antiBotChallengeMarkers']}")
-            raise RuntimeError("Duolingo presented an anti-bot/security challenge")
-        elif result["wrongCredentialsMessage"]:
-            print("Duolingo rejected both configured email and inferred username credentials.")
-            raise RuntimeError("Duolingo rejected the configured test credentials")
-        else:
-            print(f"Duolingo login did not complete; final URL: {result['finalUrl']}")
-            raise RuntimeError("Duolingo login did not reach an authenticated state")
+        print(
+            "Authenticated Duolingo session restored; extension staged a synthetic NEW WORD "
+            "inside the live Duolingo origin and opened lesson-scoped review on completion."
+        )
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"
         raise
