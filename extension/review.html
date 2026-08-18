@@ -10,9 +10,9 @@
     <main class="review-shell">
       <header class="review-header">
         <div>
-          <span class="eyebrow">Parola for Duolingo</span>
+          <span class="eyebrow">Parola Capture</span>
           <h1 id="review-title">Review staged words</h1>
-          <p id="review-subtitle" class="review-subtitle">Check what Parola detected before adding anything to your inventory.</p>
+          <p id="review-subtitle" class="review-subtitle">Complete the card details for anything you want to add to your Parola inventory.</p>
         </div>
         <code id="version"></code>
       </header>
@@ -20,12 +20,12 @@
       <section>
         <div class="section-heading">
           <div>
-            <h2>New words</h2>
-            <p>Edit the detected Italian text if necessary, add an English translation and part of speech, then approve the words you want.</p>
+            <h2>Staged words</h2>
+            <p>Edit the Italian text if necessary, add an English translation and part of speech, then approve the words you want.</p>
           </div>
           <div class="inline-actions">
             <button id="approve-all">Approve all</button>
-            <button id="clear-staged" class="danger-subtle">Clear shown words</button>
+            <button id="clear-staged" class="danger-subtle">Clear staged words</button>
           </div>
         </div>
         <div id="staged-list" class="card-list"></div>
@@ -41,12 +41,12 @@
       <section class="diagnostics-section">
         <div class="section-heading">
           <div>
-            <h2>Diagnostics</h2>
-            <p>Every positive detector result is logged. Manual missed-word snapshots appear here too.</p>
+            <h2>Debug log</h2>
+            <p>Staging, review, import, and error events are retained locally so a manual test can be diagnosed later.</p>
           </div>
           <div class="inline-actions">
-            <button id="export-diagnostics">Export JSON</button>
-            <button id="clear-diagnostics" class="danger-subtle">Clear diagnostics</button>
+            <button id="export-diagnostics">Export event JSON</button>
+            <button id="clear-diagnostics" class="danger-subtle">Clear events</button>
           </div>
         </div>
         <div id="diagnostics-summary" class="diagnostics-summary"></div>

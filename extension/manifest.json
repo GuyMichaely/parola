@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Parola for Duolingo",
+  "name": "Parola Capture",
   "version": "0.1.0",
   "version_name": "source",
-  "description": "Stages words Duolingo marks as new so they can be reviewed and added to Parola.",
+  "description": "Stage Italian words and contexts for review and import into Parola.",
   "update_url": "https://guymichaely.com/extension/updates.xml",
-  "permissions": ["storage", "activeTab", "unlimitedStorage", "cookies", "scripting"],
+  "permissions": ["storage", "activeTab", "contextMenus"],
   "host_permissions": [
-    "https://duolingo.com/*",
-    "https://*.duolingo.com/*",
     "https://guymichaely.com/parola/*"
   ],
   "background": {
@@ -16,15 +14,10 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Parola for Duolingo",
+    "default_title": "Stage words in Parola",
     "default_popup": "popup.html"
   },
   "content_scripts": [
-    {
-      "matches": ["https://www.duolingo.com/*", "https://duolingo.com/*"],
-      "js": ["content/duolingo.js"],
-      "run_at": "document_idle"
-    },
     {
       "matches": ["https://guymichaely.com/parola/*"],
       "js": ["content/parola.js"],

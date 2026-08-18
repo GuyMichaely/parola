@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -17,18 +17,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
-      - name: Publish this run ID
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$GITHUB_RUN_ID" > .github/latest-extension-test-run
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/latest-extension-test-run
-          git commit -m "Record latest extension test run [skip ci]" || true
-          git pull --rebase origin main
-          git push
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -45,13 +33,11 @@ jobs:
         working-directory: extension
         run: |
           node --check background.js
-          node --check content/duolingo.js
           node --check content/parola.js
           node --check popup.js
           node --check review.js
-          node --check session-export.js
           node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
 
-      - name: Run Chrome extension tests
+      - name: Run deterministic extension tests
         working-directory: extension
         run: xvfb-run -a npm test

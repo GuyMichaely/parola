@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Parola for Duolingo</title>
+    <title>Parola Capture</title>
     <link rel="stylesheet" href="ui.css" />
   </head>
   <body class="popup-body">
@@ -11,22 +11,29 @@
       <div class="brand-row">
         <div>
           <strong>Parola</strong>
-          <span>Duolingo capture</span>
+          <span>Capture</span>
         </div>
         <code id="version"></code>
       </div>
+
+      <form id="capture-form" class="capture-form">
+        <label for="capture-input">Stage a word</label>
+        <textarea id="capture-input" rows="3" placeholder="gatto&#10;or: Vorrei un *panino*, per favore."></textarea>
+        <button type="submit" class="primary">Stage</button>
+        <p class="fine-print">Enter one word, or enter a sentence and surround the word of interest with <strong>*asterisks*</strong>. You can also highlight text on any page and right-click → Stage in Parola.</p>
+      </form>
+
       <section class="summary-card">
         <span class="eyebrow">Staged words</span>
         <strong id="staged-count" class="big-number">0</strong>
         <div id="word-preview" class="word-preview"></div>
       </section>
+
       <p id="status" class="status-line" role="status"></p>
       <div class="button-stack">
-        <button id="review" class="primary">Review staged words</button>
-        <button id="capture">Capture missed-word snapshot</button>
-        <button id="export-session">Export GitHub login session</button>
+        <button id="review">Review staged words</button>
+        <button id="export-debug">Export debug log</button>
       </div>
-      <p class="fine-print">Session export uses your currently logged-in Duolingo tab and includes HttpOnly Duolingo cookies plus page storage so GitHub-hosted tests can reuse the login without Tailscale or a self-hosted runner.</p>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

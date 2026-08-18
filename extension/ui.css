@@ -6,7 +6,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { border: 1px solid #cbd1d8; border-radius: 9px; background: white; padding: 8px 11px; cursor: pointer; }
 button:hover { background: #f2f4f6; }
 button:disabled { cursor: not-allowed; opacity: .55; }
@@ -15,11 +15,16 @@ button.primary:hover:not(:disabled) { background: #2a3440; }
 button.danger-subtle { color: #9f2d2d; }
 code { color: #68717c; font-size: 11px; }
 
-.popup-body { width: 340px; background: white; }
+.popup-body { width: 360px; background: white; }
 .popup-shell { padding: 16px; }
 .brand-row, .section-heading, .word-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .brand-row > div { display: flex; flex-direction: column; }
 .brand-row span, .fine-print, .status-line, .section-heading p, .staged-card p, .staged-card small, .review-subtitle { color: #68717c; }
+.capture-form { display: grid; gap: 8px; margin-top: 16px; }
+.capture-form > label { font-size: 12px; font-weight: 800; }
+.capture-form textarea { width: 100%; resize: vertical; min-height: 74px; border: 1px solid #cbd1d8; border-radius: 9px; padding: 9px 10px; color: #18202a; background: white; }
+.capture-form textarea:focus { outline: 2px solid #c9a8ea; outline-offset: 1px; border-color: #8d51c7; }
+.capture-form .fine-print { margin: 0; line-height: 1.4; }
 .summary-card { background: #f3efff; border: 1px solid #e0d3ff; border-radius: 14px; padding: 14px; margin: 16px 0; }
 .eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8d51c7; }
 .big-number { display: block; font-size: 38px; line-height: 1; margin: 6px 0; }

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import puppeteer from "puppeteer";
@@ -25,139 +24,67 @@ try {
     { timeout: 10000 },
   );
   const extensionId = new URL(extensionTarget.url()).host;
-  assert.ok(extensionId, "extension id should be available from the service worker");
 
   const popup = await browser.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  assert.match(await popup.title(), /Parola/i);
-  assert.equal(await popup.$eval("#staged-count", (el) => el.textContent), "0");
+  assert.match(await popup.title(), /Parola Capture/i);
+  assert.equal(await popup.$eval("#staged-count", (element) => element.textContent), "0");
 
-  await popup.evaluate(() => chrome.storage.local.set({
-    "parola-extension:duolingo-session-export": {
-      version: 2,
-      origin: "https://www.duolingo.com",
-      exportedAt: "2026-08-18T00:00:00.000Z",
-      sourceUrl: "https://www.duolingo.com/learn",
-      cookies: [
-        { name: "jwt_token", value: "test-jwt", domain: ".duolingo.com", path: "/", secure: true, httpOnly: false, session: false },
-        { name: "session-test", value: "abc", domain: ".duolingo.com", path: "/", secure: true, httpOnly: true, session: true },
-        { name: "client-test", value: "xyz", domain: ".duolingo.com", path: "/", secure: true, httpOnly: false, session: true },
-      ],
-      cookieDiagnostics: {
-        cookiePermissionGranted: true,
-        grantedOrigins: ["https://duolingo.com/*", "https://*.duolingo.com/*"],
-        cookieNames: ["client-test", "jwt_token", "session-test"],
-        cookieDomains: [".duolingo.com"],
-        jwtTokenVisible: true,
-        partitionedCookieCount: 0,
-      },
-      localStorage: { alpha: "one" },
-      sessionStorage: { beta: "two" },
-      indexedDB: [],
-    },
+  await popup.type("#capture-input", "gatto");
+  await popup.click('#capture-form button[type="submit"]');
+  await popup.waitForFunction(() => document.querySelector("#staged-count")?.textContent === "1");
+
+  await popup.type("#capture-input", "Vorrei un *panino*, per favore.");
+  await popup.click('#capture-form button[type="submit"]');
+  await popup.waitForFunction(() => document.querySelector("#staged-count")?.textContent === "2");
+
+  const selected = await popup.evaluate(() => chrome.runtime.sendMessage({
+    type: "stage-selection",
+    selectionText: "pollo",
+    sourceUrl: "https://example.test/lesson",
   }));
-  const exportPage = await browser.newPage();
-  await exportPage.goto(`chrome-extension://${extensionId}/session-export.html`);
-  await exportPage.waitForFunction(() => document.querySelector("#download-session")?.disabled === false, { timeout: 5000 });
-  const exportSummary = await exportPage.$eval("#export-summary", (el) => el.textContent);
-  assert.match(exportSummary, /3\s*Duolingo cookies/);
-  assert.match(exportSummary, /1\s*HttpOnly cookies/);
-  assert.match(exportSummary, /yes\s*jwt_token captured/);
-  assert.match(exportSummary, /2\s*Storage keys/);
-  assert.match(await exportPage.$eval("#export-status", (el) => el.textContent), /Ready/);
-  await exportPage.close();
+  assert.equal(selected.word, "pollo");
 
-  const fixture = await readFile(path.join(extensionRoot, "tests", "fixture.html"), "utf8");
-  const page = await browser.newPage();
-  await page.setContent(fixture);
-  await page.evaluate(() => {
-    window.__parolaMessages = [];
-    window.chrome = {
-      runtime: {
-        sendMessage(message) {
-          window.__parolaMessages.push(message);
-          return Promise.resolve({ stagedCount: 1 });
-        },
-        onMessage: { addListener() {} },
-      },
-    };
-  });
-  await page.addScriptTag({ path: path.join(extensionRoot, "content", "duolingo.js") });
-  await page.waitForFunction(() => window.__parolaMessages.some((message) => message.type === "detected-new-word"), { timeout: 5000 });
-  const messages = await page.evaluate(() => window.__parolaMessages);
-  const detection = messages.find((message) => message.type === "detected-new-word")?.detection;
-  assert.ok(detection, "fixture should produce a new-word detection");
-  assert.equal(detection.word, "verde");
-  assert.match(detection.context, /verde/);
-  assert.equal(detection.evidence.newWordMarker, true);
-  assert.equal(detection.evidence.highlightedText, true);
-  assert.ok(detection.lessonId, "detected words should be scoped to a lesson session");
+  const invalid = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "stage-input", input: "due parole" }));
+  assert.match(invalid.error, /asterisks/i);
 
-  await page.evaluate(() => {
-    const heading = document.createElement("h2");
-    heading.textContent = "Lesson complete!";
-    document.querySelector("main")?.appendChild(heading);
-  });
-  await page.waitForFunction(() => window.__parolaMessages.some((message) => message.type === "lesson-complete"), { timeout: 5000 });
-  const completion = (await page.evaluate(() => window.__parolaMessages)).find((message) => message.type === "lesson-complete");
-  assert.equal(completion.lessonId, detection.lessonId, "completion should close the same lesson session that staged the word");
+  const state = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
+  assert.deepEqual(state.staged.map((item) => item.word), ["gatto", "panino", "pollo"]);
+  assert.deepEqual(state.staged[1].contexts, ["Vorrei un panino, per favore."]);
+  assert.equal(state.staged[2].sourceUrl, "https://example.test/lesson");
 
-  const seeded = await popup.evaluate(() => chrome.runtime.sendMessage({
-    type: "detected-new-word",
-    detection: {
-      lessonId: "e2e-review-lesson",
-      lessonStartedAt: new Date().toISOString(),
-      word: "verde",
-      context: "la gonna verde",
-      url: "https://www.duolingo.com/lesson/e2e",
-      evidence: { newWordMarker: true, highlightedText: true },
-    },
-  }));
-  assert.equal(seeded.lessonId, "e2e-review-lesson");
+  const debug = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-debug-bundle" }));
+  assert.equal(debug.formatVersion, 1);
+  assert.equal(debug.staged.length, 3);
+  assert.ok(debug.events.some((event) => event.event === "stage-capture" && event.word === "panino"));
+  assert.ok(debug.events.some((event) => event.kind === "error" && event.operation === "stage-input"));
 
   const review = await browser.newPage();
-  await review.goto(`chrome-extension://${extensionId}/review.html?lesson=e2e-review-lesson`);
-  await review.waitForSelector('[data-id] input[data-field="word"]');
-  assert.equal(await review.$eval('input[data-field="word"]', (el) => el.value), "verde");
-
-  await review.$eval('input[data-field="english"]', (el) => {
-    el.value = "green";
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+  await review.goto(`chrome-extension://${extensionId}/review.html`);
+  await review.waitForSelector('.staged-card[data-id] input[data-field="word"]');
+  const gattoId = await review.$eval('.staged-card[data-id] input[data-field="word"]', (input) => input.closest(".staged-card").dataset.id);
+  const gattoCard = `.staged-card[data-id="${gattoId}"]`;
+  await review.$eval(`${gattoCard} input[data-field="english"]`, (input) => {
+    input.value = "cat";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await review.select('select[data-field="cardType"]', "adjective");
-  await review.waitForSelector('input[data-detail="femininePlural"]');
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  await review.click('button[data-action="approve"]');
-  await review.waitForFunction(() => document.querySelector("#approved-summary")?.textContent === "1 approved");
+  await review.select(`${gattoCard} select[data-field="cardType"]`, "noun");
+  await review.waitForSelector(`${gattoCard} select[data-detail="gender"]`);
+  await review.select(`${gattoCard} select[data-detail="gender"]`, "masculine");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await review.click(`${gattoCard} button[data-action="approve"]`);
+  await review.waitForFunction(
+    (id) => document.querySelector(`.staged-card[data-id="${id}"]`)?.classList.contains("approved"),
+    { timeout: 5000 },
+    gattoId,
+  );
 
-  const state = await review.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
-  const reviewed = state.staged.find((item) => item.lessonId === "e2e-review-lesson");
-  assert.equal(reviewed.word, "verde");
-  assert.equal(reviewed.english, "green");
-  assert.equal(reviewed.cardType, "adjective");
-  assert.equal(reviewed.status, "approved");
-  assert.deepEqual(reviewed.details, {
-    masculineSingular: "verde",
-    feminineSingular: "verde",
-    masculinePlural: "verdi",
-    femininePlural: "verdi",
-  });
-
-  await popup.evaluate(() => chrome.runtime.sendMessage({
-    type: "detected-new-word",
-    detection: {
-      lessonId: "e2e-other-lesson",
-      lessonStartedAt: new Date().toISOString(),
-      word: "blu",
-      context: "una camicia blu",
-      url: "https://www.duolingo.com/lesson/other",
-      evidence: { newWordMarker: true, highlightedText: true },
-    },
-  }));
-  await review.evaluate(() => chrome.runtime.sendMessage({ type: "clear-staged", lessonId: "e2e-review-lesson" }));
-  const afterScopedClear = await review.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
-  assert.equal(afterScopedClear.staged.some((item) => item.lessonId === "e2e-review-lesson"), false);
-  assert.equal(afterScopedClear.staged.some((item) => item.lessonId === "e2e-other-lesson"), true, "clearing one lesson should preserve other staged lessons");
+  const reviewedState = await review.evaluate(() => chrome.runtime.sendMessage({ type: "get-state" }));
+  const gatto = reviewedState.staged.find((item) => item.id === gattoId);
+  assert.equal(gatto.english, "cat");
+  assert.equal(gatto.cardType, "noun");
+  assert.equal(gatto.details.gender, "masculine");
+  assert.equal(gatto.status, "approved");
 
   bridgeServer = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -184,40 +111,26 @@ try {
   });
   await bridge.addScriptTag({ path: path.join(extensionRoot, "content", "parola.js") });
   const imported = await bridge.evaluate(() => new Promise((resolve, reject) => {
-    if (!window.__parolaImportListener) {
-      reject(new Error("Parola bridge did not register a message listener"));
-      return;
-    }
+    if (!window.__parolaImportListener) return reject(new Error("Parola bridge did not register a message listener"));
     const card = {
       id: 0,
-      type: "adjective",
-      english: "green",
-      italian: "verde",
+      type: "noun",
+      english: "cat",
+      italian: "gatto",
       setName: null,
       tags: [],
-      details: {
-        masculineSingular: "verde",
-        feminineSingular: "verde",
-        masculinePlural: "verdi",
-        femininePlural: "verdi",
-      },
+      details: { gender: "masculine", singular: "gatto", plural: "gatti" },
     };
     window.__parolaImportListener({ type: "import-parola-cards", cards: [card] }, {}, (response) => {
-      resolve({
-        response,
-        stored: JSON.parse(localStorage.getItem("parola:cards") || "[]"),
-      });
+      resolve({ response, stored: JSON.parse(localStorage.getItem("parola:cards") || "[]") });
     });
   }));
   assert.equal(imported.response.ok, true);
   assert.equal(imported.response.storage, "browser");
   assert.equal(imported.stored.length, 1);
-  assert.equal(imported.stored[0].id, 1);
-  assert.equal(imported.stored[0].english, "green");
-  assert.equal(imported.stored[0].italian, "verde");
-  assert.equal(imported.stored[0].details.femininePlural, "verdi");
+  assert.equal(imported.stored[0].italian, "gatto");
 
-  console.log(`Extension ${extensionId} loaded; session export encoded, detector staged ${detection.word}, lesson completion was recognized, complete review metadata persisted, and a studyable card imported into Parola browser storage.`);
+  console.log(`Extension ${extensionId} loaded; popup input, starred-sentence capture, selection staging, review state, debug logging, and the Parola browser-storage bridge passed deterministic tests.`);
 } finally {
   if (bridgeServer) await new Promise((resolve) => bridgeServer.close(resolve));
   await browser.close();

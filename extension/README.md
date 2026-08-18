@@ -1,66 +1,36 @@
-# Parola for Duolingo
+# Parola Capture extension
 
-Chrome Manifest V3 extension that collects words Duolingo explicitly marks as new and turns them into reviewed Parola cards.
+Parola Capture is a Chrome extension for collecting Italian words while studying and staging them for review before they are added to Parola.
 
-## Lesson flow
+## Current capture workflow
 
-- Watches Duolingo DOM changes for a visible `NEW WORD` marker.
-- Looks for a purple-highlighted single-word candidate in the same exercise region.
-- Creates a lesson-scoped staging session when the first new word is detected.
-- Stages each normalized word once per lesson while retaining repeated detections as counts and context.
-- Shows a short `Parola staged: …` confirmation in Duolingo when a word is captured.
-- Watches for a visible lesson/practice/level/unit completion heading and automatically opens the review for that lesson when completion is detected.
-- Keeps words from different lessons separate, so reviewing or clearing one lesson does not discard another lesson's pending words.
+- Click the extension icon and enter either one word (`gatto`) or a sentence with the target surrounded by asterisks (`Vorrei un *panino*, per favore.`).
+- Or highlight text on any web page, right-click, and choose **Stage … in Parola**.
+- Captures are deduplicated by normalized Italian text and kept in extension-local staging storage.
+- Open **Review staged words** to edit the Italian form, English meaning, part of speech, and grammatical details, then approve and import cards into Parola.
 
-The review page lets the user correct the detected Italian, enter the English translation, choose the part of speech, review the Duolingo context, approve/discard each word, and fill the grammatical information needed for a normal Parola card:
+The extension no longer inspects Duolingo's DOM, logs into Duolingo for CI, or tries to determine which words Duolingo considers new.
 
-- nouns: gender, singular/plural, and articles; regular forms/articles are suggested after gender is chosen but remain editable;
-- verbs: infinitive, six present-tense forms, auxiliary, and past participle;
-- adjectives: masculine/feminine singular/plural; regular `-o` and `-e` patterns are suggested but remain editable;
-- adverbs: invariant Italian form.
+## Debugging manual tests
 
-`Add approved to Parola` opens the Parola web app and imports the reviewed cards into the storage mode that app is currently using. Browser-mode cards are written to the app's browser inventory; remote mode POSTs the same cards through the app's configured remote endpoint. Successfully imported items are removed from the extension's staging queue.
+The extension records a bounded local event log covering staging, review changes, imports, and errors. Click **Export debug log** in the popup to download a JSON bundle containing:
 
-Every positive detector result is retained in extension diagnostics with its relevant DOM/evidence. The popup also provides a manual missed-word snapshot action for false-negative debugging.
+- extension ID/version;
+- current staged items;
+- recent extension events and errors.
 
-## Testing
+When a manual test behaves incorrectly, reproduce the problem once, export the debug log, and provide that JSON with a short description of what you expected and observed.
 
-`npm test` runs the deterministic extension suite in Chrome. It verifies:
+## Deterministic tests
 
-- the screenshot-derived `NEW WORD` detector fixture;
-- lesson-session scoping;
-- completion signaling;
-- editable review state and regular adjective suggestions;
-- lesson-specific clearing;
-- the Parola browser-inventory import bridge and stored card shape.
+```bash
+cd extension
+npm install
+npm test
+```
 
-`Test live Duolingo extension` is the hosted smoke test. It restores the committed disposable-account session, loads the unpacked extension on the authenticated Duolingo origin, injects a synthetic `NEW WORD` exercise into that live origin, verifies that the extension stages it, then injects a completion heading and verifies that a lesson-scoped review opens. This checks the real Duolingo origin/session/extension wiring without depending on CI solving an actual Duolingo exercise.
+The deterministic suite loads the unpacked extension in Chrome and checks popup staging, starred-sentence parsing, the shared selection-staging path, review persistence, debug logging, and the Parola browser-storage bridge. It deliberately does not automate a live Duolingo lesson.
 
-The completion-text heuristic currently recognizes visible headings equivalent to `Lesson complete!`, `Practice complete!`, `Level complete!`, or `Unit complete!`. If Duolingo changes its completion UI, the detector can be updated from live diagnostics without affecting staged-word storage.
+## Release
 
-Live GitHub-hosted tests restore the disposable Duolingo account's authenticated browser state from `tests/fixtures/duolingo-session-state.b64`. This avoids performing a fresh Duolingo credential login on every CI run.
-
-### Refreshing the Duolingo CI session
-
-Refreshing the CI login no longer requires a self-hosted runner, Tailscale, a Chrome remote-debugging port, Python, or a special disposable browser profile.
-
-1. In the normal Chrome profile where Parola for Duolingo is installed, open Duolingo and log into the disposable test account normally.
-2. While a logged-in Duolingo tab is active, open the Parola extension popup.
-3. Click **Export GitHub login session**.
-4. On the export page, click **Download duolingo-session-state.b64**.
-5. Replace `extension/tests/fixtures/duolingo-session-state.b64` in this repository with the downloaded file.
-6. Commit and push the replacement file.
-
-The extension reads Duolingo localStorage/sessionStorage from the active tab and uses Chrome's `cookies` extension API to include Duolingo cookies, including HttpOnly cookies that page JavaScript cannot read. The export page writes the same gzip + base64 fixture format that the GitHub-hosted restore tests already consume.
-
-When the fixture changes on `main`, the hosted session-restore and live-extension workflows verify that a fresh GitHub-hosted browser can restore it. If the export came from a logged-out Duolingo page, the extension refuses to create the file; the hosted restore test is a second independent guard against accidentally committing an unauthenticated session.
-
-The session file belongs to the disposable testing account and is deliberately committed to the repository for simplicity.
-
-## Distribution
-
-Signed Linux releases are produced with the `PAROLA_EXTENSION_PRIVATE_KEY` Actions secret. The extension checks the update manifest at:
-
-`https://guymichaely.com/extension/updates.xml`
-
-The signed CRX and update metadata are published under `https://guymichaely.com/extension/`. The signing key determines the permanent extension ID and must remain unchanged between releases.
+`.github/workflows/publish-extension.yml` runs the deterministic tests, packages the extension with the existing signing key, and publishes the CRX/update feed to `guymichaely.com/extension/`. Release versions increment from the last successfully published `version.json`, so failed publish attempts do not consume version numbers.
