@@ -53,13 +53,6 @@ async def restore_indexeddb(tab, databases):
     (async () => {{
       const databases = {json.dumps(databases)};
 
-      function requestResult(request) {{
-        return new Promise((resolve, reject) => {{
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
-        }});
-      }}
-
       function transactionDone(transaction) {{
         return new Promise((resolve, reject) => {{
           transaction.oncomplete = resolve;
@@ -137,13 +130,20 @@ async def main():
     try:
         payload = decode_state(load_state_value())
         indexeddb = payload.get("indexedDB") or []
+        local_storage = payload.get("localStorage") or {}
+        session_storage = payload.get("sessionStorage") or {}
+        source_duo_state = local_storage.get("duo.state") or ""
         summary["payloadVersion"] = payload.get("version")
         summary["cookieCount"] = len(payload.get("cookies") or [])
+        summary["cookieNames"] = sorted(
+            {str(cookie.get("name") or "") for cookie in payload.get("cookies") or []}
+        )
         summary["partitionedCookieCount"] = len(
             [cookie for cookie in payload.get("cookies") or [] if cookie.get("partitionKey")]
         )
-        summary["localStorageKeyCount"] = len(payload.get("localStorage") or {})
-        summary["sessionStorageKeyCount"] = len(payload.get("sessionStorage") or {})
+        summary["localStorageKeyCount"] = len(local_storage)
+        summary["sessionStorageKeyCount"] = len(session_storage)
+        summary["duoStateSourceLength"] = len(source_duo_state)
         summary["indexedDBDatabaseCount"] = len(indexeddb)
         summary["indexedDBCapturedStoreCount"] = sum(
             1
@@ -153,7 +153,7 @@ async def main():
         )
 
         browser = await uc.start(config=uc.Config(host=CDP_HOST, port=CDP_PORT))
-        seed = await browser.get(f"{ORIGIN}/", new_tab=True)
+        seed = await browser.get(f"{ORIGIN}/robots.txt", new_tab=True)
         await seed.sleep(1)
         await seed.send(uc.cdp.network.clear_browser_cookies())
         await seed.send(uc.cdp.storage.clear_data_for_origin(ORIGIN, "all"))
@@ -161,13 +161,36 @@ async def main():
         params = [uc.cdp.network.CookieParam.from_json(cookie) for cookie in payload.get("cookies") or []]
         await browser.cookies.set_all(params)
 
-        local_storage = payload.get("localStorage") or {}
-        session_storage = payload.get("sessionStorage") or {}
         if local_storage:
             await seed.evaluate("Object.assign(localStorage," + json.dumps(local_storage) + ")")
         if session_storage:
             await seed.evaluate("Object.assign(sessionStorage," + json.dumps(session_storage) + ")")
         await restore_indexeddb(seed, indexeddb)
+
+        pre_navigation = await evaluate_json(
+            seed,
+            """(() => ({
+              localStorageKeyCount: localStorage.length,
+              sessionStorageKeyCount: sessionStorage.length,
+              duoStateLength: (localStorage.getItem('duo.state') || '').length,
+              lastLoginPresent: Boolean(localStorage.getItem('duo.lastLogin'))
+            }))()""",
+        )
+        summary["preNavigationLocalStorageKeyCount"] = pre_navigation["localStorageKeyCount"]
+        summary["preNavigationSessionStorageKeyCount"] = pre_navigation["sessionStorageKeyCount"]
+        summary["preNavigationDuoStateLength"] = pre_navigation["duoStateLength"]
+        summary["preNavigationLastLoginPresent"] = pre_navigation["lastLoginPresent"]
+
+        restored_cookies = await browser.cookies.get_all()
+        restored_duolingo_cookies = [
+            cookie
+            for cookie in restored_cookies
+            if "duolingo.com" in str(getattr(cookie, "domain", ""))
+        ]
+        summary["restoredDuolingoCookieCount"] = len(restored_duolingo_cookies)
+        summary["restoredDuolingoCookieNames"] = sorted(
+            {str(getattr(cookie, "name", "")) for cookie in restored_duolingo_cookies}
+        )
 
         await seed.get(f"{ORIGIN}/learn")
         await seed.sleep(5)
@@ -179,12 +202,18 @@ async def main():
               hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]')),
               hasGetStarted: [...document.querySelectorAll('a,button')].some((el) =>
                 (el.textContent || '').trim().toUpperCase() === 'GET STARTED'
-              )
+              ),
+              localStorageKeyCount: localStorage.length,
+              duoStateLength: (localStorage.getItem('duo.state') || '').length,
+              lastLoginPresent: Boolean(localStorage.getItem('duo.lastLogin'))
             }))()""",
         )
         summary["finalUrl"] = state["href"]
         summary["loginFormPresent"] = state["hasLoginForm"]
         summary["getStartedPresent"] = state["hasGetStarted"]
+        summary["finalLocalStorageKeyCount"] = state["localStorageKeyCount"]
+        summary["finalDuoStateLength"] = state["duoStateLength"]
+        summary["finalLastLoginPresent"] = state["lastLoginPresent"]
         summary["authenticated"] = (
             not state["hasLoginForm"]
             and not state["hasGetStarted"]
