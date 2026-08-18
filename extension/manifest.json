@@ -7,6 +7,7 @@
   "update_url": "https://guymichaely.com/extension/updates.xml",
   "permissions": ["storage", "activeTab", "unlimitedStorage", "cookies", "scripting"],
   "host_permissions": [
+    "https://duolingo.com/*",
     "https://*.duolingo.com/*",
     "https://guymichaely.com/parola/*"
   ],
