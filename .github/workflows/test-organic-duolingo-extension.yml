@@ -1,4 +1,5 @@
 name: Test organic Duolingo extension
+run-name: Organic Duolingo E2E · ${{ github.sha }}
 
 on:
   workflow_dispatch:
