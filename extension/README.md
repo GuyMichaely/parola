@@ -17,9 +17,27 @@ The Parola import bridge is a separate next step; the current extension establis
 
 `npm test` runs the deterministic extension suite. Puppeteer launches Chrome with the unpacked extension and verifies the popup plus a screenshot-derived `NEW WORD` fixture.
 
-The `Capture live Duolingo` GitHub Actions workflow is the real-site integration suite. It starts Chrome for Testing with the unpacked extension, waits for Chrome's CDP endpoint, attaches nodriver, verifies the Parola review UI, and attempts the configured disposable Duolingo login. HTML, screenshots, Chrome logs, extension targets, and a machine-readable summary are retained as workflow artifacts even when the live test fails.
+Live GitHub-hosted tests restore the disposable Duolingo account's authenticated browser state from `tests/fixtures/duolingo-session-state.b64`. This avoids performing a fresh Duolingo credential login on every CI run.
 
-Live-account credentials are supplied only through the `DUOLINGO_TEST_EMAIL` and `DUOLINGO_TEST_PASSWORD` Actions secrets.
+### Refreshing the Duolingo CI session
+
+When the committed session expires, run this from a local checkout on a machine with Chrome/Chromium and Python 3:
+
+```bash
+bash scripts/refresh-duolingo-session-local.sh
+```
+
+The helper is intentionally self-contained: it creates a temporary Python virtual environment and a disposable Chrome profile, opens Duolingo, waits up to ten minutes for an authenticated session, exports only the Duolingo cookies/localStorage/sessionStorage needed by CI, commits the refreshed state, and pushes it. The temporary browser profile and Python environment are deleted when the script exits.
+
+By default the login is manual, which is the most reliable refresh path. To try the known Autofill + password-paste automation first and fall back to manual login if Duolingo rejects it, use:
+
+```bash
+bash scripts/refresh-duolingo-session-local.sh --auto-login
+```
+
+Use `--no-push` to create the refresh commit without pushing it. Once the state-file commit reaches `main`, the `Test Duolingo session restore` workflow runs on a GitHub-hosted runner and verifies that the committed state still reaches authenticated `/learn`.
+
+This refresh procedure does not require the local machine to be registered as a GitHub Actions runner and does not require Tailscale.
 
 ## Distribution
 
