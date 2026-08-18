@@ -22,4 +22,8 @@ The optional API is deployed separately to Azure by `.github/workflows/deploy-ap
 
 The frontend uses browser `localStorage` by default and can instead use any HTTP endpoint implementing `web/docs/REMOTE_API.md`.
 
+## Project checkpoint
+
+See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the current architecture decisions, deployment-migration status, testing policy, roadmap, and immediate next steps.
+
 See `web/README.md`, `web/ARCHITECTURE.md`, and `extension/README.md` for development details.
