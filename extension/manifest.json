@@ -5,7 +5,7 @@
   "version_name": "source",
   "description": "Stages words Duolingo marks as new so they can be reviewed and added to Parola.",
   "update_url": "https://guymichaely.com/extension/updates.xml",
-  "permissions": ["storage", "activeTab", "unlimitedStorage"],
+  "permissions": ["storage", "activeTab", "unlimitedStorage", "cookies", "scripting"],
   "host_permissions": [
     "https://www.duolingo.com/*",
     "https://duolingo.com/*",
