@@ -29,11 +29,15 @@
     return match ? match.slice(1, 4).map(Number) : null;
   }
 
-  function looksPurple(color) {
+  function looksGreen(color) {
     const rgb = parseRgb(color);
     if (!rgb) return false;
     const [r, g, b] = rgb;
-    return r >= 125 && b >= 145 && g <= Math.min(r, b) * 0.88 && (r + b - (2 * g)) >= 75;
+    return g >= 105 && g >= r * 1.25 && g >= b * 1.5 && (g - Math.max(r, b)) >= 35;
+  }
+
+  function validWord(value) {
+    return /^[\p{L}][\p{L}'’\-]{0,39}$/u.test(normalizeText(value));
   }
 
   function textNodes(root) {
@@ -56,6 +60,9 @@
   }
 
   function exerciseRoot(marker) {
+    const semanticRoot = marker.closest?.('[data-test^="challenge challenge-"]');
+    if (semanticRoot) return semanticRoot;
+
     let current = marker;
     let best = marker.parentElement || marker;
     for (let depth = 0; current && depth < 9; depth += 1, current = current.parentElement) {
@@ -67,32 +74,69 @@
     return best;
   }
 
-  function candidateTextElements(root, marker) {
-    const candidates = [];
-    const seen = new Set();
-    for (const { node, text } of textNodes(root)) {
-      const element = node.parentElement;
-      if (!element || marker.contains(element) || element.contains(marker) || !visible(element)) continue;
-      if (seen.has(element)) continue;
-      if (text.toLocaleUpperCase("en-US") === "NEW WORD") continue;
-      if (!/^[\p{L}][\p{L}'’\-]{0,39}$/u.test(text)) continue;
-      const color = getComputedStyle(element).color;
-      if (!looksPurple(color)) continue;
-      seen.add(element);
-      candidates.push({ element, word: text, color });
+  function semanticHintCandidate(root) {
+    for (const hint of root.querySelectorAll?.('[data-test="hint-token"][aria-label]') || []) {
+      const word = normalizeText(hint.getAttribute("aria-label"));
+      if (!validWord(word) || !visible(hint)) continue;
+
+      // Real Duolingo new vocabulary tokens carry three visual-decoration children.
+      // Ordinary clickable translation-hint tokens are empty. This is substantially
+      // more precise than looking for purple text, because the prompt itself is split
+      // into single-character spans whose styling otherwise causes false positives.
+      if (hint.childElementCount === 0) continue;
+
+      return {
+        element: hint,
+        word,
+        color: getComputedStyle(hint).color,
+        source: "new-word-hint-token",
+      };
     }
-    return candidates;
+    return null;
+  }
+
+  function selectFeedbackCandidate(root) {
+    const rootType = root.getAttribute?.("data-test") || "";
+    if (!rootType.includes("challenge-select")) return null;
+
+    for (const choice of root.querySelectorAll?.('[data-test="challenge-choice"]') || []) {
+      if (!visible(choice)) continue;
+      const color = getComputedStyle(choice).color;
+      if (!looksGreen(color)) continue;
+      const italian = choice.querySelector('[lang="it"]');
+      if (!italian) continue;
+      const word = normalizeText(italian.innerText || italian.textContent);
+      if (!validWord(word)) continue;
+      return {
+        element: italian,
+        word,
+        color,
+        source: "correct-select-feedback",
+      };
+    }
+    return null;
+  }
+
+  function newWordCandidates(root) {
+    const hint = semanticHintCandidate(root);
+    if (hint) return [hint];
+
+    const select = selectFeedbackCandidate(root);
+    if (select) return [select];
+
+    return [];
   }
 
   function candidateContext(element, root) {
     let current = element;
-    let best = normalizeText(element.innerText || element.textContent);
+    let best = normalizeText(element.innerText || element.textContent) || normalizeText(element.getAttribute?.("aria-label"));
     for (let depth = 0; current && current !== root && depth < 6; depth += 1, current = current.parentElement) {
       const text = normalizeText(current.innerText || current.textContent);
       const wordCount = text ? text.split(/\s+/).length : 0;
       if (text.length <= 180 && wordCount <= 18) best = text;
       else break;
     }
+    if (!best) best = normalizeText(root.innerText || root.textContent).slice(0, 180);
     return best;
   }
 
@@ -213,7 +257,8 @@
       pageTitle: document.title,
       evidence: {
         newWordMarker: true,
-        highlightedText: true,
+        highlightedText: candidate.source === "new-word-hint-token",
+        detectionMethod: candidate.source,
         color: candidate.color,
         marker: describeElement(marker),
         candidate: describeElement(candidate.element),
@@ -237,7 +282,7 @@
     if (!document.body) return;
     for (const marker of newWordMarkers()) {
       const root = exerciseRoot(marker);
-      for (const candidate of candidateTextElements(root, marker)) {
+      for (const candidate of newWordCandidates(root)) {
         void report(marker, root, candidate);
       }
     }
@@ -285,7 +330,7 @@
     subtree: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["class", "style", "hidden", "aria-hidden"],
+    attributeFilter: ["class", "style", "hidden", "aria-hidden", "aria-checked", "aria-disabled"],
   });
 
   scheduleScan();
