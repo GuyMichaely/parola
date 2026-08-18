@@ -10,6 +10,12 @@ import nodriver as uc
 CDP_HOST = os.environ.get("DUOLINGO_CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("DUOLINGO_CDP_PORT", "9222"))
 STATE_B64 = os.environ.get("DUOLINGO_SESSION_STATE_B64", "")
+STATE_FILE = Path(
+    os.environ.get(
+        "DUOLINGO_SESSION_STATE_FILE",
+        "tests/fixtures/duolingo-session-state.b64",
+    )
+)
 OUTPUT_DIR = Path(os.environ.get("DUOLINGO_CAPTURE_DIR", "session-restore-capture")).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ORIGIN = "https://www.duolingo.com"
@@ -22,9 +28,17 @@ async def evaluate_json(tab, expression):
     return json.loads(encoded) if encoded is not None else None
 
 
+def load_state_value():
+    if STATE_B64.strip():
+        return STATE_B64.strip()
+    if STATE_FILE.exists():
+        return STATE_FILE.read_text(encoding="ascii").strip()
+    raise RuntimeError(
+        f"No Duolingo session state supplied; missing {STATE_FILE} and DUOLINGO_SESSION_STATE_B64"
+    )
+
+
 def decode_state(value):
-    if not value:
-        raise RuntimeError("DUOLINGO_SESSION_STATE_B64 is empty")
     raw = gzip.decompress(base64.b64decode(value))
     payload = json.loads(raw)
     if payload.get("version") != 1 or payload.get("origin") != ORIGIN:
@@ -34,9 +48,9 @@ def decode_state(value):
 
 async def main():
     browser = None
-    summary = {"test": "github-hosted-session-restore"}
+    summary = {"test": "github-hosted-session-restore", "stateSource": "file" if not STATE_B64.strip() else "environment"}
     try:
-        payload = decode_state(STATE_B64)
+        payload = decode_state(load_state_value())
         summary["cookieCount"] = len(payload.get("cookies") or [])
         summary["localStorageKeyCount"] = len(payload.get("localStorage") or {})
         summary["sessionStorageKeyCount"] = len(payload.get("sessionStorage") or {})
