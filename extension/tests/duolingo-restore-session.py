@@ -41,19 +41,116 @@ def load_state_value():
 def decode_state(value):
     raw = gzip.decompress(base64.b64decode(value))
     payload = json.loads(raw)
-    if payload.get("version") != 1 or payload.get("origin") != ORIGIN:
+    if payload.get("version") not in (1, 2) or payload.get("origin") != ORIGIN:
         raise RuntimeError("Unsupported Duolingo session-state payload")
     return payload
 
 
+async def restore_indexeddb(tab, databases):
+    if not databases:
+        return
+    script = f"""
+    (async () => {{
+      const databases = {json.dumps(databases)};
+
+      function requestResult(request) {{
+        return new Promise((resolve, reject) => {{
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+        }});
+      }}
+
+      function transactionDone(transaction) {{
+        return new Promise((resolve, reject) => {{
+          transaction.oncomplete = resolve;
+          transaction.onerror = () => reject(transaction.error || new Error('IndexedDB transaction failed'));
+          transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction aborted'));
+        }});
+      }}
+
+      function deleteDatabase(name) {{
+        return new Promise((resolve, reject) => {{
+          const request = indexedDB.deleteDatabase(name);
+          request.onsuccess = resolve;
+          request.onerror = () => reject(request.error || new Error(`Could not delete IndexedDB database ${{name}}`));
+          request.onblocked = resolve;
+        }});
+      }}
+
+      function openDatabase(databaseState) {{
+        return new Promise((resolve, reject) => {{
+          const request = indexedDB.open(databaseState.name, databaseState.version || 1);
+          request.onupgradeneeded = () => {{
+            const database = request.result;
+            for (const storeState of databaseState.stores || []) {{
+              if (!storeState.captured || database.objectStoreNames.contains(storeState.name)) continue;
+              const options = {{ autoIncrement: Boolean(storeState.autoIncrement) }};
+              if (storeState.keyPath !== null && storeState.keyPath !== undefined) options.keyPath = storeState.keyPath;
+              const store = database.createObjectStore(storeState.name, options);
+              for (const indexState of storeState.indexes || []) {{
+                store.createIndex(indexState.name, indexState.keyPath, {{
+                  multiEntry: Boolean(indexState.multiEntry),
+                  unique: Boolean(indexState.unique),
+                }});
+              }}
+            }}
+          }};
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error(`Could not open IndexedDB database ${{databaseState.name}}`));
+        }});
+      }}
+
+      for (const databaseState of databases) {{
+        const capturedStores = (databaseState.stores || []).filter((store) => store.captured);
+        if (!capturedStores.length) continue;
+        await deleteDatabase(databaseState.name);
+        const database = await openDatabase({{ ...databaseState, stores: capturedStores }});
+        try {{
+          for (const storeState of capturedStores) {{
+            if (!database.objectStoreNames.contains(storeState.name)) continue;
+            const transaction = database.transaction(storeState.name, 'readwrite');
+            const store = transaction.objectStore(storeState.name);
+            const records = storeState.records || [];
+            const keys = storeState.keys || [];
+            for (let index = 0; index < records.length; index += 1) {{
+              if (store.keyPath === null && keys[index] !== undefined) store.put(records[index], keys[index]);
+              else store.put(records[index]);
+            }}
+            await transactionDone(transaction);
+          }}
+        }} finally {{
+          database.close();
+        }}
+      }}
+      return true;
+    }})()
+    """
+    await tab.evaluate(script, return_by_value=True)
+
+
 async def main():
     browser = None
-    summary = {"test": "github-hosted-session-restore", "stateSource": "file" if not STATE_B64.strip() else "environment"}
+    summary = {
+        "test": "github-hosted-session-restore",
+        "stateSource": "file" if not STATE_B64.strip() else "environment",
+    }
     try:
         payload = decode_state(load_state_value())
+        indexeddb = payload.get("indexedDB") or []
+        summary["payloadVersion"] = payload.get("version")
         summary["cookieCount"] = len(payload.get("cookies") or [])
+        summary["partitionedCookieCount"] = len(
+            [cookie for cookie in payload.get("cookies") or [] if cookie.get("partitionKey")]
+        )
         summary["localStorageKeyCount"] = len(payload.get("localStorage") or {})
         summary["sessionStorageKeyCount"] = len(payload.get("sessionStorage") or {})
+        summary["indexedDBDatabaseCount"] = len(indexeddb)
+        summary["indexedDBCapturedStoreCount"] = sum(
+            1
+            for database in indexeddb
+            for store in database.get("stores") or []
+            if store.get("captured")
+        )
 
         browser = await uc.start(config=uc.Config(host=CDP_HOST, port=CDP_PORT))
         seed = await browser.get(f"{ORIGIN}/", new_tab=True)
@@ -61,7 +158,7 @@ async def main():
         await seed.send(uc.cdp.network.clear_browser_cookies())
         await seed.send(uc.cdp.storage.clear_data_for_origin(ORIGIN, "all"))
 
-        params = [uc.cdp.network.CookieParam.from_json(c) for c in payload.get("cookies") or []]
+        params = [uc.cdp.network.CookieParam.from_json(cookie) for cookie in payload.get("cookies") or []]
         await browser.cookies.set_all(params)
 
         local_storage = payload.get("localStorage") or {}
@@ -70,6 +167,7 @@ async def main():
             await seed.evaluate("Object.assign(localStorage," + json.dumps(local_storage) + ")")
         if session_storage:
             await seed.evaluate("Object.assign(sessionStorage," + json.dumps(session_storage) + ")")
+        await restore_indexeddb(seed, indexeddb)
 
         await seed.get(f"{ORIGIN}/learn")
         await seed.sleep(5)
