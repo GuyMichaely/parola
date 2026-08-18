@@ -52,11 +52,20 @@ async function restoreSession(page, payload) {
   await new Promise((resolve) => setTimeout(resolve, 5000));
   const state = await page.evaluate(() => ({
     href: location.href,
+    pathname: location.pathname,
     hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]')),
-    bodyStart: (document.body?.innerText || "").toLocaleLowerCase().slice(0, 500),
+    hasGetStarted: [...document.querySelectorAll("a,button")].some((element) =>
+      (element.textContent || "").trim().toUpperCase() === "GET STARTED"
+    ),
   }));
-  const authenticated = !state.hasLoginForm && !state.href.includes("/log-in") && !state.bodyStart.includes("log in");
-  assert.equal(authenticated, true, "committed Duolingo session should restore an authenticated /learn page");
+  const authenticated = !state.hasLoginForm
+    && !state.hasGetStarted
+    && state.pathname.startsWith("/learn");
+  assert.equal(
+    authenticated,
+    true,
+    `committed Duolingo session should restore authenticated /learn, but landed at ${state.href}`,
+  );
   return state;
 }
 
@@ -156,6 +165,7 @@ async function main() {
 
     console.log(`Extension ${extensionId} restored Duolingo auth, staged ${smokeWord} on the live origin, and opened lesson-scoped review at completion.`);
   } catch (error) {
+    summary.authenticated = summary.authenticated || false;
     summary.error = `${error?.name || "Error"}: ${error?.message || String(error)}`;
     throw error;
   } finally {
