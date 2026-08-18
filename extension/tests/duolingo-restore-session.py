@@ -77,23 +77,29 @@ async def main():
             seed,
             """(() => ({
               href: location.href,
+              pathname: location.pathname,
               hasLoginForm: Boolean(document.querySelector('input[data-test="password-input"]')),
-              body: document.body ? document.body.innerText.toLowerCase() : ''
+              hasGetStarted: [...document.querySelectorAll('a,button')].some((el) =>
+                (el.textContent || '').trim().toUpperCase() === 'GET STARTED'
+              )
             }))()""",
         )
         summary["finalUrl"] = state["href"]
         summary["loginFormPresent"] = state["hasLoginForm"]
+        summary["getStartedPresent"] = state["hasGetStarted"]
         summary["authenticated"] = (
             not state["hasLoginForm"]
-            and "/log-in" not in state["href"]
-            and "log in" not in state["body"][:500]
+            and not state["hasGetStarted"]
+            and state["pathname"].startswith("/learn")
         )
         try:
             await seed.save_screenshot(filename=str(OUTPUT_DIR / "after-session-restore.png"))
         except Exception:
             pass
         if not summary["authenticated"]:
-            raise RuntimeError("Imported Duolingo session is no longer authenticated")
+            raise RuntimeError(
+                f"Imported Duolingo session is no longer authenticated; landed at {state['href']}"
+            )
     except Exception as exc:
         summary["error"] = f"{type(exc).__name__}: {exc}"
         raise
