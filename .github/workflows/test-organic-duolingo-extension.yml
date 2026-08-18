@@ -23,7 +23,7 @@ concurrency:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -51,13 +51,14 @@ jobs:
           npm install --ignore-scripts
           npx puppeteer browsers install chrome
           node --check tests/organic-duolingo-e2e.mjs
+          node --check tests/organic-duolingo-full-e2e.mjs
 
-      - name: Run a complete real Duolingo lesson with Parola loaded
+      - name: Run a complete real Duolingo lesson through Parola import
         working-directory: extension
         env:
           DUOLINGO_CAPTURE_DIR: organic-duolingo-capture
           DUOLINGO_SESSION_STATE_FILE: tests/fixtures/duolingo-session-state.b64
-        run: xvfb-run -a node tests/organic-duolingo-e2e.mjs
+        run: xvfb-run -a node tests/organic-duolingo-full-e2e.mjs
 
       - name: Summarize organic lesson result
         if: always()
