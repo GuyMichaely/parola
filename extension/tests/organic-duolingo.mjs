@@ -183,6 +183,9 @@ async function dismissInterstitials(page) {
 
 async function submitAnswer(page) {
   const state = await playerNextState(page);
+  if (state && !state.disabled && (state.text.startsWith("CONTINUE") || state.text.startsWith("GOT IT"))) {
+    return pageState(page);
+  }
   if (!state || state.disabled || !state.text.startsWith("CHECK")) {
     throw new Error(`Expected an enabled CHECK button, got ${JSON.stringify(state)}`);
   }
