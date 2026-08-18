@@ -24,8 +24,9 @@
       <div class="button-stack">
         <button id="review" class="primary">Review staged words</button>
         <button id="capture">Capture missed-word snapshot</button>
+        <button id="export-session">Export GitHub login session</button>
       </div>
-      <p class="fine-print">Automatic detections are logged for detector debugging.</p>
+      <p class="fine-print">Session export uses your currently logged-in Duolingo tab and includes HttpOnly Duolingo cookies plus page storage so GitHub-hosted tests can reuse the login without Tailscale or a self-hosted runner.</p>
     </main>
     <script type="module" src="popup.js"></script>
   </body>
