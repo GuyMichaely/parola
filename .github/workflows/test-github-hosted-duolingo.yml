@@ -38,7 +38,7 @@ jobs:
           cache: pip
           cache-dependency-path: extension/tests/requirements-live.txt
 
-      - name: Prepare local Chrome and nodriver
+      - name: Prepare headed local Chrome and nodriver
         shell: bash
         run: |
           set -euo pipefail
@@ -50,10 +50,16 @@ jobs:
             echo "Chrome not found" >&2
             exit 1
           fi
+          if ! command -v Xvfb >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
 
+          Xvfb :99 -screen 0 1280x800x24 >/tmp/parola-xvfb.log 2>&1 &
+          echo $! >/tmp/parola-xvfb.pid
+          export DISPLAY=:99
           mkdir -p /tmp/parola-github-hosted-profile
           "$CHROME" \
-            --headless=new \
             --user-data-dir=/tmp/parola-github-hosted-profile \
             --remote-debugging-port=9222 \
             --remote-debugging-address=127.0.0.1 \
@@ -71,6 +77,7 @@ jobs:
             sleep 1
           done
           cat /tmp/parola-chrome.err >&2 || true
+          cat /tmp/parola-xvfb.log >&2 || true
           exit 1
 
       - name: Replay successful Duolingo input pattern
@@ -90,10 +97,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Stop Chrome
+      - name: Stop browser stack
         if: always()
         shell: bash
         run: |
-          if [[ -f /tmp/parola-chrome.pid ]]; then
-            kill "$(cat /tmp/parola-chrome.pid)" 2>/dev/null || true
-          fi
+          if [[ -f /tmp/parola-chrome.pid ]]; then kill "$(cat /tmp/parola-chrome.pid)" 2>/dev/null || true; fi
+          if [[ -f /tmp/parola-xvfb.pid ]]; then kill "$(cat /tmp/parola-xvfb.pid)" 2>/dev/null || true; fi
