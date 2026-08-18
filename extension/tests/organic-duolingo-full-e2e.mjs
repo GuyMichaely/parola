@@ -10,10 +10,69 @@ const originalLaunch = puppeteer.launch.bind(puppeteer);
 let capturedBrowser = null;
 let realClose = null;
 
+function normalizeControlText(value) {
+  return String(value || "")
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase();
+}
+
+async function hardenPageForOrganicStart(page) {
+  const originalEvaluate = page.evaluate.bind(page);
+  const originalWaitForFunction = page.waitForFunction.bind(page);
+
+  page.evaluate = async (pageFunction, ...args) => {
+    const details = args[0];
+    if (details?.wanted === "START" && details?.prefix === true) {
+      const buttons = await page.$$("button");
+      for (const button of buttons) {
+        const info = await originalEvaluate((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            text: (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim(),
+            visible: style.display !== "none"
+              && style.visibility !== "hidden"
+              && Number(style.opacity || "1") > 0
+              && rect.width > 0
+              && rect.height > 0,
+            disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true",
+          };
+        }, button);
+        if (!info.visible || info.disabled || !normalizeControlText(info.text).startsWith("start")) continue;
+        await button.click();
+        return true;
+      }
+    }
+    return originalEvaluate(pageFunction, ...args);
+  };
+
+  page.waitForFunction = async (pageFunction, options, ...args) => {
+    const source = String(pageFunction);
+    if (source.includes('location.pathname === "/lesson"')) {
+      return originalWaitForFunction(
+        () => !location.pathname.startsWith("/learn"),
+        options,
+        ...args,
+      );
+    }
+    return originalWaitForFunction(pageFunction, options, ...args);
+  };
+}
+
 puppeteer.launch = async (...args) => {
   const browser = await originalLaunch(...args);
   capturedBrowser = browser;
   realClose = browser.close.bind(browser);
+
+  const originalNewPage = browser.newPage.bind(browser);
+  browser.newPage = async (...pageArgs) => {
+    const page = await originalNewPage(...pageArgs);
+    await hardenPageForOrganicStart(page);
+    return page;
+  };
+
   Object.defineProperty(browser, "close", {
     configurable: true,
     value: async () => {},
@@ -62,10 +121,6 @@ async function findPlan(review) {
     if (card) return { ...plan, id: card.id, originalWord: card.word };
   }
   throw new Error(`No importable organic card was detected. Review contained: ${cards.map((card) => card.word).join(", ")}`);
-}
-
-function cardSelector(id, suffix) {
-  return `.staged-card[data-id="${CSS.escape ? "" : ""}${id}"] ${suffix}`;
 }
 
 async function setInput(review, id, field, value) {
