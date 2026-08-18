@@ -92,19 +92,23 @@ async function pageState(page) {
 
 async function clickText(page, wanted, { prefix = false } = {}) {
   const clicked = await page.evaluate(({ wanted, prefix }) => {
-    const norm = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const norm = (value) => String(value || "").replace(/[’]/g, "'").replace(/\s+/g, " ").trim();
     function visible(element) {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") > 0 && rect.width > 0 && rect.height > 0;
     }
     const target = norm(wanted).toLocaleLowerCase();
-    const matches = [...document.querySelectorAll("body *")].filter((element) => {
+    const matches = [...document.querySelectorAll("button,[role='button'],[data-test*='tap'],[data-test='challenge-choice'],body *")].filter((element) => {
       if (!visible(element)) return false;
       const text = norm(element.innerText || element.textContent).toLocaleLowerCase();
       return prefix ? text.startsWith(target) : text === target;
     });
-    matches.sort((a, b) => a.children.length - b.children.length);
+    matches.sort((a, b) => {
+      const aPreferred = a.matches?.("button,[role='button'],[data-test*='tap'],[data-test='challenge-choice']") ? 0 : 1;
+      const bPreferred = b.matches?.("button,[role='button'],[data-test*='tap'],[data-test='challenge-choice']") ? 0 : 1;
+      return aPreferred - bPreferred || a.children.length - b.children.length;
+    });
     const leaf = matches[0];
     if (!leaf) return false;
     let current = leaf;
@@ -140,7 +144,7 @@ async function dismissInterstitials(page) {
 }
 
 async function submitAndContinue(page) {
-  let state = await playerNextState(page);
+  const state = await playerNextState(page);
   if (state && !state.disabled && state.text.startsWith("CHECK")) {
     await page.click('[data-test="player-next"]');
     await sleep(650);
@@ -151,6 +155,25 @@ async function submitAndContinue(page) {
 function choiceText(choice) {
   if (typeof choice === "string") return choice;
   return choice?.text ?? choice?.phrase ?? null;
+}
+
+function phraseTokens(phrase) {
+  return String(phrase || "")
+    .replace(/[’]/g, "'")
+    .match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) || [];
+}
+
+async function solveDisabledSpeakingAlternative(page, challenge) {
+  const state = await pageState(page);
+  if (!challenge.prompt || !state.bodyText.toLocaleLowerCase().includes(String(challenge.prompt).toLocaleLowerCase())) return false;
+  const tokens = phraseTokens(challenge.solutionTranslation);
+  if (!tokens.length) throw new Error(`Speaking challenge ${challenge.id} has no solutionTranslation tokens`);
+  for (const token of tokens) {
+    await clickText(page, token);
+    await sleep(110);
+  }
+  await submitAndContinue(page);
+  return true;
 }
 
 async function solveChallenge(page, challenge, solverState) {
@@ -192,19 +215,23 @@ async function solveChallenge(page, challenge, solverState) {
       await submitAndContinue(page);
       return;
     case "speak": {
-      if (solverState.speakingDisabled) return;
+      if (solverState.speakingDisabled) {
+        await solveDisabledSpeakingAlternative(page, challenge);
+        return;
+      }
       const state = await pageState(page);
       const disable = state.controls.find((item) => item.text.toUpperCase().includes("CAN'T SPEAK"));
       if (disable) {
         await clickText(page, disable.text);
         await sleep(500);
-        const confirm = (await pageState(page)).controls.find((item) => /TURN OFF|DISABLE|SKIP/.test(item.text.toUpperCase()));
+        const confirm = (await pageState(page)).controls.find((item) => /TURN OFF|DISABLE/.test(item.text.toUpperCase()));
         if (confirm) {
           await clickText(page, confirm.text);
           await sleep(450);
         }
         solverState.speakingDisabled = true;
         await dismissInterstitials(page);
+        await solveDisabledSpeakingAlternative(page, challenge);
         return;
       }
       const skip = state.controls.find((item) => item.text.toUpperCase() === "SKIP");
@@ -300,10 +327,6 @@ async function main() {
     let captureNumber = 1;
     for (let index = 0; index < session.challenges.length; index += 1) {
       const challenge = session.challenges[index];
-      if (challenge.type === "speak" && solverState.speakingDisabled) {
-        summary.challengeLog.push({ index, type: challenge.type, skippedBecauseSpeakingDisabled: true });
-        continue;
-      }
       await dismissInterstitials(page);
       await sleep(350);
       const before = await pageState(page);
