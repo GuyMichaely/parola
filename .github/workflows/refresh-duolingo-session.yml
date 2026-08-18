@@ -135,7 +135,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add extension/tests/fixtures/duolingo-session-state.b64
-          git commit -m "Refresh disposable Duolingo test session [skip ci]" || exit 0
+          git commit -m "Refresh disposable Duolingo test session" || exit 0
           git pull --rebase origin main
           git push
 
