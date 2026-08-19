@@ -25,6 +25,7 @@ export function StorageSettingsModal({
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferMessage, setTransferMessage] = useState("");
   const [transferError, setTransferError] = useState("");
+  const [importText, setImportText] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
 
   function currentStorage() {
@@ -71,29 +72,66 @@ export function StorageSettingsModal({
     }
   }
 
+  async function copyInventory() {
+    setTransferError("");
+    setTransferMessage("");
+    setTransferBusy(true);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser context.");
+      const cards = await currentStorage().listCards();
+      await navigator.clipboard.writeText(serializeInventory(cards));
+      setTransferMessage(`Copied ${cards.length} ${cards.length === 1 ? "card" : "cards"} to the clipboard.`);
+    } catch (caught) {
+      setTransferError(caught instanceof Error ? caught.message : "Inventory could not be copied.");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function replaceWithImportedInventory(importedCards: ReturnType<typeof parseInventory>, sourceDescription: string) {
+    const storage = currentStorage();
+    const currentCards = await storage.listCards();
+    const confirmed = window.confirm(
+      `Replace the current ${currentCards.length}-card ${mode === "remote" ? "remote" : "browser"} inventory with the ${importedCards.length}-card inventory ${sourceDescription}?\n\nThis replaces the whole active inventory.`,
+    );
+    if (!confirmed) {
+      setTransferMessage("Import canceled; the current inventory was not changed.");
+      return;
+    }
+    const savedCards = await replaceInventory(storage, currentCards, importedCards);
+    setTransferMessage(`Imported ${savedCards.length} ${savedCards.length === 1 ? "card" : "cards"}. Reloading Parola…`);
+    window.location.reload();
+  }
+
   async function importInventory(file: File) {
     setTransferError("");
     setTransferMessage("");
     setTransferBusy(true);
     try {
-      const importedCards = parseInventory(await file.text());
-      const storage = currentStorage();
-      const currentCards = await storage.listCards();
-      const confirmed = window.confirm(
-        `Replace the current ${currentCards.length}-card ${mode === "remote" ? "remote" : "browser"} inventory with the ${importedCards.length}-card inventory from ${file.name}?\n\nThis replaces the whole active inventory.`,
-      );
-      if (!confirmed) {
-        setTransferMessage("Import canceled; the current inventory was not changed.");
-        return;
-      }
-      const savedCards = await replaceInventory(storage, currentCards, importedCards);
-      setTransferMessage(`Imported ${savedCards.length} ${savedCards.length === 1 ? "card" : "cards"}. Reloading Parola…`);
-      window.location.reload();
+      await replaceWithImportedInventory(parseInventory(await file.text()), `from ${file.name}`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be imported.");
     } finally {
       setTransferBusy(false);
       if (importInput.current) importInput.current.value = "";
+    }
+  }
+
+  async function importInventoryText() {
+    setTransferError("");
+    setTransferMessage("");
+    const text = importText.trim();
+    if (!text) {
+      setTransferError("Paste inventory JSON before importing.");
+      return;
+    }
+    setTransferBusy(true);
+    try {
+      await replaceWithImportedInventory(parseInventory(text), "from the pasted JSON");
+    } catch (caught) {
+      setTransferError(caught instanceof Error ? caught.message : "Inventory could not be imported.");
+    } finally {
+      setTransferBusy(false);
     }
   }
 
@@ -128,28 +166,46 @@ export function StorageSettingsModal({
           autoComplete="off"
         />
       </label>
-      <div className="api-contract">
-        <strong>Expected API</strong>
-        <code>GET endpoint → {`{ cards: [...] }`}</code>
-        <code>POST endpoint ← {`{ cards: [...] }`}</code>
-        <code>PUT endpoint ← one card</code>
-        <code>DELETE endpoint?id=123</code>
-        <p>The endpoint must allow browser requests from the site where Parola is hosted (CORS).</p>
-      </div>
       <section className="inventory-transfer-panel" aria-label="Inventory import and export">
         <div>
           <strong>Inventory backup & restore</strong>
-          <p>Export the complete inventory from the currently active <b>{mode === "remote" ? "remote" : "browser"}</b> storage, or replace it from a Parola JSON export. Draft storage changes above do not apply until you click Apply.</p>
+          <p>Export or copy the complete inventory from the currently active <b>{mode === "remote" ? "remote" : "browser"}</b> storage, or replace it from Parola inventory JSON. Draft storage changes above do not apply until you click Apply.</p>
         </div>
         <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void exportInventory()} disabled={saving || transferBusy}>Export inventory</button>
-          <button type="button" className="neutral-button" onClick={() => importInput.current?.click()} disabled={saving || transferBusy}>Import inventory</button>
+          <button type="button" className="neutral-button" onClick={() => void copyInventory()} disabled={saving || transferBusy}>Copy inventory</button>
+          <button type="button" className="neutral-button" onClick={() => importInput.current?.click()} disabled={saving || transferBusy}>Import file</button>
           <input ref={importInput} type="file" accept=".json,application/json" hidden onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void importInventory(file);
           }} />
         </div>
-        <p className="inventory-transfer-note">Import replaces the whole active inventory. Export first if you want a backup.</p>
+        <label className="field full-field">
+          <span>Import inventory JSON</span>
+          <textarea
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+            placeholder={'{\n  "cards": [...]\n}'}
+            rows={8}
+            disabled={saving || transferBusy}
+            spellCheck={false}
+            style={{
+              width: "100%",
+              resize: "vertical",
+              border: "1px solid var(--line)",
+              borderRadius: "6px",
+              background: "#0e1115",
+              color: "var(--text)",
+              padding: "10px 11px",
+              font: "inherit",
+              lineHeight: 1.45,
+            }}
+          />
+        </label>
+        <div className="inventory-transfer-actions">
+          <button type="button" className="neutral-button" onClick={() => void importInventoryText()} disabled={saving || transferBusy || !importText.trim()}>Import pasted JSON</button>
+        </div>
+        <p className="inventory-transfer-note">Import replaces the whole active inventory. Export or copy first if you want a backup.</p>
         {transferMessage && <p className="inventory-transfer-message" role="status">{transferMessage}</p>}
         {transferError && <p className="form-error" role="alert">{transferError}</p>}
       </section>
