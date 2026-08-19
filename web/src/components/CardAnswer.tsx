@@ -1,7 +1,8 @@
-import type { FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
 import { typeLabels } from "../cardTypes";
 import { answerKeyword, type AnswerKeywords } from "./StudyOptions";
+import { AnswerParsePreview } from "./AnswerParsePreview";
 import {
   inferArticle,
   verifyPowerAnswer,
@@ -95,10 +96,10 @@ export function EnglishAnswer({ card, showType = false }: { card: Flashcard; sho
 }
 
 export function ItalianVerificationForm({ card, syntaxMode, compactType, keywords, onResult }: { card: Flashcard; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
+  const [answer, setAnswer] = useState("");
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const answer = String(data.get("powerAnswer") ?? "");
     onResult(verifyPowerAnswer(card, answer, syntaxMode, keywords), answer);
   }
 
@@ -116,7 +117,8 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
         <span className="answer-label">Type the Italian</span>
         <p>{syntaxMode === "universal" ? `Start with ${keywords.noun}, ${keywords.verb}, ${keywords.adjective}, or ${keywords.adverb}. A noun answer beginning with an article or gender/number markers may omit ${keywords.noun}.` : `${compactLabel} is on, so the part-of-speech prefix is optional.`}</p>
       </div>
-      <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" required autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
+      <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" value={answer} onChange={(event) => setAnswer(event.target.value)} required autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
+      <AnswerParsePreview card={card} value={answer} syntaxMode={syntaxMode} compactType={compactType} keywords={keywords} />
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>

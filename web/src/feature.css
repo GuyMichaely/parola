@@ -1,0 +1,121 @@
+.answer-parse-preview {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #101419;
+  padding: 10px 11px;
+}
+
+.answer-parse-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.answer-parse-heading > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.answer-parse-heading > strong {
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.answer-parse-preview.parsed-noun .answer-parse-heading > strong { color: var(--noun); }
+.answer-parse-preview.parsed-verb .answer-parse-heading > strong { color: var(--verb); }
+.answer-parse-preview.parsed-adjective .answer-parse-heading > strong { color: var(--adjective); }
+.answer-parse-preview.parsed-adverb .answer-parse-heading > strong { color: var(--adverb); }
+.answer-parse-preview.unparsed .answer-parse-heading > strong { color: #b7bec8; }
+
+.answer-parse-message {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.answer-parse-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.answer-parse-piece {
+  min-width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid #303741;
+  border-radius: 5px;
+  background: #0c0f13;
+  padding: 6px 8px;
+}
+
+.answer-parse-piece > span {
+  color: #77818d;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.answer-parse-piece > code {
+  overflow-wrap: anywhere;
+  color: #d7dde5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.inventory-transfer-panel {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #101317;
+  padding: 12px;
+}
+
+.inventory-transfer-panel > div:first-child > strong {
+  font-size: 12px;
+}
+
+.inventory-transfer-panel > div:first-child > p,
+.inventory-transfer-note,
+.inventory-transfer-message {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.inventory-transfer-panel b {
+  color: #cdd4dc;
+  font-weight: 650;
+}
+
+.inventory-transfer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inventory-transfer-actions .neutral-button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.inventory-transfer-message {
+  color: #a7e6c3;
+}
+
+@media (max-width: 600px) {
+  .answer-parse-pieces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .answer-parse-piece { min-width: 0; }
+  .inventory-transfer-actions { flex-direction: column; }
+  .inventory-transfer-actions .neutral-button { width: 100%; }
+}

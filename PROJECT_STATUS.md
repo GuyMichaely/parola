@@ -4,6 +4,19 @@ _Last updated: 2026-08-18_
 
 This file is the durable checkpoint for the current Parola architecture, project decisions, and next steps.
 
+## GitHub issue policy
+
+GitHub issues in this repository are primarily an informal place for the user to record ideas and reminders. They are **not** an authoritative SDLC queue, specification, commitment, priority order, or indication that a formal issue-driven workflow is desired.
+
+When working from an issue:
+
+- use it as context for the underlying idea rather than treating its wording as a rigid specification;
+- reconcile it with the current conversation, current code, and this project-status document;
+- make sensible architectural/product decisions instead of preserving issue text for its own sake;
+- do not infer process requirements such as branches, pull requests, milestones, issue closure, release gates, or backwards compatibility merely because an issue exists.
+
+The current conversation and explicit project decisions take precedence over issue wording.
+
 ## Current architecture
 
 Parola has three independently deployable parts:
@@ -50,6 +63,18 @@ When a breaking storage/schema change is useful:
 - then remove the old schema/compatibility code.
 
 The target is one clean canonical model, not permanent support for historical representations.
+
+## Current web-app UX
+
+The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI now includes a realtime parsing preview that explains how Parola is interpreting the current input: inferred/explicit part of speech, gender/number markers, and positional grammatical fields.
+
+The Storage dialog also provides manual inventory backup/restore:
+
+- export the complete active inventory to a versioned Parola JSON file;
+- import a Parola inventory JSON file as a full replacement of the active browser or remote inventory;
+- cards carry their sets, decks/tags, and grammatical details in the export.
+
+Inventory import/export concerns inventory data, not transient study-session state or UI preferences.
 
 ## Completed extension cleanup
 
