@@ -1,10 +1,10 @@
 import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
-import { getActiveNounMorphology } from "./nounMorphologyRuntime";
 import {
   inferNounDefinitionFromForms,
   resolvedNounForms,
   suggestedNounArticles,
+  type NounMorphology,
 } from "./nounMorphology";
 import { standardAdjectivePattern } from "../study/logic";
 
@@ -185,7 +185,7 @@ export function nounCard(input: {
   definiteSingularArticle: string;
   definitePluralArticle: string;
   indefiniteArticle: string;
-}): Flashcard {
+}, morphology: NounMorphology): Flashcard {
   const definition = inferNounDefinitionFromForms({
     singular: input.singular,
     plural: input.plural,
@@ -193,7 +193,7 @@ export function nounCard(input: {
     definiteSingularArticle: input.definiteSingularArticle,
     definitePluralArticle: input.definitePluralArticle,
     indefiniteArticle: input.indefiniteArticle,
-  }, getActiveNounMorphology());
+  }, morphology);
   if (!definition) {
     throw new Error(`No configured declension rule can represent ${input.singular || input.plural}. Define the morphology rule first.`);
   }
@@ -242,8 +242,8 @@ export function adverbCard(input: Omit<AdverbBatchRow, "id"> & { id: number; set
   return { id: input.id, type: "adverb", english: input.english, italian: input.form, setName: input.setName, tags: input.tags, details: {} };
 }
 
-export function nounRowFromCard(card: Flashcard): BatchRow {
-  const forms = resolvedNounForms(card, getActiveNounMorphology());
+export function nounRowFromCard(card: Flashcard, morphology: NounMorphology): BatchRow {
+  const forms = resolvedNounForms(card, morphology);
   return {
     id: String(card.id),
     english: card.english,
