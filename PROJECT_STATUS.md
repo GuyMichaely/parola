@@ -1,6 +1,6 @@
 # Parola project status
 
-_Last updated: 2026-08-18_
+_Last updated: 2026-08-19_
 
 This file is the durable checkpoint for the current Parola architecture, project decisions, and next steps.
 
@@ -23,9 +23,28 @@ Parola has three independently deployable parts:
 
 - `web/` — static React/Vite flashcard frontend served at `https://guymichaely.com/parola/`.
 - `extension/` — Chrome extension for manually capturing/staging Italian words and contexts before review/import.
-- `api/` — optional remote card-storage API deployed separately to Azure.
+- `api/` — optional synchronization API deployed separately to Azure.
 
-The frontend stores data in browser `localStorage` by default and can use a configured remote HTTP endpoint instead.
+The web app is local-first. Browser state remains a first-class copy of the inventory, while a configured API endpoint can act as a synchronization peer between machines.
+
+## Web inventory synchronization
+
+Remote synchronization is **not** a choice between “browser storage” and “remote storage.” Local and remote are copies of the same inventory snapshot.
+
+- With no API endpoint configured, Parola is local-only.
+- With an API endpoint configured, Parola compares the local and remote inventory snapshots when it opens.
+- Inventory snapshots carry an internal `updatedAt` timestamp.
+- Reconciliation is deliberately simple: **the snapshot with the later timestamp wins**. There is no per-card merge algorithm.
+- The server rejects an older full-snapshot write instead of allowing stale state to overwrite newer state.
+- Every local inventory mutation receives a newer timestamp and is automatically pushed to the remote server when sync is configured.
+- If the server is unavailable, local work remains usable; the UI reports that it is not synced and a later load or manual sync can reconcile it.
+
+Two sync preferences are user-configurable:
+
+1. **Keep a persistent local copy** — when enabled, synchronized state remains in browser `localStorage` between sessions. When disabled, remote state is still used as the working inventory during the session but the synchronized inventory is not retained locally across reloads.
+2. **When local and remote differ on load** — either synchronize automatically or report that sync is available and wait for the user to choose **Sync now**. In both cases the later timestamp is authoritative; the setting changes timing, not conflict direction.
+
+The header exposes sync state such as checking, syncing, synced, sync available, or not synced.
 
 ## Extension capture model
 
@@ -66,13 +85,17 @@ The target is one clean canonical model, not permanent support for historical re
 
 ## Current web-app UX
 
-The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI now includes a realtime parsing preview that explains how Parola is interpreting the current input: inferred/explicit part of speech, gender/number markers, and positional grammatical fields.
+The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI includes a realtime parsing preview that explains how Parola is interpreting the current input: inferred/explicit part of speech, gender/number markers, and positional grammatical fields.
 
-The Storage dialog also provides manual inventory backup/restore:
+The Storage & sync dialog also provides manual inventory backup/restore:
 
-- export the complete active inventory to a versioned Parola JSON file;
-- import a Parola inventory JSON file as a full replacement of the active browser or remote inventory;
+- export the complete inventory to a JSON file;
+- copy the same inventory JSON to the clipboard;
+- import a JSON file as a full inventory replacement;
+- paste inventory JSON into a text box and import it;
 - cards carry their sets, decks/tags, and grammatical details in the export.
+
+The canonical inventory transfer JSON is simply an object containing `cards`; it does not contain `format`, `version`, or `exportedAt`. Sync timestamps are internal synchronization metadata and are not part of the manual inventory export.
 
 Inventory import/export concerns inventory data, not transient study-session state or UI preferences.
 
@@ -175,7 +198,8 @@ Once batch enrichment is reliable, allow newly captured words to enter the same 
 
 ## Immediate next steps
 
-1. Verify that the cleaned workflows successfully publish the current signed extension release without automated browser testing.
-2. Update the installed extension through the existing feed and confirm that its manifest now points to the GitHub Releases feed.
-3. Complete the one-time deployment separation by making Pages web-only.
-4. Begin step 3 of the product roadmap: model captured surface forms separately from canonical card candidates/lemmas.
+1. Verify the new local-first synchronization flow against the deployed Azure API from two browser/machine states, including newer-local, newer-remote, automatic, ask-first, and remote-unavailable cases.
+2. Verify that the cleaned workflows successfully publish the current signed extension release without automated browser testing.
+3. Update the installed extension through the existing feed and confirm that its manifest now points to the GitHub Releases feed.
+4. Complete the one-time extension deployment separation by making Pages web-only.
+5. Begin step 3 of the product roadmap: model captured surface forms separately from canonical card candidates/lemmas.
