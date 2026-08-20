@@ -13,9 +13,16 @@ import {
 } from "../cards/nounMorphology";
 import type { InventoryState } from "../storage";
 
+function uniqueId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 function newRule(): NounDeclensionRule {
-  const id = `rule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  return { id, name: "New declension", forms: { singular: { suffix: "" }, plural: { suffix: "" } } };
+  return { id: uniqueId("rule"), name: "New declension", forms: { singular: { suffix: "" }, plural: { suffix: "" } } };
+}
+
+function newInferenceSet(): NounMorphology["inferenceSets"][number] {
+  return { id: uniqueId("inference"), name: "New inference set", declensionRuleIds: [] };
 }
 
 function syntaxDescription(syntax: NounMorphology["syntaxRules"][number]) {
@@ -136,6 +143,21 @@ export function NounMorphologyPanel({
     changeMorphology((current) => ({ ...current, declensionRules: current.declensionRules.filter((rule) => rule.id !== id) }));
   }
 
+  function updateInferenceSet(id: string, name: string) {
+    changeMorphology((current) => ({
+      ...current,
+      inferenceSets: current.inferenceSets.map((set) => set.id === id ? { ...set, name } : set),
+    }));
+  }
+
+  function removeInferenceSet(id: string) {
+    if (draft.syntaxRules.some((syntax) => syntax.inferenceSetId === id)) {
+      setError("Move every syntax rule to another inference set before removing this one.");
+      return;
+    }
+    changeMorphology((current) => ({ ...current, inferenceSets: current.inferenceSets.filter((set) => set.id !== id) }));
+  }
+
   function toggleInferenceRule(setId: string, ruleId: string) {
     changeMorphology((current) => ({
       ...current,
@@ -242,14 +264,18 @@ export function NounMorphologyPanel({
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, declensionRules: [...current.declensionRules, newRule()] }))}>Add rule</button></div>
 
       <h3>Inference sets</h3>
-      <p>An inference set is shared by syntax rules. Add a declension here when every syntax using this set should be allowed to infer that declension.</p>
+      <p>Inference sets are reusable learning-policy groups. Add a declension to a set when syntaxes linked to that set should be allowed to infer it.</p>
       {draft.inferenceSets.map((set) => <div className="morphology-inference-set" key={set.id}>
-        <strong>{set.name}</strong>
+        <div className="noun-pattern-actions">
+          <input value={set.name} onChange={(event) => updateInferenceSet(set.id, event.target.value)} aria-label="Inference set name" />
+          <button type="button" className="row-remove" onClick={() => removeInferenceSet(set.id)} aria-label={`Remove inference set ${set.name}`}>×</button>
+        </div>
         <div className="morphology-rule-checks">{draft.declensionRules.map((rule) => <label key={rule.id}>
           <input type="checkbox" checked={set.declensionRuleIds.includes(rule.id)} onChange={() => toggleInferenceRule(set.id, rule.id)} />
           <span>{rule.name}</span>
         </label>)}</div>
       </div>)}
+      <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, inferenceSets: [...current.inferenceSets, newInferenceSet()] }))}>Add inference set</button></div>
 
       <h3>Syntax rules</h3>
       <p>Syntax structure is data-driven and remains read-only here. Names and inference-set associations are editable.</p>
