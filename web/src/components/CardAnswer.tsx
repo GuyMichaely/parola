@@ -1,20 +1,20 @@
 import { type FormEvent, useState } from "react";
 import type { Flashcard } from "../cards/types";
-import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
-import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
+import { getActiveNounMorphology } from "../cards/nounMorphologyRuntime";
+import { resolvedNounForms, ruleForNounCard } from "../cards/nounMorphology";
 import { typeLabels } from "../cardTypes";
 import type { AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import { verifyPowerAnswer } from "../study/logic";
 
 export function NounAnswer({ card }: { card: Flashcard }) {
-  const patterns = getActiveNounPatterns();
-  const forms = resolvedNounForms(card, patterns);
-  const pattern = nounPatternForCard(card, patterns);
+  const morphology = getActiveNounMorphology();
+  const forms = resolvedNounForms(card, morphology);
+  const rule = ruleForNounCard(card, morphology);
   const hasArticles = Boolean(forms.definiteSingularArticle || forms.definitePluralArticle || forms.indefiniteArticle);
   return (
     <div className="answer-content">
-      <span className="answer-label">Italian · {forms.gender}{pattern ? ` · ${pattern.name}` : ""}</span>
+      <span className="answer-label">Italian · {forms.gender}{rule ? ` · ${rule.name}` : ""}</span>
       <h2>{forms.singular || forms.plural || card.italian}</h2>
       {hasArticles && <table className="noun-forms-table">
         <thead><tr><th>Form</th><th>Article</th><th>Word</th></tr></thead>
@@ -24,7 +24,7 @@ export function NounAnswer({ card }: { card: Flashcard }) {
           {forms.singular && forms.indefiniteArticle && <tr><td>Indefinite</td><td>{forms.indefiniteArticle}</td><td>{forms.singular}</td></tr>}
         </tbody>
       </table>}
-      {!hasArticles && <p className="noun-article-note">No stored articles</p>}
+      {!hasArticles && <p className="noun-article-note">No articles</p>}
     </div>
   );
 }
@@ -73,7 +73,7 @@ export function CardAnswer({ card }: { card: Flashcard }) {
 }
 
 export function ItalianPrompt({ card }: { card: Flashcard }) {
-  const nounForm = card.type === "noun" ? resolvedNounForms(card, getActiveNounPatterns()).singular : "";
+  const nounForm = card.type === "noun" ? resolvedNounForms(card, getActiveNounMorphology()).singular : "";
   return (
     <div className="question-content">
       <span className="answer-label">Italian</span>
@@ -123,7 +123,7 @@ export function ItalianVerificationForm({ card, keywords, onResult }: { card: Fl
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>
-          <p><strong>Noun:</strong> full form <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Noun patterns can opt into shorter <strong>Article + singular</strong> syntax such as <code>il libro</code> or <code>m lo specchio</code>. Gender and tantum markers may appear in either order. Singular-only example: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>.</p>
+          <p><strong>Noun:</strong> full form <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Short noun syntaxes use configured inference sets. Gender and tantum markers may appear in either order. Singular-only example: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>.</p>
           <p><strong>Verb:</strong> <code>infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
           <p><strong>Adjective:</strong> regular shorthand <code>bello</code>, or full <code>bello bella belli belle</code>.</p>
           <p><strong>Adverb:</strong> one invariant form, such as <code>molto</code>.</p>
