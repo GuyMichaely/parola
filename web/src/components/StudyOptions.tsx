@@ -1,15 +1,10 @@
 import { useState } from "react";
 import type { CardType } from "../cards/types";
-import { typeLabels } from "../cardTypes";
 
 export type PromptLanguage = "english" | "italian";
 export type PromptMode = PromptLanguage | "both";
 
 export type AnswerKeywords = {
-  noun: string;
-  verb: string;
-  adjective: string;
-  adverb: string;
   masculine: string;
   feminine: string;
   singularOnly: string;
@@ -18,19 +13,11 @@ export type AnswerKeywords = {
 
 const answerKeywordsKey = "parola:answer-keywords";
 const defaultAnswerKeywords: AnswerKeywords = {
-  noun: "n",
-  verb: "v",
-  adjective: "a",
-  adverb: "adv",
   masculine: "m",
   feminine: "f",
   singularOnly: "sin",
   pluralOnly: "plu",
 };
-
-export function answerKeyword(type: CardType, keywords: AnswerKeywords) {
-  return type === "noun" ? keywords.noun : type === "verb" ? keywords.verb : type === "adjective" ? keywords.adjective : keywords.adverb;
-}
 
 export function readAnswerKeywords(): AnswerKeywords {
   if (typeof window === "undefined") return defaultAnswerKeywords;
@@ -53,15 +40,10 @@ export function writeAnswerKeywords(keywords: AnswerKeywords) {
   }
 }
 
-
 function AnswerKeywordSettings({ keywords, onChange }: { keywords: AnswerKeywords; onChange: (keywords: AnswerKeywords) => void }) {
   const [draft, setDraft] = useState(keywords);
   const [message, setMessage] = useState("");
   const fields: { key: keyof AnswerKeywords; label: string }[] = [
-    { key: "noun", label: "Noun" },
-    { key: "verb", label: "Verb" },
-    { key: "adjective", label: "Adjective" },
-    { key: "adverb", label: "Adverb" },
     { key: "masculine", label: "Masculine" },
     { key: "feminine", label: "Feminine" },
     { key: "singularOnly", label: "Singular-only" },
@@ -93,7 +75,7 @@ function AnswerKeywordSettings({ keywords, onChange }: { keywords: AnswerKeyword
   return <details className="keyword-settings">
     <summary>Answer keywords</summary>
     <div className="keyword-settings-body">
-      <p>Customize the short tokens used by type-to-verify. Changes apply to new answers immediately.</p>
+      <p>Customize the noun gender and tantum markers used while typing Italian answers.</p>
       <div className="keyword-grid">
         {fields.map((field) => <label key={field.key}><span>{field.label}</span><input value={draft[field.key]} onChange={(event) => { setDraft((current) => ({ ...current, [field.key]: event.target.value })); setMessage(""); }} autoCapitalize="none" spellCheck={false} /></label>)}
       </div>
@@ -112,9 +94,9 @@ export function StudyOptions({
   onOneDirectionPerWord,
   englishFirstWhenBoth,
   onEnglishFirstWhenBoth,
-  homogeneousType,
-  compactAnswers,
-  onCompactAnswers,
+  homogeneousType: _homogeneousType,
+  compactAnswers: _compactAnswers,
+  onCompactAnswers: _onCompactAnswers,
   answerKeywords,
   onAnswerKeywords,
 }: {
@@ -159,12 +141,7 @@ export function StudyOptions({
         <input type="checkbox" checked={englishFirstWhenBoth} onChange={onEnglishFirstWhenBoth} />
         <span><strong>English first</strong><small>Show each word’s English prompt before its Italian prompt</small></span>
       </label>}
-      {typeToVerify && promptMode !== "italian" && homogeneousType && <label className="switch-option compact-mode-option">
-        <input type="checkbox" checked={compactAnswers} onChange={onCompactAnswers} />
-        <span><strong>{typeLabels[homogeneousType]} mode</strong><small>All cards in this scope are {typeLabels[homogeneousType].toLowerCase()}s; omit the {answerKeyword(homogeneousType, answerKeywords)} prefix</small></span>
-      </label>}
       {typeToVerify && promptMode !== "italian" && <AnswerKeywordSettings keywords={answerKeywords} onChange={onAnswerKeywords} />}
     </section>
   );
 }
-
