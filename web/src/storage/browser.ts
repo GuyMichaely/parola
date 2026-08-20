@@ -67,10 +67,6 @@ export class BrowserStorage implements CardStorage {
     return cloneState(readLocalSnapshot());
   }
 
-  async listCards() {
-    return cloneCards(readLocalSnapshot().cards);
-  }
-
   async createCards(cards: Flashcard[]) {
     const snapshot = readLocalSnapshot();
     const existing = snapshot.cards;
