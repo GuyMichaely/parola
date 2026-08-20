@@ -3,7 +3,7 @@ import type { CardType, Flashcard } from "../cards/types";
 import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
 import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
-import { answerKeyword, type AnswerKeywords } from "./StudyOptions";
+import type { AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import {
   verifyPowerAnswer,
@@ -96,42 +96,44 @@ export function EnglishAnswer({ card, showType = false }: { card: Flashcard; sho
 
 export function ItalianVerificationForm({ card, syntaxMode, compactType, keywords, onResult }: { card: Flashcard; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
   const [answer, setAnswer] = useState("");
+  const [syntaxRejected, setSyntaxRejected] = useState(false);
   const syntax = analyzeAnswerSyntax(card, answer, syntaxMode, compactType, keywords);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (syntax.status !== "complete") return;
+    if (syntax.status !== "complete") {
+      setSyntaxRejected(true);
+      return;
+    }
+    setSyntaxRejected(false);
     onResult(verifyPowerAnswer(card, answer, syntaxMode, keywords), answer);
   }
 
-  const compactLabel = compactType ? `${typeLabels[compactType]} mode` : "Compact mode";
-  const placeholder = syntaxMode === "universal"
-    ? `il libro  ·  ${keywords.verb} parlare parlo …  ·  ${keywords.adjective} bello bella …  ·  ${keywords.adverb} molto`
-    : compactType === "noun" ? `i vestiti  or  ${keywords.feminine} ${keywords.singularOnly} Venezia`
-      : compactType === "verb" ? "parlare parlo parli parla …"
-        : compactType === "adjective" ? "bello  or  bello bella belli belle"
-          : "molto";
+  const placeholder = card.type === "noun"
+    ? `il libro  ·  m lo specchio  ·  ${keywords.feminine} ${keywords.singularOnly} Venezia`
+    : card.type === "verb" ? "parlare parlo parli parla parliamo parlate parlano avere parlato"
+      : card.type === "adjective" ? "bello  or  bello bella belli belle"
+        : "molto";
 
   return (
-    <form className="verification-form power-verification-form" onSubmit={submit}>
+    <form className={`verification-form power-verification-form${syntaxRejected ? " syntax-rejected" : ""}`} onSubmit={submit}>
       <div className="verification-heading">
-        <span className="answer-label">Type the Italian</span>
-        <p>{syntaxMode === "universal" ? `Start with ${keywords.noun}, ${keywords.verb}, ${keywords.adjective}, or ${keywords.adverb}. A noun answer beginning with an article or gender/number markers may omit ${keywords.noun}.` : `${compactLabel} is on, so the part-of-speech prefix is optional.`}</p>
+        <span className="answer-label">Type the Italian · {typeLabels[card.type]}</span>
       </div>
-      <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" value={answer} onChange={(event) => setAnswer(event.target.value)} required autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
+      <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" value={answer} onChange={(event) => { setAnswer(event.target.value); setSyntaxRejected(false); }} required aria-invalid={syntaxRejected || syntax.status === "invalid"} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
       <AnswerParsePreview card={card} value={answer} syntaxMode={syntaxMode} compactType={compactType} keywords={keywords} />
+      {syntaxRejected && <p className="syntax-submit-error" role="alert">The answer cannot be checked until its syntax is complete and valid.</p>}
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>
-          <p><strong>Noun:</strong> omit <code>{keywords.noun}</code> when an article or gender/number markers identify the noun format. Full: <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. A noun pattern may opt into <strong>Article + singular</strong> shorthand; patterns left on <strong>Full forms required</strong> still require the whole declension. Plural-only: <code>i vestiti</code>. Articleless singular-only: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>. An ambiguous article also needs gender: <code>{keywords.feminine} {keywords.singularOnly} l’Aquila</code>.</p>
-          <p><strong>Verb:</strong> <code>{keywords.verb} infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
-          <p><strong>Adjective:</strong> regular shorthand <code>{keywords.adjective} bello</code>, or full <code>{keywords.adjective} bello bella belli belle</code>.</p>
-          <p><strong>Adverb:</strong> invariant form <code>{keywords.adverb} molto</code>.</p>
+          <p><strong>Noun:</strong> full form <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Noun patterns can opt into shorter <strong>Article + singular</strong> syntax such as <code>il libro</code> or <code>m lo specchio</code>. Gender and tantum markers may appear in either order. Singular-only example: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>.</p>
+          <p><strong>Verb:</strong> <code>infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
+          <p><strong>Adjective:</strong> regular shorthand <code>bello</code>, or full <code>bello bella belli belle</code>.</p>
+          <p><strong>Adverb:</strong> one invariant form, such as <code>molto</code>.</p>
           <p>Separate fields with spaces. Wrap a multi-word field in double quotes.</p>
-          {syntaxMode === "compact" && compactType && <p>In {compactLabel}, omit the <code>{answerKeyword(compactType, keywords)}</code> prefix.</p>}
         </div>
       </details>
-      <button className="primary-button check-answer-button" type="submit" disabled={syntax.status !== "complete"}>Check answer</button>
+      <button className="primary-button check-answer-button" type="submit" disabled={!answer.trim()}>Check answer</button>
     </form>
   );
 }
