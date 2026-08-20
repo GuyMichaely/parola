@@ -1,10 +1,8 @@
-const endpointKey = "parola:storage-endpoint";
-const legacyStorageModeKey = "parola:storage-mode";
+const endpointKey = "parola:sync-endpoint";
 const persistLocalKey = "parola:sync-persist-local";
-const conflictPolicyKey = "parola:sync-conflict-policy";
+const loadPolicyKey = "parola:sync-load-policy";
 
-export type StorageMode = "browser" | "remote";
-export type SyncConflictPolicy = "newest" | "ask";
+export type SyncLoadPolicy = "automatic" | "ask";
 
 export function readStorageEndpoint() {
   try {
@@ -12,14 +10,6 @@ export function readStorageEndpoint() {
   } catch {
     return "";
   }
-}
-
-export function readStorageMode(): StorageMode {
-  return readStorageEndpoint() ? "remote" : "browser";
-}
-
-export function saveStorageMode(_mode: StorageMode) {
-  window.localStorage.removeItem(legacyStorageModeKey);
 }
 
 export function saveStorageEndpoint(endpoint: string) {
@@ -41,14 +31,14 @@ export function saveSyncPersistLocal(value: boolean) {
   window.localStorage.setItem(persistLocalKey, value ? "true" : "false");
 }
 
-export function readSyncConflictPolicy(): SyncConflictPolicy {
+export function readSyncLoadPolicy(): SyncLoadPolicy {
   try {
-    return window.localStorage.getItem(conflictPolicyKey) === "newest" ? "newest" : "ask";
+    return window.localStorage.getItem(loadPolicyKey) === "ask" ? "ask" : "automatic";
   } catch {
-    return "ask";
+    return "automatic";
   }
 }
 
-export function saveSyncConflictPolicy(value: SyncConflictPolicy) {
-  window.localStorage.setItem(conflictPolicyKey, value);
+export function saveSyncLoadPolicy(value: SyncLoadPolicy) {
+  window.localStorage.setItem(loadPolicyKey, value);
 }
