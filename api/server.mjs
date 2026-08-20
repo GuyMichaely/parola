@@ -108,7 +108,7 @@ function sendJson(res, status, value, headers = {}) {
 }
 
 function normalizeIdentityText(value) {
-  return String(value).normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/\s+/g, " ");
+  return String(value).normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/[’`]/g, "'").replace(/\s+/g, " ");
 }
 
 function cardDuplicateKey(card) {
@@ -172,6 +172,12 @@ function ruleSupportsNumberMode(rule, numberMode) {
   if (numberMode === "both") return singular && plural;
   if (numberMode === "singular") return singular && !plural;
   return plural && !singular;
+}
+
+function generateNounForm(rule, base, number) {
+  const transform = rule.forms[number];
+  if (!transform) return null;
+  return `${String(base).normalize("NFC")}${transform.suffix}`;
 }
 
 function normalizeNounMorphology(value) {
@@ -258,6 +264,11 @@ function validateNounAssignments(cards, nounMorphology) {
     if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.ruleId}.`);
     if (!ruleSupportsNumberMode(rule, card.details.numberMode)) {
       throw new Error(`Noun card ${card.id ?? card.english} uses ${card.details.ruleId}, which does not support ${card.details.numberMode} nouns.`);
+    }
+    const primaryNumber = card.details.numberMode === "plural" ? "plural" : "singular";
+    const primaryForm = generateNounForm(rule, card.details.base, primaryNumber);
+    if (!primaryForm || normalizeIdentityText(card.italian) !== normalizeIdentityText(primaryForm)) {
+      throw new Error(`Noun card ${card.id ?? card.english} has Italian form ${card.italian}, but its canonical morphology produces ${primaryForm ?? "no primary form"}.`);
     }
   }
 }
