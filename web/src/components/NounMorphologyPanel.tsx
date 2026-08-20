@@ -9,6 +9,7 @@ import {
   type NounDeclensionRule,
   type NounFormNumber,
   type NounMorphology,
+  type NounSyntaxField,
   type NounSyntaxRule,
 } from "../cards/nounMorphology";
 import type { InventoryState } from "../storage";
@@ -25,7 +26,20 @@ function newInferenceSet(): NounMorphology["inferenceSets"][number] {
   return { id: uniqueId("inference"), name: "New inference set", declensionRuleIds: [] };
 }
 
-function syntaxDescription(syntax: NounMorphology["syntaxRules"][number]) {
+function newSyntax(inferenceSetId: string): NounSyntaxRule {
+  return {
+    id: uniqueId("syntax"),
+    name: "New noun syntax",
+    markers: [{ kind: "gender", required: false }],
+    markerOrder: "any",
+    fields: [{ kind: "noun", number: "singular" }],
+    numberMode: "both",
+    articleMode: "automatic",
+    inferenceSetId,
+  };
+}
+
+function syntaxDescription(syntax: NounSyntaxRule) {
   const markers = syntax.markers.map((marker) => marker.kind === "gender"
     ? marker.required ? "<gender>" : "[gender]"
     : marker.required ? `<${marker.value}-only>` : `[${marker.value}-only]`);
@@ -33,6 +47,19 @@ function syntaxDescription(syntax: NounMorphology["syntaxRules"][number]) {
     ? `<${field.number} noun>`
     : `<${field.definiteness} ${field.number} article>`);
   return [...markers, ...fields].join(" ");
+}
+
+function syntaxFieldValue(field: NounSyntaxField) {
+  if (field.kind === "noun") return `noun:${field.number}`;
+  return `article:${field.definiteness}:${field.number}`;
+}
+
+function syntaxFieldFromValue(value: string): NounSyntaxField {
+  if (value === "noun:singular") return { kind: "noun", number: "singular" };
+  if (value === "noun:plural") return { kind: "noun", number: "plural" };
+  if (value === "article:definite:singular") return { kind: "article", definiteness: "definite", number: "singular" };
+  if (value === "article:definite:plural") return { kind: "article", definiteness: "definite", number: "plural" };
+  return { kind: "article", definiteness: "indefinite", number: "singular" };
 }
 
 type Assignment = {
@@ -177,6 +204,102 @@ export function NounMorphologyPanel({
     }));
   }
 
+  function addSyntax() {
+    const inferenceSetId = draft.inferenceSets[0]?.id;
+    if (!inferenceSetId) {
+      setError("Create an inference set before adding a syntax rule.");
+      return;
+    }
+    changeMorphology((current) => ({ ...current, syntaxRules: [...current.syntaxRules, newSyntax(inferenceSetId)] }));
+  }
+
+  function removeSyntax(id: string) {
+    changeMorphology((current) => ({ ...current, syntaxRules: current.syntaxRules.filter((syntax) => syntax.id !== id) }));
+  }
+
+  function setSyntaxGenderMarker(id: string, value: "none" | "optional" | "required") {
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => {
+        if (syntax.id !== id) return syntax;
+        const markers = syntax.markers.filter((marker) => marker.kind !== "gender");
+        if (value !== "none") markers.unshift({ kind: "gender", required: value === "required" });
+        return { ...syntax, markers };
+      }),
+    }));
+  }
+
+  function setSyntaxTantumMarker(id: string, value: "none" | "singular" | "plural") {
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => {
+        if (syntax.id !== id) return syntax;
+        const markers = syntax.markers.filter((marker) => marker.kind !== "tantum");
+        if (value !== "none") markers.push({ kind: "tantum", required: true, value });
+        return { ...syntax, markers };
+      }),
+    }));
+  }
+
+  function updateSyntaxField(id: string, index: number, value: string) {
+    const field = syntaxFieldFromValue(value);
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => syntax.id !== id ? syntax : {
+        ...syntax,
+        fields: syntax.fields.map((item, itemIndex) => itemIndex === index ? field : item),
+        articleMode: field.kind === "article" ? "automatic" : syntax.articleMode,
+      }),
+    }));
+  }
+
+  function addSyntaxField(id: string) {
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => syntax.id === id
+        ? { ...syntax, fields: [...syntax.fields, { kind: "noun", number: "singular" }] }
+        : syntax),
+    }));
+  }
+
+  function removeSyntaxField(id: string, index: number) {
+    const syntax = draft.syntaxRules.find((item) => item.id === id);
+    if (!syntax) return;
+    const field = syntax.fields[index];
+    if (field?.kind === "noun" && syntax.fields.filter((item) => item.kind === "noun").length === 1) {
+      setError("A syntax rule must keep at least one noun field.");
+      return;
+    }
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((item) => item.id === id
+        ? { ...item, fields: item.fields.filter((_, itemIndex) => itemIndex !== index) }
+        : item),
+    }));
+  }
+
+  function moveSyntaxField(id: string, index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => {
+        if (syntax.id !== id || nextIndex < 0 || nextIndex >= syntax.fields.length) return syntax;
+        const fields = [...syntax.fields];
+        [fields[index], fields[nextIndex]] = [fields[nextIndex]!, fields[index]!];
+        return { ...syntax, fields };
+      }),
+    }));
+  }
+
+  function updateSyntaxArticleMode(id: string, value: "automatic" | "none") {
+    const syntax = draft.syntaxRules.find((item) => item.id === id);
+    if (value === "none" && syntax?.fields.some((field) => field.kind === "article")) {
+      setError("Remove article fields before setting article behavior to None.");
+      return;
+    }
+    updateSyntax(id, { articleMode: value });
+  }
+
   function updateAssignment(cardId: number, field: keyof Assignment, value: string) {
     setAssignments((current) => ({ ...current, [cardId]: { ...current[cardId], [field]: value } }));
     markEdited();
@@ -278,17 +401,53 @@ export function NounMorphologyPanel({
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, inferenceSets: [...current.inferenceSets, newInferenceSet()] }))}>Add inference set</button></div>
 
       <h3>Syntax rules</h3>
-      <p>Syntax structure is data-driven and remains read-only here. Names and inference-set associations are editable.</p>
-      <div className="noun-patterns-table-wrap">
-        <table className="noun-patterns-table">
-          <thead><tr><th>Name</th><th>Input shape</th><th>Inference set</th></tr></thead>
-          <tbody>{draft.syntaxRules.map((syntax) => <tr key={syntax.id}>
-            <td><input value={syntax.name} onChange={(event) => updateSyntax(syntax.id, { name: event.target.value })} /></td>
-            <td><code>{syntaxDescription(syntax)}</code></td>
-            <td><select value={syntax.inferenceSetId} onChange={(event) => updateSyntax(syntax.id, { inferenceSetId: event.target.value })}>{draft.inferenceSets.map((set) => <option key={set.id} value={set.id}>{set.name}</option>)}</select></td>
-          </tr>)}</tbody>
-        </table>
-      </div>
+      <p>Syntax rules are parser data. Edit their fields, markers, noun behavior, and inference policy directly. Field order is input order.</p>
+      {draft.syntaxRules.map((syntax) => {
+        const genderMarker = syntax.markers.find((marker) => marker.kind === "gender");
+        const tantumMarker = syntax.markers.find((marker) => marker.kind === "tantum");
+        const genderValue = !genderMarker ? "none" : genderMarker.required ? "required" : "optional";
+        return <div className="morphology-inference-set" key={syntax.id}>
+          <div className="noun-pattern-actions">
+            <input value={syntax.name} onChange={(event) => updateSyntax(syntax.id, { name: event.target.value })} aria-label="Syntax name" />
+            <code>{syntaxDescription(syntax)}</code>
+            <button type="button" className="row-remove" onClick={() => removeSyntax(syntax.id)} aria-label={`Remove syntax ${syntax.name}`}>×</button>
+          </div>
+          <div className="noun-patterns-table-wrap">
+            <table className="noun-patterns-table">
+              <thead><tr><th>Number</th><th>Articles</th><th>Gender marker</th><th>Tantum marker</th><th>Inference set</th></tr></thead>
+              <tbody><tr>
+                <td><select value={syntax.numberMode} onChange={(event) => updateSyntax(syntax.id, { numberMode: event.target.value as NounSyntaxRule["numberMode"] })}><option value="both">Singular + plural</option><option value="singular">Singular only</option><option value="plural">Plural only</option></select></td>
+                <td><select value={syntax.articleMode} onChange={(event) => updateSyntaxArticleMode(syntax.id, event.target.value as "automatic" | "none")}><option value="automatic">Automatic</option><option value="none">None</option></select></td>
+                <td><select value={genderValue} onChange={(event) => setSyntaxGenderMarker(syntax.id, event.target.value as "none" | "optional" | "required")}><option value="none">None</option><option value="optional">Optional</option><option value="required">Required</option></select></td>
+                <td><select value={tantumMarker?.kind === "tantum" ? tantumMarker.value : "none"} onChange={(event) => setSyntaxTantumMarker(syntax.id, event.target.value as "none" | "singular" | "plural")}><option value="none">None</option><option value="singular">Required singular-only</option><option value="plural">Required plural-only</option></select></td>
+                <td><select value={syntax.inferenceSetId} onChange={(event) => updateSyntax(syntax.id, { inferenceSetId: event.target.value })}>{draft.inferenceSets.map((set) => <option key={set.id} value={set.id}>{set.name}</option>)}</select></td>
+              </tr></tbody>
+            </table>
+          </div>
+          <div className="noun-patterns-table-wrap">
+            <table className="noun-patterns-table">
+              <thead><tr><th>#</th><th>Input field</th><th /></tr></thead>
+              <tbody>{syntax.fields.map((field, index) => <tr key={`${syntax.id}:${index}`}>
+                <td>{index + 1}</td>
+                <td><select value={syntaxFieldValue(field)} onChange={(event) => updateSyntaxField(syntax.id, index, event.target.value)}>
+                  <option value="noun:singular">Singular noun</option>
+                  <option value="noun:plural">Plural noun</option>
+                  <option value="article:definite:singular">Definite singular article</option>
+                  <option value="article:definite:plural">Definite plural article</option>
+                  <option value="article:indefinite:singular">Indefinite singular article</option>
+                </select></td>
+                <td><div className="noun-pattern-actions">
+                  <button type="button" className="neutral-button" onClick={() => moveSyntaxField(syntax.id, index, -1)} disabled={index === 0}>↑</button>
+                  <button type="button" className="neutral-button" onClick={() => moveSyntaxField(syntax.id, index, 1)} disabled={index === syntax.fields.length - 1}>↓</button>
+                  <button type="button" className="row-remove" onClick={() => removeSyntaxField(syntax.id, index)}>×</button>
+                </div></td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => addSyntaxField(syntax.id)}>Add field</button></div>
+        </div>;
+      })}
+      <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={addSyntax}>Add syntax rule</button></div>
 
       <h3>Noun assignments</h3>
       <p>Each noun stores only its base, actual declension rule, gender, number behavior, and article behavior. Parola derives the available forms.</p>
