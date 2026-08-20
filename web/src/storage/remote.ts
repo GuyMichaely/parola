@@ -1,15 +1,15 @@
-import { setActiveNounPatterns } from "../cards/nounPatternRuntime";
+import { setActiveNounMorphology } from "../cards/nounMorphologyRuntime";
 import {
-  cloneNounPatterns,
-  defaultNounPatterns,
-  normalizeNounPatterns,
-  type NounPattern,
-} from "../cards/nounPatterns";
+  cloneNounMorphology,
+  defaultNounMorphology,
+  normalizeNounMorphology,
+  type NounMorphology,
+} from "../cards/nounMorphology";
 import { parseCardsResponse } from "./cardCodec";
 
 export interface RemoteSnapshot {
   cards: ReturnType<typeof parseCardsResponse>;
-  nounPatterns: NounPattern[];
+  nounMorphology: NounMorphology;
   updatedAt: string | null;
 }
 
@@ -30,14 +30,14 @@ function stateUrl(endpoint: string) {
 }
 
 function parseSnapshot(value: unknown): RemoteSnapshot {
-  const payload = value as { cards?: unknown; nounPatterns?: unknown; updatedAt?: unknown };
-  const nounPatterns = Array.isArray(payload?.nounPatterns)
-    ? normalizeNounPatterns(payload.nounPatterns)
-    : cloneNounPatterns(defaultNounPatterns);
-  setActiveNounPatterns(nounPatterns);
+  const payload = value as { cards?: unknown; nounMorphology?: unknown; updatedAt?: unknown };
+  const nounMorphology = payload?.nounMorphology
+    ? normalizeNounMorphology(payload.nounMorphology)
+    : cloneNounMorphology(defaultNounMorphology);
+  setActiveNounMorphology(nounMorphology);
   return {
     cards: parseCardsResponse(payload),
-    nounPatterns,
+    nounMorphology,
     updatedAt: typeof payload?.updatedAt === "string" && payload.updatedAt ? payload.updatedAt : null,
   };
 }
