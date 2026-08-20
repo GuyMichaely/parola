@@ -1,9 +1,7 @@
 const endpointKey = "parola:storage-endpoint";
-const legacyModeKey = "parola:storage-mode";
 const persistLocalKey = "parola:sync-persist-local";
 const loadPolicyKey = "parola:sync-load-policy";
 
-export type StorageMode = "browser" | "remote";
 export type SyncLoadPolicy = "automatic" | "ask";
 
 export function readStorageEndpoint() {
@@ -11,18 +9,6 @@ export function readStorageEndpoint() {
     return window.localStorage.getItem(endpointKey)?.trim() ?? "";
   } catch {
     return "";
-  }
-}
-
-export function readStorageMode(): StorageMode {
-  return readStorageEndpoint() ? "remote" : "browser";
-}
-
-export function saveStorageMode(_mode: StorageMode) {
-  try {
-    window.localStorage.removeItem(legacyModeKey);
-  } catch {
-    // Settings remain usable even if localStorage is unavailable.
   }
 }
 
