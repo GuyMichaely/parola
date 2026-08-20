@@ -1,5 +1,5 @@
 import type { Flashcard } from "../cards/types";
-import { getActiveNounMorphology } from "../cards/nounMorphologyRuntime";
+import type { NounMorphology } from "../cards/nounMorphology";
 import { typeLabels } from "../cardTypes";
 import {
   standardAdjectivePattern,
@@ -46,7 +46,7 @@ function chooseNounPreviewAttempt(attempts: NounSyntaxAttempt[]) {
   return attempts.find((attempt) => attempt.status === "complete") ?? null;
 }
 
-export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
+export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords, morphology: NounMorphology): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
   const typePiece = { label: "Part of speech", value: typeLabels[card.type] };
   if (!trimmed) {
@@ -63,7 +63,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
   const unclosedQuote = (trimmed.match(/"/g)?.length ?? 0) % 2 === 1;
 
   if (card.type === "noun") {
-    const attempts = analyzeNounInput(trimmed, getActiveNounMorphology(), keywords);
+    const attempts = analyzeNounInput(trimmed, morphology, keywords);
     const selected = chooseNounPreviewAttempt(attempts);
     const candidates = attempts.flatMap((attempt) => attempt.status === "complete" ? attempt.candidates : []);
     const candidateNames = Array.from(new Set(candidates.map((candidate) => candidate.declensionRuleName)));
@@ -152,8 +152,8 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
   };
 }
 
-export function AnswerParsePreview({ card, value, keywords }: { card: Flashcard; value: string; keywords: AnswerKeywords }) {
-  const preview = analyzeAnswerSyntax(card, value, keywords);
+export function AnswerParsePreview({ card, value, keywords, morphology }: { card: Flashcard; value: string; keywords: AnswerKeywords; morphology: NounMorphology }) {
+  const preview = analyzeAnswerSyntax(card, value, keywords, morphology);
   const heading = preview.status === "invalid"
     ? `${typeLabels[card.type]} · invalid`
     : `${typeLabels[card.type]} · ${preview.status === "complete" ? "complete" : "in progress"}`;
