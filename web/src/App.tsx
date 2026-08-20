@@ -19,20 +19,22 @@ import {
   BulkEditCardsModal,
   EditCardModal,
   InventoryCardsEditor,
-  deckName,
-  deckTagPrefix,
   localDateStamp,
-  visibleTags,
 } from "./components/CardEditors";
 import { StorageSettingsModal } from "./components/StorageSettingsModal";
-import { StudyOptions, answerKeyword, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
+import { StudyOptions, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
 import { StudyScope, type ScopeMode, type StudyScopeOption } from "./components/StudyScope";
 import {
+  normalizeAnswer,
   shuffled,
   withEnglishPromptFirst,
   type AnswerSyntaxMode,
   type StudyItem,
 } from "./study/logic";
+
+function duplicateCardKey(card: Flashcard) {
+  return `${card.type}\u0000${normalizeAnswer(card.english)}\u0000${normalizeAnswer(card.italian)}`;
+}
 
 export default function Home() {
   const [view, setView] = useState<"study" | "library">("study");
@@ -71,35 +73,31 @@ export default function Home() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [mistakeKeys, setMistakeKeys] = useState<string[]>([]);
   const [mistakeOnlyKeys, setMistakeOnlyKeys] = useState<string[] | null>(null);
-  const [problemDeckName, setProblemDeckName] = useState("");
-  const [createdProblemDeckName, setCreatedProblemDeckName] = useState("");
+  const [mistakeTagName, setMistakeTagName] = useState("");
+  const [createdMistakeTagName, setCreatedMistakeTagName] = useState("");
 
   const setNames = useMemo(() => Array.from(new Set(cards.map((card) => card.setName).filter((name): name is string => Boolean(name)))).sort((a, b) => a.localeCompare(b)), [cards]);
-  const problemDeckNames = useMemo(() => Array.from(new Set(cards.flatMap((card) => card.tags.map(deckName).filter((name): name is string => Boolean(name))))).sort((a, b) => a.localeCompare(b)), [cards]);
-  const suggestedProblemDeckName = useMemo(() => {
+  const tags = useMemo(() => Array.from(new Set(cards.flatMap((card) => card.tags))).sort((a, b) => a.localeCompare(b)), [cards]);
+  const suggestedMistakeTagName = useMemo(() => {
     const prefix = `Trouble · ${localDateStamp()} · `;
-    return `${prefix}${problemDeckNames.filter((name) => name.startsWith(prefix)).length + 1}`;
-  }, [problemDeckNames]);
-  const effectiveProblemDeckName = problemDeckName || suggestedProblemDeckName;
-  const arbitraryTags = useMemo(() => Array.from(new Set(cards.flatMap((card) => visibleTags(card.tags)))).sort((a, b) => a.localeCompare(b)), [cards]);
+    return `${prefix}${tags.filter((name) => name.startsWith(prefix)).length + 1}`;
+  }, [tags]);
+  const effectiveMistakeTagName = mistakeTagName || suggestedMistakeTagName;
   const studyScopeOptions = useMemo<StudyScopeOption[]>(() => [
     ...cardTypes.map((type) => ({ key: `type:${type}`, label: typeLabels[type], kind: "type" as const })),
     ...setNames.map((name) => ({ key: `set:${name}`, label: name, kind: "set" as const })),
-    ...problemDeckNames.map((name) => ({ key: `deck:${name}`, label: name, kind: "deck" as const })),
-    ...arbitraryTags.map((tag) => ({ key: `tag:${tag}`, label: tag, kind: "tag" as const })),
-  ], [arbitraryTags, problemDeckNames, setNames]);
+    ...tags.map((tag) => ({ key: `tag:${tag}`, label: tag, kind: "tag" as const })),
+  ], [setNames, tags]);
   const inventoryTagOptions = useMemo(() => [
     ...cardTypes.map((type) => ({ key: `type:${type}`, label: typeLabels[type], kind: "type" })),
     ...setNames.map((name) => ({ key: `set:${name}`, label: name, kind: "set" })),
-    ...problemDeckNames.map((name) => ({ key: `deck:${name}`, label: name, kind: "deck" })),
-    ...arbitraryTags.map((tag) => ({ key: `tag:${tag}`, label: tag, kind: "custom" })),
-  ], [arbitraryTags, problemDeckNames, setNames]);
+    ...tags.map((tag) => ({ key: `tag:${tag}`, label: tag, kind: "custom" })),
+  ], [setNames, tags]);
   const scopedCards = useMemo(() => cards.filter((card) => {
     if (scopeMode === "all") return true;
-    const belongsToSelectedScope = selectedScopes.includes(`type:${card.type}`) || Boolean(card.setName && selectedScopes.includes(`set:${card.setName}`)) || card.tags.some((tag) => {
-      const name = deckName(tag);
-      return name ? selectedScopes.includes(`deck:${name}`) : selectedScopes.includes(`tag:${tag}`);
-    });
+    const belongsToSelectedScope = selectedScopes.includes(`type:${card.type}`)
+      || Boolean(card.setName && selectedScopes.includes(`set:${card.setName}`))
+      || card.tags.some((tag) => selectedScopes.includes(`tag:${tag}`));
     return scopeMode === "only" ? belongsToSelectedScope : !belongsToSelectedScope;
   }), [cards, scopeMode, selectedScopes]);
   const homogeneousStudyType = useMemo<CardType | null>(() => {
@@ -132,10 +130,7 @@ export default function Home() {
   const card = studyItem?.card ?? null;
   const typingItalian = Boolean(typeToVerify && studyItem?.promptLanguage === "english");
   const tagMatchedCards = useMemo(() => cards.filter((item) => {
-    const cardTagKeys = [`type:${item.type}`, ...(item.setName ? [`set:${item.setName}`] : []), ...item.tags.map((tag) => {
-      const name = deckName(tag);
-      return name ? `deck:${name}` : `tag:${tag}`;
-    })];
+    const cardTagKeys = [`type:${item.type}`, ...(item.setName ? [`set:${item.setName}`] : []), ...item.tags.map((tag) => `tag:${tag}`)];
     return selectedInventoryTags.length === 0 || selectedInventoryTags.some((tag) => cardTagKeys.includes(tag));
   }), [cards, selectedInventoryTags]);
   const filteredCards = useMemo(() => tagMatchedCards.filter((item) => {
@@ -180,10 +175,10 @@ export default function Home() {
       if (event.code === "Space" || (!revealed && event.key === "Enter")) {
         event.preventDefault();
         setRevealed((value) => !value);
-      } else if (revealed && event.key === "2") {
+      } else if (revealed && event.key === "1") {
         event.preventDefault();
         rate("wrong");
-      } else if (revealed && (event.key === "1" || event.key === "Enter")) {
+      } else if (revealed && (event.key === "2" || event.key === "Enter")) {
         event.preventDefault();
         rate("right");
       }
@@ -266,8 +261,8 @@ export default function Home() {
     setSessionComplete(false);
     setMistakeKeys([]);
     setMistakeOnlyKeys(null);
-    setProblemDeckName("");
-    setCreatedProblemDeckName("");
+    setMistakeTagName("");
+    setCreatedMistakeTagName("");
     setSession({ right: 0, wrong: 0, skipped: 0 });
   }
 
@@ -283,10 +278,7 @@ export default function Home() {
       "type:adverb",
       ...nextCards.flatMap((item) => [
         ...(item.setName ? [`set:${item.setName}`] : []),
-        ...item.tags.map((tag) => {
-          const name = deckName(tag);
-          return name ? `deck:${name}` : `tag:${tag}`;
-        }),
+        ...item.tags.map((tag) => `tag:${tag}`),
       ]),
     ]);
     setSelectedInventoryTags((items) => items.filter((key) => availableTagKeys.has(key)));
@@ -301,8 +293,8 @@ export default function Home() {
     setSubmittedAnswer("");
     setSessionComplete(false);
     setMistakeKeys([]);
-    setProblemDeckName("");
-    setCreatedProblemDeckName("");
+    setMistakeTagName("");
+    setCreatedMistakeTagName("");
     setSession({ right: 0, wrong: 0, skipped: 0 });
   }
 
@@ -322,8 +314,8 @@ export default function Home() {
     setSubmittedAnswer("");
     setSessionComplete(false);
     setMistakeKeys([]);
-    setProblemDeckName("");
-    setCreatedProblemDeckName("");
+    setMistakeTagName("");
+    setCreatedMistakeTagName("");
     setSession({ right: 0, wrong: 0, skipped: 0 });
   }
 
@@ -350,16 +342,15 @@ export default function Home() {
     }
   }
 
-  async function createProblemDeck() {
-    const name = effectiveProblemDeckName.trim();
+  async function createMistakeTag() {
+    const name = effectiveMistakeTagName.trim();
     if (!name || !mistakeKeys.length) return;
-    setProblemDeckName(name);
+    setMistakeTagName(name);
     const cardIds = new Set(mistakeKeys.map((key) => Number(key.split(":", 1)[0])).filter(Number.isFinite));
     const originalCards = cards.filter((item) => cardIds.has(item.id));
-    const tag = `${deckTagPrefix}${name}`;
-    const updatedCards = originalCards.map((item) => ({ ...item, tags: item.tags.includes(tag) ? item.tags : [...item.tags, tag] }));
-    const saved = await persistManyCards(updatedCards, originalCards, "That problem deck could not be created. No card memberships were changed.");
-    if (saved) setCreatedProblemDeckName(name);
+    const updatedCards = originalCards.map((item) => ({ ...item, tags: item.tags.includes(name) ? item.tags : [...item.tags, name] }));
+    const saved = await persistManyCards(updatedCards, originalCards, "That mistake tag could not be created. No card tags were changed.");
+    if (saved) setCreatedMistakeTagName(name);
   }
 
   async function removeTagFromExistence(tag: string) {
@@ -370,6 +361,16 @@ export default function Home() {
   }
 
   async function addBatch(newCards: Flashcard[]) {
+    const existingKeys = new Set(cards.map(duplicateCardKey));
+    const newKeys = new Set<string>();
+    for (const newCard of newCards) {
+      const key = duplicateCardKey(newCard);
+      if (existingKeys.has(key) || newKeys.has(key)) {
+        throw new Error(`A ${newCard.type} card for “${newCard.italian}” / “${newCard.english}” already exists.`);
+      }
+      newKeys.add(key);
+    }
+
     const temporaryCards = newCards.map((card, index) => ({ ...card, id: -(Date.now() + index) }));
     const temporaryIds = new Set(temporaryCards.map((card) => card.id));
     setCards((items) => [...temporaryCards, ...items]);
@@ -381,7 +382,7 @@ export default function Home() {
       setCards((items) => [...savedCards, ...items.filter((item) => !temporaryIds.has(item.id))]);
       setSaveState("saved");
     } catch (error) {
-      setCards((items) => items.filter((item) => !temporaryIds.has(item.id)));
+      setCards((items) => items.filter((item) => !temporaryIds.has(item.id));
       setSaveState("failed");
       setSyncWarning("That batch could not be saved and was removed. Please try again.");
       throw error;
@@ -505,21 +506,21 @@ export default function Home() {
             ) : sessionComplete ? (
               <div className="session-complete">
                 <span className="answer-label">{mistakeOnlyKeys ? "Mistake review complete" : "Study complete"}</span>
-                <h2>{mistakeOnlyKeys ? "Mistakes finished" : "Deck finished"}</h2>
+                <h2>{mistakeOnlyKeys ? "Mistakes finished" : "Study finished"}</h2>
                 <p>{session.right} right · {session.wrong} wrong · {session.skipped} skipped</p>
                 <div className="completion-actions">
                   {mistakeOnlyKeys ? <>
                     <button className="primary-button" onClick={restartCurrentStudy}>Study these mistakes again</button>
-                    <button className="neutral-button" onClick={returnToOriginalStudy}>Study original deck</button>
+                    <button className="neutral-button" onClick={returnToOriginalStudy}>Study original selection</button>
                   </> : <>
                     <button className="primary-button" onClick={restartCurrentStudy}>Study again</button>
                     {mistakeKeys.length > 0 && <button className="wrong-button" onClick={studyMistakes}>Study mistakes ({mistakeKeys.length})</button>}
                   </>}
                 </div>
                 {!mistakeOnlyKeys && mistakeKeys.length > 0 && <div className="problem-deck-creator">
-                  {createdProblemDeckName ? <p className="deck-created" role="status">Created deck <strong>{createdProblemDeckName}</strong></p> : <>
-                    <label><span>Problem deck name</span><input value={effectiveProblemDeckName} onChange={(event) => setProblemDeckName(event.target.value)} /></label>
-                    <button className="neutral-button" onClick={() => void createProblemDeck()} disabled={!effectiveProblemDeckName.trim() || saveState === "saving"}>Create problem deck</button>
+                  {createdMistakeTagName ? <p className="deck-created" role="status">Created tag <strong>#{createdMistakeTagName}</strong></p> : <>
+                    <label><span>Mistake tag name</span><input value={effectiveMistakeTagName} onChange={(event) => setMistakeTagName(event.target.value)} /></label>
+                    <button className="neutral-button" onClick={() => void createMistakeTag()} disabled={!effectiveMistakeTagName.trim() || saveState === "saving"}>Create mistake tag</button>
                   </>}
                 </div>}
               </div>
@@ -562,16 +563,16 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="study-actions rating-actions">
-                  <button className="wrong-button" onClick={() => rate("wrong")}><span>2</span> Wrong</button>
-                  <button className="right-button" onClick={() => rate("right")}><span>1</span> Right · Enter</button>
+                  <button className="wrong-button" onClick={() => rate("wrong")}><span>1</span> Wrong</button>
+                  <button className="right-button" onClick={() => rate("right")}><span>2</span> Right · Enter</button>
                 </div>
               )}
-              {!typingItalian && <p className="keyboard-hint">{revealed ? "Space or click flips · 1 or Enter right · 2 wrong" : "Space, Enter, or click flips"}</p>}
+              {!typingItalian && <p className="keyboard-hint">{revealed ? "Space or click flips · 1 wrong · 2 or Enter right" : "Space, Enter, or click flips"}</p>}
               {(session.right + session.wrong + session.skipped) > 0 && <p className="session-counts">This session: {session.right} right · {session.wrong} wrong · {session.skipped} skipped</p>}
             </> : (
               <div className="empty-study">
                 <h2>No cards in this study scope</h2>
-                <p>{scopeMode === "only" && !selectedScopes.length ? "Select one or more parts of speech, decks, or sets above." : "Change the scope or add cards."}</p>
+                <p>{scopeMode === "only" && !selectedScopes.length ? "Select one or more parts of speech, sets, or tags above." : "Change the scope or add cards."}</p>
               </div>
             )}
           </section>
