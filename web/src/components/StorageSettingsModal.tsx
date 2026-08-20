@@ -1,35 +1,36 @@
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
+  createCardStorage,
   parseInventory,
+  readSyncLoadPolicy,
+  readSyncPersistLocal,
+  readSyncStatus,
   replaceInventory,
+  saveSyncLoadPolicy,
+  saveSyncPersistLocal,
   serializeInventory,
-  type CardStorage,
+  subscribeSyncStatus,
+  type StorageMode,
   type SyncLoadPolicy,
-  type SyncStatusState,
 } from "../storage";
 
 export function StorageSettingsModal({
-  storage,
+  mode,
   endpoint,
-  persistLocal,
-  loadPolicy,
-  syncStatus,
   onClose,
   onApply,
-  onSyncNow,
 }: {
-  storage: CardStorage;
+  mode: StorageMode;
   endpoint: string;
-  persistLocal: boolean;
-  loadPolicy: SyncLoadPolicy;
-  syncStatus: SyncStatusState;
   onClose: () => void;
-  onApply: (endpoint: string, persistLocal: boolean, loadPolicy: SyncLoadPolicy) => Promise<void>;
-  onSyncNow: () => Promise<void>;
+  onApply: (mode: StorageMode, endpoint: string) => Promise<void>;
 }) {
+  const initialPersistLocal = readSyncPersistLocal();
+  const initialLoadPolicy = readSyncLoadPolicy();
   const [draftEndpoint, setDraftEndpoint] = useState(endpoint);
-  const [draftPersistLocal, setDraftPersistLocal] = useState(persistLocal);
-  const [draftLoadPolicy, setDraftLoadPolicy] = useState<SyncLoadPolicy>(loadPolicy);
+  const [draftPersistLocal, setDraftPersistLocal] = useState(initialPersistLocal);
+  const [draftLoadPolicy, setDraftLoadPolicy] = useState<SyncLoadPolicy>(initialLoadPolicy);
+  const [syncStatus, setSyncStatus] = useState(readSyncStatus);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
@@ -40,14 +41,26 @@ export function StorageSettingsModal({
   const syncConfigured = Boolean(endpoint.trim());
   const draftSyncConfigured = Boolean(draftEndpoint.trim());
 
+  useEffect(() => subscribeSyncStatus(setSyncStatus), []);
+
+  function currentStorage() {
+    return createCardStorage(mode === "remote" ? endpoint : "");
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    const normalizedEndpoint = draftEndpoint.trim();
+    const nextPersistLocal = normalizedEndpoint ? draftPersistLocal : true;
     setSaving(true);
     try {
-      await onApply(draftEndpoint.trim(), draftSyncConfigured ? draftPersistLocal : true, draftLoadPolicy);
+      saveSyncPersistLocal(nextPersistLocal);
+      saveSyncLoadPolicy(draftLoadPolicy);
+      await onApply(normalizedEndpoint ? "remote" : "browser", normalizedEndpoint);
       onClose();
     } catch (caught) {
+      saveSyncPersistLocal(initialPersistLocal);
+      saveSyncLoadPolicy(initialLoadPolicy);
       setError(caught instanceof Error ? caught.message : "Sync settings could not be changed.");
     } finally {
       setSaving(false);
@@ -59,7 +72,7 @@ export function StorageSettingsModal({
     setTransferMessage("");
     setTransferBusy(true);
     try {
-      const cards = await storage.listCards();
+      const cards = await currentStorage().listCards();
       const blob = new Blob([serializeInventory(cards)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -81,7 +94,7 @@ export function StorageSettingsModal({
     setTransferBusy(true);
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser context.");
-      const cards = await storage.listCards();
+      const cards = await currentStorage().listCards();
       await navigator.clipboard.writeText(serializeInventory(cards));
       setTransferMessage(`Copied ${cards.length} ${cards.length === 1 ? "card" : "cards"} to the clipboard.`);
     } catch (caught) {
@@ -92,6 +105,7 @@ export function StorageSettingsModal({
   }
 
   async function replaceWithImportedInventory(importedCards: ReturnType<typeof parseInventory>, sourceDescription: string) {
+    const storage = currentStorage();
     const currentCards = await storage.listCards();
     const confirmed = window.confirm(
       `Replace the current ${currentCards.length}-card inventory with the ${importedCards.length}-card inventory ${sourceDescription}?\n\nThis replaces the whole inventory and will sync remotely when sync is configured.`,
@@ -142,8 +156,11 @@ export function StorageSettingsModal({
     setTransferMessage("");
     setTransferBusy(true);
     try {
-      await onSyncNow();
-      setTransferMessage("Sync check completed. The newer timestamp was kept.");
+      const storage = currentStorage();
+      if (!storage.syncNow) throw new Error("No sync server is configured.");
+      await storage.syncNow();
+      setTransferMessage("Sync completed using the newer timestamp. Reloading Parola…");
+      window.location.reload();
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be synced.");
     } finally {
@@ -172,7 +189,7 @@ export function StorageSettingsModal({
       <div className="storage-option-copy">
         <strong>{syncConfigured ? `Current status: ${syncStatus.message}` : "Local only"}</strong>
         <p>{syncConfigured
-          ? "Parola keeps working with its local state and synchronizes the complete inventory snapshot with this server. The copy with the later timestamp wins."
+          ? "Local and remote are copies of the same inventory snapshot. The copy with the later timestamp wins."
           : "With no API endpoint configured, Parola stores the inventory locally in this browser."}</p>
         {syncConfigured && <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void syncNow()} disabled={saving || transferBusy}>Sync now</button>
@@ -194,7 +211,7 @@ export function StorageSettingsModal({
 
       <div className="storage-option-copy">
         <strong>When local and remote timestamps differ</strong>
-        <p>The later timestamp is always authoritative. This setting only controls whether Parola reconciles immediately when it opens.</p>
+        <p>The later timestamp is always authoritative. This only controls whether Parola reconciles immediately when it opens.</p>
       </div>
       <div className="storage-mode-options" role="radiogroup" aria-label="Sync on load behavior">
         <label className={draftLoadPolicy === "automatic" ? "selected" : ""}>
