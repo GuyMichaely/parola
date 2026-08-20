@@ -1,7 +1,14 @@
+import {
+  cloneNounPatterns,
+  defaultNounPatterns,
+  normalizeNounPatterns,
+  type NounPattern,
+} from "../cards/nounPatterns";
 import { parseCardsResponse } from "./cardCodec";
 
 export interface RemoteSnapshot {
   cards: ReturnType<typeof parseCardsResponse>;
+  nounPatterns: NounPattern[];
   updatedAt: string | null;
 }
 
@@ -22,9 +29,12 @@ function stateUrl(endpoint: string) {
 }
 
 function parseSnapshot(value: unknown): RemoteSnapshot {
-  const payload = value as { cards?: unknown; updatedAt?: unknown };
+  const payload = value as { cards?: unknown; nounPatterns?: unknown; updatedAt?: unknown };
   return {
     cards: parseCardsResponse(payload),
+    nounPatterns: Array.isArray(payload?.nounPatterns)
+      ? normalizeNounPatterns(payload.nounPatterns)
+      : cloneNounPatterns(defaultNounPatterns),
     updatedAt: typeof payload?.updatedAt === "string" && payload.updatedAt ? payload.updatedAt : null,
   };
 }
