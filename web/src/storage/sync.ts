@@ -12,6 +12,7 @@ import {
   writeLocalSnapshot,
   type InventorySnapshot,
 } from "./browser";
+import { assertInventoryState } from "./inventoryState";
 import { RemoteConflictError, RemoteSyncClient, type RemoteSnapshot } from "./remote";
 import type { SyncLoadPolicy } from "./settings";
 import type { CardStorage, InventoryState } from "./types";
@@ -123,6 +124,7 @@ export class SyncStorage implements CardStorage {
 
   private persistSnapshot() {
     if (!this.snapshot) return;
+    assertInventoryState(this.snapshot);
     if (this.persistLocal) writeLocalSnapshot(this.snapshot);
     else clearLocalSnapshot();
   }
@@ -136,6 +138,7 @@ export class SyncStorage implements CardStorage {
 
   private async pushLocal() {
     if (!this.snapshot?.updatedAt) return;
+    assertInventoryState(this.snapshot);
     setSyncStatus({ status: "syncing", message: "Syncing…" });
     try {
       const saved = await this.remote.writeState({
@@ -229,9 +232,13 @@ export class SyncStorage implements CardStorage {
   private async mutateCards(operation: (cards: Flashcard[]) => Flashcard[]) {
     await this.initialize();
     const current = this.snapshot ?? emptySnapshot();
-    this.snapshot = {
+    const next = {
       cards: cloneCards(operation(cloneCards(current.cards))),
       nounMorphology: cloneNounMorphology(current.nounMorphology),
+    };
+    assertInventoryState(next);
+    this.snapshot = {
+      ...next,
       updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
     };
     this.persistSnapshot();
@@ -251,9 +258,13 @@ export class SyncStorage implements CardStorage {
     return cloneInventoryState(snapshot);
   }
 
-  async listCards() {
+  async readInventory() {
     await this.initialize();
-    return cloneCards(this.snapshot?.cards ?? []);
+    return cloneInventoryState(this.snapshot ?? emptySnapshot());
+  }
+
+  async listCards() {
+    return (await this.readInventory()).cards;
   }
 
   async createCards(cards: Flashcard[]) {
@@ -286,17 +297,19 @@ export class SyncStorage implements CardStorage {
   }
 
   async listNounMorphology() {
-    await this.initialize();
-    return cloneNounMorphology(this.snapshot?.nounMorphology ?? defaultNounMorphology);
+    return (await this.readInventory()).nounMorphology;
   }
 
   async replaceNounMorphology(morphology: NounMorphology) {
     await this.initialize();
     const replacement = normalizeNounMorphology(morphology);
     const current = this.snapshot ?? emptySnapshot();
-    this.snapshot = {
+    const next = assertInventoryState({
       cards: cloneCards(current.cards),
       nounMorphology: cloneNounMorphology(replacement),
+    });
+    this.snapshot = {
+      ...next,
       updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
     };
     this.persistSnapshot();
@@ -306,10 +319,10 @@ export class SyncStorage implements CardStorage {
 
   async replaceInventory(state: InventoryState) {
     await this.initialize();
-    const replacement: InventoryState = {
+    const replacement = assertInventoryState({
       cards: cloneCards(state.cards),
       nounMorphology: normalizeNounMorphology(state.nounMorphology),
-    };
+    });
     const current = this.snapshot ?? emptySnapshot();
     this.snapshot = {
       ...cloneInventoryState(replacement),
