@@ -258,6 +258,9 @@ export function normalizeNounMorphology(value: unknown): NounMorphology {
       }
       throw new Error("Syntax marker must be a gender marker or a singular/plural tantum marker.");
     });
+    if (markers.filter((marker) => marker.kind === "gender").length > 1) throw new Error("A syntax rule can contain at most one gender marker.");
+    if (markers.filter((marker) => marker.kind === "tantum").length > 1) throw new Error("A syntax rule can contain at most one tantum marker.");
+
     const fields: NounSyntaxField[] = syntax.fields.map((rawField) => {
       const field = objectValue(rawField, "Syntax field");
       if (field.kind === "noun" && (field.number === "singular" || field.number === "plural")) {
@@ -268,14 +271,18 @@ export function normalizeNounMorphology(value: unknown): NounMorphology {
         && (field.number === "singular" || field.number === "plural")
         && (field.definiteness === "definite" || field.definiteness === "indefinite")
       ) {
+        if (field.definiteness === "indefinite" && field.number !== "singular") throw new Error("Indefinite article fields must be singular.");
         return { kind: "article", number: field.number, definiteness: field.definiteness };
       }
       throw new Error("Syntax field must be a noun form or article field.");
     });
+    if (!fields.some((field) => field.kind === "noun")) throw new Error("A syntax rule must contain at least one noun field.");
+
     const numberMode = syntax.numberMode === "both" || syntax.numberMode === "singular" || syntax.numberMode === "plural" ? syntax.numberMode : null;
     const articleMode = syntax.articleMode === "automatic" || syntax.articleMode === "none" ? syntax.articleMode : null;
     const inferenceSetId = nonEmptyString(syntax.inferenceSetId, "Syntax inferenceSetId");
     if (!numberMode || !articleMode || !inferenceSetIds.has(inferenceSetId)) throw new Error("Syntax rule has invalid number, article, or inference-set configuration.");
+    if (articleMode === "none" && fields.some((field) => field.kind === "article")) throw new Error("A no-article syntax cannot contain article fields.");
     return {
       id: nonEmptyString(syntax.id, "Syntax rule id"),
       name: nonEmptyString(syntax.name, "Syntax rule name"),
