@@ -9,7 +9,6 @@ import {
   parseNounMarkers,
   parseNounShorthandAnswer,
   whitespaceParts,
-  type AnswerSyntaxMode,
   type NounNumberMode,
 } from "../study/logic";
 import type { AnswerKeywords } from "./StudyOptions";
@@ -91,7 +90,7 @@ function analyzed(
   return { type, source: "prompted card", pieces, message, status, missing };
 }
 
-export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, _syntaxMode: AnswerSyntaxMode, _compactType: CardType | null, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
+export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
   const typePiece: ParsePiece = { label: "Part of speech", value: typeLabels[card.type] };
   if (!trimmed) {
@@ -222,8 +221,8 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, _syntaxMo
   return analyzed(card.type, pieces, message, status, missing);
 }
 
-export function AnswerParsePreview({ card, value, syntaxMode, compactType, keywords }: { card: Flashcard; value: string; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords }) {
-  const preview = analyzeAnswerSyntax(card, value, syntaxMode, compactType, keywords);
+export function AnswerParsePreview({ card, value, keywords }: { card: Flashcard; value: string; keywords: AnswerKeywords }) {
+  const preview = analyzeAnswerSyntax(card, value, keywords);
   const heading = preview.status === "invalid"
     ? `${typeLabels[preview.type]} · invalid`
     : `${typeLabels[preview.type]} · ${preview.status === "complete" ? "complete" : "in progress"}`;
