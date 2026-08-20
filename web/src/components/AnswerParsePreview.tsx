@@ -5,7 +5,7 @@ import {
   standardAdjectivePattern,
   whitespaceParts,
 } from "../study/logic";
-import { analyzeNounInput, type NounSyntaxAttempt } from "../study/nounSyntax";
+import { analyzeNounInput, choosePreviewAttempt } from "../study/nounSyntax";
 import type { AnswerKeywords } from "./StudyOptions";
 
 type ParsePiece = {
@@ -36,17 +36,6 @@ function labeledPieces(values: string[], labels: string[]) {
   }));
 }
 
-function chooseNounPreviewAttempt(attempts: NounSyntaxAttempt[]) {
-  const completeWithCandidates = attempts.filter((attempt) => attempt.status === "complete" && attempt.candidates.length);
-  if (completeWithCandidates.length) return completeWithCandidates[0];
-
-  const partial = attempts.filter((attempt) => attempt.status === "partial");
-  partial.sort((left, right) => right.consumedTokens - left.consumedTokens || left.missing.length - right.missing.length);
-  if (partial.length) return partial[0];
-
-  return attempts.find((attempt) => attempt.status === "complete") ?? null;
-}
-
 export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords, morphology: NounMorphology): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
   const typePiece = { label: "Part of speech", value: typeLabels[card.type] };
@@ -66,7 +55,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
 
   if (card.type === "noun") {
     const attempts = analyzeNounInput(trimmed, morphology, keywords);
-    const selected = chooseNounPreviewAttempt(attempts);
+    const selected = choosePreviewAttempt(attempts);
     const hasCompleteSyntax = attempts.some((attempt) => attempt.status === "complete");
     const candidates = attempts.flatMap((attempt) => attempt.candidates);
     const candidateNames = Array.from(new Set(candidates.map((candidate) => candidate.declensionRuleName)));
