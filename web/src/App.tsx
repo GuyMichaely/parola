@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { createCardStorage, readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode, type CardStorage, type StorageMode } from "./storage";
+import {
+  createCardStorage,
+  readStorageEndpoint,
+  readSyncLoadPolicy,
+  readSyncPersistLocal,
+  saveStorageEndpoint,
+  saveSyncLoadPolicy,
+  saveSyncPersistLocal,
+  type CardStorage,
+  type SyncLoadPolicy,
+} from "./storage";
 import type { CardType, Flashcard } from "./cards/types";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
@@ -28,11 +38,14 @@ export default function Home() {
   const [view, setView] = useState<"study" | "library">("study");
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loadingCards, setLoadingCards] = useState(true);
-  const [storageMode, setStorageMode] = useState<StorageMode>(readStorageMode);
   const [storageEndpoint, setStorageEndpoint] = useState(readStorageEndpoint);
+  const [persistLocal, setPersistLocal] = useState(readSyncPersistLocal);
+  const [syncLoadPolicy, setSyncLoadPolicy] = useState<SyncLoadPolicy>(readSyncLoadPolicy);
   const [storageSettingsOpen, setStorageSettingsOpen] = useState(false);
-  const activeStorageEndpoint = storageMode === "remote" ? storageEndpoint : "";
-  const storage = useMemo<CardStorage>(() => createCardStorage(activeStorageEndpoint), [activeStorageEndpoint]);
+  const storage = useMemo<CardStorage>(() => createCardStorage(storageEndpoint, {
+    persistLocal,
+    loadPolicy: syncLoadPolicy,
+  }), [persistLocal, storageEndpoint, syncLoadPolicy]);
   const [adding, setAdding] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
   const [bulkEditingCards, setBulkEditingCards] = useState<Flashcard[] | null>(null);
@@ -417,18 +430,33 @@ export default function Home() {
     })();
   }
 
-  async function applyStorageSettings(mode: StorageMode, endpoint: string) {
+  async function applyStorageSettings(endpoint: string, nextPersistLocal: boolean, nextLoadPolicy: SyncLoadPolicy) {
     const normalizedEndpoint = endpoint.trim();
-    if (mode === "remote" && !normalizedEndpoint) throw new Error("Enter a remote API endpoint before selecting remote storage.");
-    const candidate = createCardStorage(mode === "remote" ? normalizedEndpoint : "");
-    const nextCards = await candidate.listCards();
+    const effectivePersistLocal = normalizedEndpoint ? nextPersistLocal : true;
+
+    if (!normalizedEndpoint && storageEndpoint) {
+      const latestCards = storage.syncNow ? await storage.syncNow() : await storage.listCards();
+      await createCardStorage("").replaceCards(latestCards);
+      setCards(latestCards);
+    }
+
     saveStorageEndpoint(normalizedEndpoint);
-    saveStorageMode(mode);
+    saveSyncPersistLocal(effectivePersistLocal);
+    saveSyncLoadPolicy(nextLoadPolicy);
     setStorageEndpoint(normalizedEndpoint);
-    setStorageMode(mode);
-    setCards(nextCards);
+    setPersistLocal(effectivePersistLocal);
+    setSyncLoadPolicy(nextLoadPolicy);
     setSyncWarning("");
     setSaveState("idle");
+    setCurrent(0);
+    setSessionComplete(false);
+  }
+
+  async function syncNow() {
+    if (!storage.syncNow) return;
+    const nextCards = await storage.syncNow();
+    setCards(nextCards);
+    removeUnavailableInventoryTags(nextCards);
     setCurrent(0);
     setSessionComplete(false);
   }
@@ -442,9 +470,9 @@ export default function Home() {
             <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>Inventory</button>
           </nav>
           <div className="header-actions">
-            <button className="storage-button" onClick={() => setStorageSettingsOpen(true)} title={storageMode === "remote" ? `Remote storage: ${storage.label}` : storageEndpoint ? "Cards are stored in this browser; a remote endpoint is saved" : "Cards are stored in this browser"}>
-              <span className={`storage-dot ${storageMode === "remote" ? "remote" : "local"}`} />
-              {storageMode === "remote" ? "Remote" : "Browser"}
+            <button className="storage-button" onClick={() => setStorageSettingsOpen(true)} title={storageEndpoint ? `Sync server: ${storage.label}` : "Inventory is stored locally in this browser"}>
+              <span className={`storage-dot ${storageEndpoint ? "remote" : "local"}`} />
+              {storageEndpoint ? "Sync" : "Local"}
             </button>
             <SaveIndicator state={saveState} />
             <button className="primary-button" onClick={() => setAdding(true)}>＋ New cards</button>
@@ -580,7 +608,15 @@ export default function Home() {
       {adding && <AddCardModal knownSets={setNames} onClose={() => setAdding(false)} onBatch={addBatch} />}
       {editingCard && <EditCardModal card={editingCard} knownSets={setNames} onClose={() => setEditingCard(null)} onSave={updateCard} />}
       {bulkEditingCards && <BulkEditCardsModal cards={bulkEditingCards} onClose={() => setBulkEditingCards(null)} onSave={(updatedCards) => persistManyCards(updatedCards, bulkEditingCards, "Those card edits could not be saved. The previous cards were restored.")} />}
-      {storageSettingsOpen && <StorageSettingsModal mode={storageMode} endpoint={storageEndpoint} onClose={() => setStorageSettingsOpen(false)} onApply={applyStorageSettings} />}
+      {storageSettingsOpen && <StorageSettingsModal
+        storage={storage}
+        endpoint={storageEndpoint}
+        persistLocal={persistLocal}
+        loadPolicy={syncLoadPolicy}
+        onClose={() => setStorageSettingsOpen(false)}
+        onApply={applyStorageSettings}
+        onSyncNow={syncNow}
+      />}
     </main>
   );
 }
