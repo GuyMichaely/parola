@@ -141,11 +141,11 @@ export default function Home() {
     let active = true;
     setLoadingCards(true);
     setSyncWarning("");
-    Promise.all([storage.listCards(), storage.listNounMorphology()])
-      .then(([storedCards, storedMorphology]) => {
+    storage.readInventory()
+      .then((stored) => {
         if (!active) return;
-        setCards(storedCards);
-        setNounMorphology(storedMorphology);
+        setCards(stored.cards);
+        setNounMorphology(stored.nounMorphology);
       })
       .catch((error) => {
         if (!active) return;
@@ -450,9 +450,7 @@ export default function Home() {
     const effectivePersistLocal = normalizedEndpoint ? nextPersistLocal : true;
 
     if (!normalizedEndpoint && storageEndpoint) {
-      const latestState = storage.syncNow
-        ? await storage.syncNow()
-        : { cards: await storage.listCards(), nounMorphology: await storage.listNounMorphology() };
+      const latestState = storage.syncNow ? await storage.syncNow() : await storage.readInventory();
       await createCardStorage("").replaceInventory(latestState);
       setCards(latestState.cards);
       setNounMorphology(latestState.nounMorphology);
