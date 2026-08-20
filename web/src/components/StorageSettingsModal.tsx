@@ -67,9 +67,8 @@ export function StorageSettingsModal({
     }
   }
 
-  async function currentInventory() {
-    const [cards, nounMorphology] = await Promise.all([storage.listCards(), storage.listNounMorphology()]);
-    return { cards, nounMorphology };
+  function currentInventory() {
+    return storage.readInventory();
   }
 
   async function exportInventory() {
