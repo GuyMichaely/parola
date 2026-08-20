@@ -8,9 +8,16 @@ import {
   saveSyncLoadPolicy,
   saveSyncPersistLocal,
   type CardStorage,
+  type InventoryState,
   type SyncLoadPolicy,
 } from "./storage";
 import type { Flashcard } from "./cards/types";
+import {
+  cloneNounMorphology,
+  defaultNounMorphology,
+  type NounMorphology,
+} from "./cards/nounMorphology";
+import { setActiveNounMorphology } from "./cards/nounMorphologyRuntime";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
 import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";
@@ -20,6 +27,7 @@ import {
   InventoryCardsEditor,
   localDateStamp,
 } from "./components/CardEditors";
+import { NounMorphologyPanel } from "./components/NounMorphologyPanel";
 import { StorageSettingsModal } from "./components/StorageSettingsModal";
 import { StudyOptions, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
 import { StudyScope, type ScopeMode, type StudyScopeOption } from "./components/StudyScope";
@@ -37,6 +45,7 @@ function duplicateCardKey(card: Flashcard) {
 export default function Home() {
   const [view, setView] = useState<"study" | "library">("study");
   const [cards, setCards] = useState<Flashcard[]>([]);
+  const [nounMorphology, setNounMorphology] = useState<NounMorphology>(() => cloneNounMorphology(defaultNounMorphology));
   const [loadingCards, setLoadingCards] = useState(true);
   const [storageEndpoint, setStorageEndpoint] = useState(readStorageEndpoint);
   const [persistLocal, setPersistLocal] = useState(readSyncPersistLocal);
@@ -133,8 +142,13 @@ export default function Home() {
     let active = true;
     setLoadingCards(true);
     setSyncWarning("");
-    storage.listCards()
-      .then((storedCards) => { if (active) setCards(storedCards); })
+    Promise.all([storage.listCards(), storage.listNounMorphology()])
+      .then(([storedCards, storedMorphology]) => {
+        if (!active) return;
+        setCards(storedCards);
+        setNounMorphology(storedMorphology);
+        setActiveNounMorphology(storedMorphology);
+      })
       .catch((error) => {
         if (!active) return;
         setSyncWarning(error instanceof Error ? `Storage unavailable: ${error.message}` : "Storage is temporarily unavailable.");
@@ -144,11 +158,16 @@ export default function Home() {
   }, [storage]);
 
   useEffect(() => {
+    setActiveNounMorphology(nounMorphology);
+  }, [nounMorphology]);
+
+  useEffect(() => {
     writeAnswerKeywords(answerKeywords);
   }, [answerKeywords]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      if (storageSettingsOpen) return;
       if (event.key === "Escape" && (adding || editingCard)) {
         setAdding(false);
         setEditingCard(null);
@@ -414,17 +433,37 @@ export default function Home() {
     })();
   }
 
+  async function replaceNounInventory(nextState: InventoryState) {
+    setSyncWarning("");
+    setSaveState("saving");
+    try {
+      const saved = await storage.replaceInventory(nextState);
+      setCards(saved.cards);
+      setNounMorphology(saved.nounMorphology);
+      setActiveNounMorphology(saved.nounMorphology);
+      removeUnavailableInventoryTags(saved.cards);
+      setCurrent(0);
+      setSessionComplete(false);
+      setSaveState("saved");
+    } catch (error) {
+      setSaveState("failed");
+      setSyncWarning("Noun morphology could not be saved. The current inventory was left unchanged.");
+      throw error;
+    }
+  }
+
   async function applyStorageSettings(endpoint: string, nextPersistLocal: boolean, nextLoadPolicy: SyncLoadPolicy) {
     const normalizedEndpoint = endpoint.trim();
     const effectivePersistLocal = normalizedEndpoint ? nextPersistLocal : true;
 
     if (!normalizedEndpoint && storageEndpoint) {
-      const latestCards = storage.syncNow ? await storage.syncNow() : await storage.listCards();
-      const latestNounMorphology = await storage.listNounMorphology();
-      const localStorage = createCardStorage("");
-      await localStorage.replaceNounMorphology(latestNounMorphology);
-      await localStorage.replaceCards(latestCards);
-      setCards(latestCards);
+      const latestState = storage.syncNow
+        ? await storage.syncNow()
+        : { cards: await storage.listCards(), nounMorphology: await storage.listNounMorphology() };
+      await createCardStorage("").replaceInventory(latestState);
+      setCards(latestState.cards);
+      setNounMorphology(latestState.nounMorphology);
+      setActiveNounMorphology(latestState.nounMorphology);
     }
 
     saveStorageEndpoint(normalizedEndpoint);
@@ -441,14 +480,16 @@ export default function Home() {
 
   async function syncNow() {
     if (!storage.syncNow) return;
-    const nextCards = await storage.syncNow();
-    setCards(nextCards);
-    removeUnavailableInventoryTags(nextCards);
+    const nextState = await storage.syncNow();
+    setCards(nextState.cards);
+    setNounMorphology(nextState.nounMorphology);
+    setActiveNounMorphology(nextState.nounMorphology);
+    removeUnavailableInventoryTags(nextState.cards);
     setCurrent(0);
     setSessionComplete(false);
   }
 
-  return (
+  return <>
     <main className="app-shell">
       <header className="topbar">
         <div className="header-inner">
@@ -598,5 +639,9 @@ export default function Home() {
         onSyncNow={syncNow}
       />}
     </main>
-  );
+    <aside className="noun-pattern-manager" aria-label="Noun morphology manager">
+      <div style={{ width: "fit-content", margin: "0 0 6px auto", border: "1px solid var(--line)", borderRadius: 999, background: "#101317", color: "var(--muted)", padding: "5px 9px", fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>Noun morphology</div>
+      <NounMorphologyPanel cards={cards} morphology={nounMorphology} onSave={replaceNounInventory} />
+    </aside>
+  </>;
 }
