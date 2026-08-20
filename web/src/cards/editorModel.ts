@@ -1,10 +1,7 @@
 import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
-import {
-  deriveNounPatternForms,
-  suggestedNounArticles,
-  type NounPattern,
-} from "./nounPatterns";
+import { getActiveNounPatterns } from "./nounPatternRuntime";
+import { resolvedNounForms, suggestedNounArticles } from "./nounPatterns";
 import {
   inferArticle,
   normalizeAnswer,
@@ -169,16 +166,6 @@ export function nounFormsError(input: Pick<BatchRow, "singular" | "plural" | "de
   return "";
 }
 
-export function nounPatternError(row: BatchRow, patterns: NounPattern[]) {
-  if (row.patternId === "manual") return "";
-  const pattern = patterns.find((item) => item.id === row.patternId);
-  if (!pattern) return "The selected noun pattern no longer exists.";
-  if (!deriveNounPatternForms(pattern, row.singular)) {
-    return `${pattern.name} requires a singular base ending in “${pattern.singularSuffix}”.`;
-  }
-  return "";
-}
-
 export function emptyVerbBatchRow(id: string): VerbBatchRow {
   return {
     id,
@@ -215,7 +202,7 @@ export function nounCard(input: {
   english: string;
   setName: string | null;
   tags: string[];
-  patternId: string;
+  patternId?: string;
   gender: string;
   singular: string;
   plural: string;
@@ -234,7 +221,7 @@ export function nounCard(input: {
     setName: input.setName,
     tags: input.tags,
     details: {
-      patternId: input.patternId,
+      patternId: "manual",
       gender: input.gender,
       singular: input.singular,
       plural: input.plural,
@@ -291,19 +278,17 @@ export function adverbCard(input: Omit<AdverbBatchRow, "id"> & { id: number; set
 }
 
 export function nounRowFromCard(card: Flashcard): BatchRow {
-  const d = card.details;
-  const singular = d.singular ?? card.italian;
-  const plural = d.plural ?? "";
+  const forms = resolvedNounForms(card, getActiveNounPatterns());
   return {
     id: String(card.id),
     english: card.english,
-    patternId: d.patternId || "manual",
-    gender: d.gender === "feminine" ? "feminine" : "masculine",
-    singular,
-    plural,
-    definiteSingularArticle: singular ? (d.definiteSingularArticle ?? inferArticle(d.definiteSingular, singular, "")) : "",
-    definitePluralArticle: plural ? (d.definitePluralArticle ?? inferArticle(d.definitePlural, plural, "")) : "",
-    indefiniteArticle: singular ? (d.indefiniteArticle ?? inferArticle(d.indefinite, singular, "")) : "",
+    patternId: "manual",
+    gender: forms.gender,
+    singular: forms.singular,
+    plural: forms.plural,
+    definiteSingularArticle: forms.definiteSingularArticle,
+    definitePluralArticle: forms.definitePluralArticle,
+    indefiniteArticle: forms.indefiniteArticle,
   };
 }
 
@@ -325,7 +310,7 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
   return {
     id: row.id,
     english: row.english ?? "",
-    patternId: typeof row.patternId === "string" && row.patternId ? row.patternId : "manual",
+    patternId: "manual",
     gender: row.gender === "feminine" ? "feminine" : "masculine",
     singular,
     plural,
@@ -335,42 +320,8 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
   };
 }
 
-function applyPattern(row: BatchRow, patterns: NounPattern[]) {
-  const pattern = patterns.find((item) => item.id === row.patternId);
-  if (!pattern) return row;
-  const derived = deriveNounPatternForms(pattern, row.singular);
-  if (!derived) {
-    return {
-      ...row,
-      gender: pattern.gender,
-      plural: "",
-      definiteSingularArticle: "",
-      definitePluralArticle: "",
-      indefiniteArticle: "",
-    };
-  }
-  return {
-    ...row,
-    gender: derived.gender,
-    plural: derived.plural,
-    definiteSingularArticle: derived.definiteSingularArticle,
-    definitePluralArticle: derived.definitePluralArticle,
-    indefiniteArticle: derived.indefiniteArticle,
-  };
-}
-
-export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K], patterns: NounPattern[] = []) {
-  const nextRow = { ...row, [field]: value } as BatchRow;
-
-  if (field === "patternId") {
-    return nextRow.patternId === "manual" ? nextRow : applyPattern(nextRow, patterns);
-  }
-
-  if (row.patternId !== "manual") {
-    if (field === "singular") return applyPattern(nextRow, patterns);
-    return nextRow;
-  }
-
+export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K]) {
+  const nextRow = { ...row, patternId: "manual", [field]: value } as BatchRow;
   if (field === "singular" || field === "plural" || field === "gender") {
     const previous = suggestedNounArticles(row.gender, row.singular, row.plural);
     const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural);
