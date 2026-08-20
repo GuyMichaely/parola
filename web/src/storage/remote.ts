@@ -1,3 +1,4 @@
+import { setActiveNounPatterns } from "../cards/nounPatternRuntime";
 import {
   cloneNounPatterns,
   defaultNounPatterns,
@@ -30,11 +31,13 @@ function stateUrl(endpoint: string) {
 
 function parseSnapshot(value: unknown): RemoteSnapshot {
   const payload = value as { cards?: unknown; nounPatterns?: unknown; updatedAt?: unknown };
+  const nounPatterns = Array.isArray(payload?.nounPatterns)
+    ? normalizeNounPatterns(payload.nounPatterns)
+    : cloneNounPatterns(defaultNounPatterns);
+  setActiveNounPatterns(nounPatterns);
   return {
     cards: parseCardsResponse(payload),
-    nounPatterns: Array.isArray(payload?.nounPatterns)
-      ? normalizeNounPatterns(payload.nounPatterns)
-      : cloneNounPatterns(defaultNounPatterns),
+    nounPatterns,
     updatedAt: typeof payload?.updatedAt === "string" && payload.updatedAt ? payload.updatedAt : null,
   };
 }
