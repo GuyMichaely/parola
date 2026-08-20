@@ -4,9 +4,9 @@ import {
   nounDefinitionForCard,
   nounDefinitionMatches,
   recognizeNounForm,
+  ruleSupportsNumberMode,
   suggestedNounArticles,
   type NounDefinition,
-  type NounFormNumber,
   type NounGender,
   type NounMorphology,
   type NounSyntaxField,
@@ -162,7 +162,7 @@ function buildCandidates(
 
   for (const ruleId of inferenceSet.declensionRuleIds) {
     const rule = morphology.declensionRules.find((item) => item.id === ruleId);
-    if (!rule) continue;
+    if (!rule || !ruleSupportsNumberMode(rule, syntax.numberMode)) continue;
     const observedBases: string[] = [];
     syntax.fields.forEach((field, index) => {
       if (field.kind !== "noun") return;
@@ -175,8 +175,8 @@ function buildCandidates(
     if (normalizedBases.size !== 1) continue;
     const base = observedBases[0] ?? "";
 
-    const singular = syntax.numberMode === "plural" ? "" : generateNounForm(rule, base, "singular");
-    const plural = syntax.numberMode === "singular" ? "" : generateNounForm(rule, base, "plural");
+    const singular = syntax.numberMode === "plural" ? "" : generateNounForm(rule, base, "singular") ?? "";
+    const plural = syntax.numberMode === "singular" ? "" : generateNounForm(rule, base, "plural") ?? "";
     const articles = suggestedNounArticles(gender, singular, plural, syntax.articleMode);
     const articlesMatch = syntax.fields.every((field, index) => {
       if (field.kind !== "article") return true;
