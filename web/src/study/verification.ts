@@ -1,9 +1,4 @@
 import type { CardType, Flashcard } from "../cards/types";
-import {
-  nounPatternForCard,
-  resolvedNounForms,
-  type NounPattern,
-} from "../cards/nounPatterns";
 import type { AnswerKeywords } from "../components/StudyOptions";
 
 export type AnswerSyntaxMode = "universal" | "compact";
@@ -87,7 +82,7 @@ export function standardAdjectivePattern(masculineSingular: string) {
 export function cardSupportsStandardAdjectivePattern(card: Flashcard) {
   if (card.type !== "adjective") return false;
   const pattern = standardAdjectivePattern(card.details.masculineSingular || card.italian);
-  return Boolean(pattern && verificationFields(card, []).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
+  return Boolean(pattern && verificationFields(card).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
 }
 
 export function parseGender(value: string, keywords: AnswerKeywords): NounGender | null {
@@ -158,13 +153,7 @@ export function matchesExpected(actual: string[], expected: string[]) {
   return actual.length === expected.length && actual.every((value, index) => normalizeAnswer(value) === normalizeAnswer(expected[index] ?? ""));
 }
 
-export function verifyPowerAnswer(
-  card: Flashcard,
-  rawValue: string,
-  syntaxMode: AnswerSyntaxMode,
-  keywords: AnswerKeywords,
-  nounPatterns: NounPattern[],
-) {
+export function verifyPowerAnswer(card: Flashcard, rawValue: string, syntaxMode: AnswerSyntaxMode, keywords: AnswerKeywords) {
   const prefixed = parsePowerAnswerPrefix(rawValue, keywords);
   const implicitNoun = !prefixed && hasImplicitNounShape(rawValue, keywords);
   if (syntaxMode === "universal" && !prefixed && !implicitNoun) return false;
@@ -174,60 +163,58 @@ export function verifyPowerAnswer(
   const d = card.details;
 
   if (card.type === "noun") {
-    const forms = resolvedNounForms(card, nounPatterns);
-    const pattern = nounPatternForCard(card, nounPatterns);
+    const singular = d.singular ?? card.italian;
+    const plural = d.plural ?? "";
+    const definiteSingularArticle = d.definiteSingularArticle || inferArticle(d.definiteSingular, singular, "");
+    const definitePluralArticle = d.definitePluralArticle || inferArticle(d.definitePlural, plural, "");
+    const indefiniteArticle = d.indefiniteArticle || inferArticle(d.indefinite, singular, "");
 
-    if (whitespaceParts(answer).length <= 3 && pattern?.syntax === "article-singular") {
+    if (whitespaceParts(answer).length <= 3 && d.patternSyntax === "article-singular") {
       const parsed = parseNounShorthandAnswer(answer, keywords);
       if (parsed) {
-        const expectedArticle = parsed.articleKind === "indefinite"
-          ? forms.indefiniteArticle
-          : forms.definiteSingularArticle;
-        return parsed.gender === forms.gender
+        const expectedGender = d.gender === "feminine" ? "feminine" : "masculine";
+        const expectedArticle = parsed.articleKind === "indefinite" ? indefiniteArticle : definiteSingularArticle;
+        return parsed.gender === expectedGender
           && normalizeAnswer(parsed.article) === normalizeAnswer(expectedArticle)
-          && normalizeAnswer(parsed.singular) === normalizeAnswer(forms.singular);
+          && normalizeAnswer(parsed.singular) === normalizeAnswer(singular);
       }
     }
 
     const rawParts = whitespaceParts(answer);
+    const expectedGender = d.gender === "feminine" ? "feminine" : "masculine";
     const explicitGender = parseGender(rawParts[0] ?? "", keywords);
-    if (explicitGender && explicitGender !== forms.gender) return false;
-    if (!explicitGender && genderIndicatedByArticles([
-      forms.definiteSingularArticle,
-      forms.definitePluralArticle,
-      forms.indefiniteArticle,
-    ]) !== forms.gender) return false;
+    if (explicitGender && explicitGender !== expectedGender) return false;
+    if (!explicitGender && genderIndicatedByArticles([definiteSingularArticle, definitePluralArticle, indefiniteArticle]) !== expectedGender) return false;
 
-    const expectsElidedArticle = [forms.definiteSingularArticle, forms.definitePluralArticle, forms.indefiniteArticle]
-      .some((article) => /^(l|un)['’]$/i.test(article));
+    const expectsElidedArticle = [definiteSingularArticle, definitePluralArticle, indefiniteArticle].some((article) => /^(l|un)['’]$/i.test(article));
     const answerParts = explicitGender ? rawParts.slice(1) : rawParts;
     const parts = expectsElidedArticle ? expandElidedArticleTokens(answerParts) : answerParts;
 
     if (keywordMatches(parts[0] ?? "", keywords.singularOnly, ["s", "sin"])) {
-      if (!forms.singular || forms.plural) return false;
+      if (!singular || plural) return false;
       return matchesExpected(parts.slice(1), [
-        ...(forms.definiteSingularArticle ? [forms.definiteSingularArticle] : []),
-        forms.singular,
-        ...(forms.indefiniteArticle ? [forms.indefiniteArticle] : []),
+        ...(definiteSingularArticle ? [definiteSingularArticle] : []),
+        singular,
+        ...(indefiniteArticle ? [indefiniteArticle] : []),
       ]);
     }
     if (keywordMatches(parts[0] ?? "", keywords.pluralOnly, ["p", "plu"])) {
-      if (forms.singular || !forms.plural) return false;
+      if (singular || !plural) return false;
       return matchesExpected(parts.slice(1), [
-        ...(forms.definitePluralArticle ? [forms.definitePluralArticle] : []),
-        forms.plural,
+        ...(definitePluralArticle ? [definitePluralArticle] : []),
+        plural,
       ]);
     }
-    if (!forms.singular && forms.plural && isDefinitePluralArticle(forms.definitePluralArticle)) {
-      return matchesExpected(parts, [forms.definitePluralArticle, forms.plural]);
+    if (!singular && plural && isDefinitePluralArticle(definitePluralArticle)) {
+      return matchesExpected(parts, [definitePluralArticle, plural]);
     }
-    if (!forms.singular || !forms.plural) return false;
+    if (!singular || !plural) return false;
     return matchesExpected(parts, [
-      ...(forms.definiteSingularArticle ? [forms.definiteSingularArticle] : []),
-      forms.singular,
-      ...(forms.definitePluralArticle ? [forms.definitePluralArticle] : []),
-      forms.plural,
-      ...(forms.indefiniteArticle ? [forms.indefiniteArticle] : []),
+      ...(definiteSingularArticle ? [definiteSingularArticle] : []),
+      singular,
+      ...(definitePluralArticle ? [definitePluralArticle] : []),
+      plural,
+      ...(indefiniteArticle ? [indefiniteArticle] : []),
     ]);
   }
 
@@ -240,21 +227,21 @@ export function verifyPowerAnswer(
   const adjectiveParts = whitespaceParts(answer);
   if (adjectiveParts.length === 1 && cardSupportsStandardAdjectivePattern(card)) {
     const pattern = standardAdjectivePattern(adjectiveParts[0]);
-    return Boolean(pattern && verificationFields(card, nounPatterns).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
+    return Boolean(pattern && verificationFields(card).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
   }
   return matchesExpected(adjectiveParts, [d.masculineSingular || card.italian, d.feminineSingular, d.masculinePlural, d.femininePlural]);
 }
 
-export function verificationFields(card: Flashcard, nounPatterns: NounPattern[]): VerificationField[] {
+export function verificationFields(card: Flashcard): VerificationField[] {
   const d = card.details;
   if (card.type === "noun") {
-    const forms = resolvedNounForms(card, nounPatterns);
+    const singular = d.singular === undefined ? card.italian : d.singular;
     return [
-      { key: "singular", label: "Singular noun", expected: forms.singular },
-      { key: "plural", label: "Plural noun", expected: forms.plural },
-      { key: "definiteSingularArticle", label: "Definite singular article", expected: forms.definiteSingularArticle },
-      { key: "definitePluralArticle", label: "Definite plural article", expected: forms.definitePluralArticle },
-      { key: "indefiniteArticle", label: "Indefinite article", expected: forms.indefiniteArticle },
+      { key: "singular", label: "Singular noun", expected: singular },
+      { key: "plural", label: "Plural noun", expected: d.plural },
+      { key: "definiteSingularArticle", label: "Definite singular article", expected: d.definiteSingularArticle || inferArticle(d.definiteSingular, singular, "") },
+      { key: "definitePluralArticle", label: "Definite plural article", expected: d.definitePluralArticle || inferArticle(d.definitePlural, d.plural, "") },
+      { key: "indefiniteArticle", label: "Indefinite article", expected: d.indefiniteArticle || inferArticle(d.indefinite, singular, "") },
     ].filter((field) => Boolean(field.expected));
   }
   if (card.type === "verb") {
