@@ -68,6 +68,8 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const attempts = analyzeNounInput(trimmed, morphology, keywords);
     const selected = chooseNounPreviewAttempt(attempts);
     const hasCompleteSyntax = attempts.some((attempt) => attempt.status === "complete");
+    const candidates = attempts.flatMap((attempt) => attempt.candidates);
+    const candidateNames = Array.from(new Set(candidates.map((candidate) => candidate.declensionRuleName)));
 
     if (!selected) {
       return {
@@ -76,7 +78,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
         status: "invalid",
         checkable: false,
         missing: [],
-        candidateNames: [],
+        candidateNames,
         syntaxName: null,
       };
     }
@@ -95,7 +97,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
       status,
       checkable: hasCompleteSyntax && !unclosedQuote,
       missing,
-      candidateNames: [],
+      candidateNames,
       syntaxName: selected.syntax.name,
     };
   }
@@ -178,7 +180,7 @@ export function AnswerParsePreview({ card, value, keywords, morphology }: { card
           <code>{piece.value}</code>
         </div>)}
       </div>}
-      {preview.candidateNames.length > 0 && <p className="answer-parse-message"><strong>Pattern:</strong> {preview.candidateNames.join(" · ")}</p>}
+      {preview.candidateNames.length > 0 && <p className="answer-parse-message"><strong>Possible declensions:</strong> {preview.candidateNames.join(" · ")}</p>}
       {preview.missing.length > 0 && <p className="answer-parse-message"><strong>Still needed:</strong> {preview.missing.join(" · ")}</p>}
     </div>
   );
