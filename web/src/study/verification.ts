@@ -3,8 +3,6 @@ import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
 import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
 import type { AnswerKeywords } from "../components/StudyOptions";
 
-export type AnswerSyntaxMode = "universal" | "compact";
-
 export type VerificationField = {
   key: string;
   label: string;
@@ -174,7 +172,7 @@ export function matchesExpected(actual: string[], expected: string[]) {
   return actual.length === expected.length && actual.every((value, index) => normalizeAnswer(value) === normalizeAnswer(expected[index] ?? ""));
 }
 
-export function verifyPowerAnswer(card: Flashcard, rawValue: string, _syntaxMode: AnswerSyntaxMode, keywords: AnswerKeywords) {
+export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: AnswerKeywords) {
   const answer = rawValue.trim();
   const d = card.details;
 
