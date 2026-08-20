@@ -57,7 +57,6 @@ export function parseInventory(text: string): InventoryTransferState {
 
 export async function replaceInventory(
   storage: CardStorage,
-  _current: InventoryTransferState,
   imported: InventoryTransferState,
 ) {
   return storage.replaceInventory(imported);
