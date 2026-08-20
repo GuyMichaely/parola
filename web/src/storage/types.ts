@@ -7,4 +7,5 @@ export interface CardStorage {
   updateCard(card: Flashcard): Promise<Flashcard>;
   deleteCard(id: number): Promise<void>;
   replaceCards(cards: Flashcard[]): Promise<Flashcard[]>;
+  syncNow?(): Promise<Flashcard[]>;
 }
