@@ -54,7 +54,7 @@ export type BatchDraft<Row> = {
 };
 
 const cardAdderTypeKey = "parola:card-adder:type";
-export const deckTagPrefix = "__deck__:";
+
 export function cardAdderDraftKey(type: CardType) {
   return `parola:card-adder:${type}`;
 }
@@ -128,14 +128,6 @@ export function joinArticle(article: string, noun: string) {
 
 export function parseTags(value: string) {
   return Array.from(new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean)));
-}
-
-export function visibleTags(tags: string[]) {
-  return tags.filter((tag) => !tag.startsWith(deckTagPrefix));
-}
-
-export function deckName(tag: string) {
-  return tag.startsWith(deckTagPrefix) ? tag.slice(deckTagPrefix.length) : null;
 }
 
 export function localDateStamp() {
