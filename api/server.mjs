@@ -13,7 +13,9 @@ const maxBodyBytes = 1024 * 1024;
 
 const defaultNounMorphology = {
   declensionRules: [
-    { id: "identity", name: "Unchanged form", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
+    { id: "singular-base", name: "Singular form is the base", forms: { singular: { suffix: "" } } },
+    { id: "plural-base", name: "Plural form is the base", forms: { plural: { suffix: "" } } },
+    { id: "identity", name: "Unchanged singular / plural", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
     { id: "o-i", name: "-o → -i", forms: { singular: { suffix: "o" }, plural: { suffix: "i" } } },
     { id: "e-i", name: "-e → -i", forms: { singular: { suffix: "e" }, plural: { suffix: "i" } } },
     { id: "a-e", name: "-a → -e", forms: { singular: { suffix: "a" }, plural: { suffix: "e" } } },
@@ -23,8 +25,8 @@ const defaultNounMorphology = {
     { id: "chio-chi", name: "-chio → -chi", forms: { singular: { suffix: "chio" }, plural: { suffix: "chi" } } },
   ],
   inferenceSets: [
-    { id: "full-noun", name: "Full noun answers", declensionRuleIds: ["identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi"] },
-    { id: "learned-shorthand", name: "Learned shorthand", declensionRuleIds: ["o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe"] },
+    { id: "full-noun", name: "Full noun answers", declensionRuleIds: ["singular-base", "plural-base", "identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi"] },
+    { id: "learned-shorthand", name: "Learned shorthand", declensionRuleIds: ["identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe"] },
   ],
   syntaxRules: [
     {
@@ -158,6 +160,20 @@ function nonEmptyString(value, label) {
   return result;
 }
 
+function normalizeTransform(value, label) {
+  if (value === undefined || value === null) return null;
+  const transform = objectValue(value, label);
+  return { suffix: String(transform.suffix ?? "").normalize("NFC") };
+}
+
+function ruleSupportsNumberMode(rule, numberMode) {
+  const singular = Boolean(rule.forms.singular);
+  const plural = Boolean(rule.forms.plural);
+  if (numberMode === "both") return singular && plural;
+  if (numberMode === "singular") return singular && !plural;
+  return plural && !singular;
+}
+
 function normalizeNounMorphology(value) {
   const payload = objectValue(value, "Noun morphology");
   if (!Array.isArray(payload.declensionRules) || !Array.isArray(payload.inferenceSets) || !Array.isArray(payload.syntaxRules)) {
@@ -167,15 +183,13 @@ function normalizeNounMorphology(value) {
   const declensionRules = payload.declensionRules.map((raw) => {
     const rule = objectValue(raw, "Declension rule");
     const forms = objectValue(rule.forms, "Declension rule forms");
-    const singular = objectValue(forms.singular, "Singular transform");
-    const plural = objectValue(forms.plural, "Plural transform");
+    const singular = normalizeTransform(forms.singular, "Singular transform");
+    const plural = normalizeTransform(forms.plural, "Plural transform");
+    if (!singular && !plural) throw new Error("A declension rule must define at least one form.");
     return {
       id: nonEmptyString(rule.id, "Declension rule id"),
       name: nonEmptyString(rule.name, "Declension rule name"),
-      forms: {
-        singular: { suffix: String(singular.suffix ?? "").normalize("NFC") },
-        plural: { suffix: String(plural.suffix ?? "").normalize("NFC") },
-      },
+      forms: { ...(singular ? { singular } : {}), ...(plural ? { plural } : {}) },
     };
   });
   const ruleIds = new Set();
@@ -237,10 +251,13 @@ function normalizeNounMorphology(value) {
 }
 
 function validateNounAssignments(cards, nounMorphology) {
-  const ruleIds = new Set(nounMorphology.declensionRules.map((rule) => rule.id));
+  const rules = new Map(nounMorphology.declensionRules.map((rule) => [rule.id, rule]));
   for (const card of cards) {
-    if (card.type === "noun" && !ruleIds.has(card.details.ruleId)) {
-      throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.ruleId}.`);
+    if (card.type !== "noun") continue;
+    const rule = rules.get(card.details.ruleId);
+    if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.ruleId}.`);
+    if (!ruleSupportsNumberMode(rule, card.details.numberMode)) {
+      throw new Error(`Noun card ${card.id ?? card.english} uses ${card.details.ruleId}, which does not support ${card.details.numberMode} nouns.`);
     }
   }
 }
