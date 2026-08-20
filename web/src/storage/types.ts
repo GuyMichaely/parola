@@ -8,6 +8,7 @@ export type InventoryState = {
 
 export interface CardStorage {
   readonly label: string;
+  readInventory(): Promise<InventoryState>;
   listCards(): Promise<Flashcard[]>;
   createCards(cards: Flashcard[]): Promise<Flashcard[]>;
   updateCard(card: Flashcard): Promise<Flashcard>;
