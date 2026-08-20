@@ -1,5 +1,5 @@
 import type { Flashcard } from "../cards/types";
-import type { NounPattern } from "../cards/nounPatterns";
+import type { NounMorphology } from "../cards/nounMorphology";
 
 export interface CardStorage {
   readonly label: string;
@@ -8,7 +8,7 @@ export interface CardStorage {
   updateCard(card: Flashcard): Promise<Flashcard>;
   deleteCard(id: number): Promise<void>;
   replaceCards(cards: Flashcard[]): Promise<Flashcard[]>;
-  listNounPatterns(): Promise<NounPattern[]>;
-  replaceNounPatterns(patterns: NounPattern[]): Promise<NounPattern[]>;
+  listNounMorphology(): Promise<NounMorphology>;
+  replaceNounMorphology(morphology: NounMorphology): Promise<NounMorphology>;
   syncNow?(): Promise<Flashcard[]>;
 }
