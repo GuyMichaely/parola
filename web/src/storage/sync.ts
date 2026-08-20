@@ -262,10 +262,6 @@ export class SyncStorage implements CardStorage {
     return cloneInventoryState(this.snapshot ?? emptySnapshot());
   }
 
-  async listCards() {
-    return (await this.readInventory()).cards;
-  }
-
   async createCards(cards: Flashcard[]) {
     await this.initialize();
     const existing = this.snapshot?.cards ?? [];
