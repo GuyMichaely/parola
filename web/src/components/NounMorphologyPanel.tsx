@@ -3,11 +3,12 @@ import type { Flashcard } from "../cards/types";
 import { setActiveNounMorphology } from "../cards/nounMorphologyRuntime";
 import {
   cloneNounMorphology,
-  generateNounForm,
   normalizeNounMorphology,
   nounDefinitionForCard,
   resolvedNounForms,
+  ruleSupportsNumberMode,
   type NounDeclensionRule,
+  type NounFormNumber,
   type NounMorphology,
 } from "../cards/nounMorphology";
 import {
@@ -82,13 +83,26 @@ export function NounMorphologyPanel() {
     }));
   }
 
-  function updateRuleSuffix(id: string, number: "singular" | "plural", suffix: string) {
+  function updateRuleSuffix(id: string, number: NounFormNumber, suffix: string) {
     changeMorphology((current) => ({
       ...current,
       declensionRules: current.declensionRules.map((rule) => rule.id === id ? {
         ...rule,
         forms: { ...rule.forms, [number]: { suffix } },
       } : rule),
+    }));
+  }
+
+  function toggleRuleForm(id: string, number: NounFormNumber, enabled: boolean) {
+    changeMorphology((current) => ({
+      ...current,
+      declensionRules: current.declensionRules.map((rule) => {
+        if (rule.id !== id) return rule;
+        const forms = { ...rule.forms };
+        if (enabled) forms[number] = { suffix: "" };
+        else delete forms[number];
+        return { ...rule, forms };
+      }),
     }));
   }
 
@@ -136,11 +150,11 @@ export function NounMorphologyPanel() {
         if (!["both", "singular", "plural"].includes(assignment.numberMode)) throw new Error(`Choose a number mode for ${card.english}.`);
         if (!["automatic", "none"].includes(assignment.articleMode)) throw new Error(`Choose article behavior for ${card.english}.`);
         const rule = normalized.declensionRules.find((item) => item.id === assignment.ruleId)!;
-        const singular = assignment.numberMode === "plural" ? "" : generateNounForm(rule, assignment.base, "singular");
-        const plural = assignment.numberMode === "singular" ? "" : generateNounForm(rule, assignment.base, "plural");
-        return {
+        if (!ruleSupportsNumberMode(rule, assignment.numberMode as "both" | "singular" | "plural")) {
+          throw new Error(`${rule.name} does not support the ${assignment.numberMode} number mode used by ${card.english}.`);
+        }
+        const nextCard: Flashcard = {
           ...card,
-          italian: singular || plural,
           details: {
             ruleId: assignment.ruleId,
             base: assignment.base.normalize("NFC"),
@@ -149,6 +163,8 @@ export function NounMorphologyPanel() {
             articleMode: assignment.articleMode,
           },
         };
+        const forms = resolvedNounForms(nextCard, normalized);
+        return { ...nextCard, italian: forms.singular || forms.plural };
       });
       await storage.replaceNounMorphology(normalized);
       await storage.replaceCards(updatedCards);
@@ -165,20 +181,21 @@ export function NounMorphologyPanel() {
     <summary>Noun morphology & syntax</summary>
     <div className="noun-patterns-body">
       {loading ? <p>Loading noun morphology…</p> : morphology ? <>
-        <p>Cards store a base and their actual declension rule. Syntax rules decide what the learner may type. Inference sets decide which declension rules a syntax may infer.</p>
+        <p>Cards store a base and their actual declension rule. A rule defines only the number forms it supports. Syntax rules decide what the learner may type. Inference sets decide which declension rules a syntax may infer.</p>
 
         <h3>Declension rules</h3>
         <div className="noun-patterns-table-wrap">
           <table className="noun-patterns-table">
-            <thead><tr><th>Name</th><th>Singular suffix</th><th>Plural suffix</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Singular form</th><th>Plural form</th><th /></tr></thead>
             <tbody>{morphology.declensionRules.map((rule) => <tr key={rule.id}>
               <td><input value={rule.name} onChange={(event) => updateRule(rule.id, { name: event.target.value })} /></td>
-              <td><input value={rule.forms.singular.suffix} onChange={(event) => updateRuleSuffix(rule.id, "singular", event.target.value)} /></td>
-              <td><input value={rule.forms.plural.suffix} onChange={(event) => updateRuleSuffix(rule.id, "plural", event.target.value)} /></td>
+              <td><label><input type="checkbox" checked={Boolean(rule.forms.singular)} onChange={(event) => toggleRuleForm(rule.id, "singular", event.target.checked)} /> supported</label>{rule.forms.singular && <input value={rule.forms.singular.suffix} onChange={(event) => updateRuleSuffix(rule.id, "singular", event.target.value)} placeholder="suffix" />}</td>
+              <td><label><input type="checkbox" checked={Boolean(rule.forms.plural)} onChange={(event) => toggleRuleForm(rule.id, "plural", event.target.checked)} /> supported</label>{rule.forms.plural && <input value={rule.forms.plural.suffix} onChange={(event) => updateRuleSuffix(rule.id, "plural", event.target.value)} placeholder="suffix" />}</td>
               <td><button type="button" className="row-remove" onClick={() => removeRule(rule.id)}>×</button></td>
             </tr>)}</tbody>
           </table>
         </div>
+        <p>A blank suffix means the stored base is already that surface form. This is how singularia and pluralia tantum can use the word itself as their base.</p>
         <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, declensionRules: [...current.declensionRules, newRule()] }))}>Add rule</button></div>
 
         <h3>Inference sets</h3>
@@ -192,7 +209,7 @@ export function NounMorphologyPanel() {
         </div>)}
 
         <h3>Syntax rules</h3>
-        <p>Syntax definitions are data-driven but read-only in this first UI. They use the inference sets above.</p>
+        <p>Syntax definitions are data-driven but read-only in this UI. They use the inference sets above.</p>
         <div className="noun-patterns-table-wrap">
           <table className="noun-patterns-table">
             <thead><tr><th>Name</th><th>Input shape</th><th>Inference set</th></tr></thead>
@@ -205,7 +222,7 @@ export function NounMorphologyPanel() {
         </div>
 
         <h3>Noun assignments</h3>
-        <p>Each noun stores only its base, actual declension rule, gender, number behavior, and article behavior. Parola derives the displayed forms.</p>
+        <p>Each noun stores only its base, actual declension rule, gender, number behavior, and article behavior. Parola derives the available forms.</p>
         <div className="noun-patterns-table-wrap noun-assignments-wrap">
           <table className="noun-patterns-table noun-assignments-table">
             <thead><tr><th>English</th><th>Base</th><th>Rule</th><th>Gender</th><th>Number</th><th>Articles</th><th>Derived</th></tr></thead>
