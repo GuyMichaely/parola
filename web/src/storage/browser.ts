@@ -6,6 +6,7 @@ import {
   type NounMorphology,
 } from "../cards/nounMorphology";
 import { assertNoDuplicateCards, cloneCards, normalizeCard } from "./cardCodec";
+import { assertInventoryState } from "./inventoryState";
 import type { CardStorage, InventoryState } from "./types";
 
 const cardsKey = "parola:cards";
@@ -25,10 +26,13 @@ export function readLocalSnapshot(): InventorySnapshot {
   const nounMorphology = storedMorphology
     ? normalizeNounMorphology(JSON.parse(storedMorphology) as unknown)
     : cloneNounMorphology(defaultNounMorphology);
-  return { cards: parsedCards.map(normalizeCard), nounMorphology, updatedAt };
+  const snapshot = { cards: parsedCards.map(normalizeCard), nounMorphology, updatedAt };
+  assertInventoryState(snapshot);
+  return snapshot;
 }
 
 export function writeLocalSnapshot(snapshot: InventorySnapshot) {
+  assertInventoryState(snapshot);
   window.localStorage.setItem(cardsKey, JSON.stringify(snapshot.cards));
   window.localStorage.setItem(nounMorphologyKey, JSON.stringify(snapshot.nounMorphology));
   if (snapshot.updatedAt) window.localStorage.setItem(updatedAtKey, snapshot.updatedAt);
@@ -58,6 +62,10 @@ function cloneState(state: InventoryState): InventoryState {
 
 export class BrowserStorage implements CardStorage {
   readonly label = "This browser";
+
+  async readInventory() {
+    return cloneState(readLocalSnapshot());
+  }
 
   async listCards() {
     return cloneCards(readLocalSnapshot().cards);
@@ -109,10 +117,10 @@ export class BrowserStorage implements CardStorage {
   }
 
   async replaceInventory(state: InventoryState) {
-    const replacement = {
+    const replacement = assertInventoryState({
       cards: cloneCards(state.cards),
       nounMorphology: normalizeNounMorphology(state.nounMorphology),
-    };
+    });
     writeLocalSnapshot(timestamped(replacement.cards, replacement.nounMorphology));
     return cloneState(replacement);
   }
