@@ -30,7 +30,8 @@ src/
 ├── cards/
 │   ├── types.ts                   Flashcard/CardType domain model
 │   ├── editorModel.ts             card editor rows, validation, conversion, drafts
-│   └── nounPatterns.ts            configurable noun-declension pattern model
+│   ├── nounMorphology.ts          noun rules, syntax rules, inference sets, generation
+│   └── nounMorphologyRuntime.ts   active synchronized morphology definition
 ├── storage/
 │   ├── types.ts                   inventory storage contract
 │   ├── browser.ts                 local snapshot persistence
@@ -42,17 +43,18 @@ src/
 │   └── index.ts                   storage factory and public exports
 ├── study/
 │   ├── order.ts                   study-item ordering/shuffling
-│   ├── verification.ts            typed-answer parsing helpers and verification
+│   ├── nounSyntax.ts              candidate-based noun syntax evaluation
+│   ├── verification.ts            answer verification for all card types
 │   └── logic.ts                   study-module public exports
 └── components/
     ├── AddCardModal.tsx            batch card creation
-    ├── AnswerParsePreview.tsx      live typed-answer syntax interpretation
+    ├── AnswerParsePreview.tsx      live syntax and candidate interpretation
     ├── CardAnswer.tsx              prompt/answer/verification presentation
     ├── CardEditorFields.tsx        reusable editor table fields
     ├── CardEditors.tsx             editor-component public exports
     ├── EditCardModal.tsx           single-card editing
     ├── InventoryCardsEditor.tsx    editable inventory table
-    ├── NounPatternsPanel.tsx       declension rules and noun assignments
+    ├── NounMorphologyPanel.tsx     rules, inference sets, syntax display, assignments
     ├── SaveIndicator.tsx           persistence status UI
     ├── StorageSettingsModal.tsx    sync and inventory-transfer UI
     ├── StudyOptions.tsx            study options and noun answer-keyword settings
@@ -61,21 +63,37 @@ src/
 
 `App.tsx` owns cross-cutting application state: the active study session, current card collection, synchronization configuration, and coordination between the study and inventory views. Domain transformations, persistence implementations, verification logic, and self-contained UI live outside the application shell.
 
-English-to-Italian typed verification always uses the prompted card's known part of speech. There is no separate part-of-speech answer prefix or compact/type-specific study mode. Noun gender and tantum markers remain configurable answer tokens.
+English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix or type-specific study mode. Noun gender and tantum markers remain configurable answer tokens.
 
-## Noun patterns
+## Noun morphology and syntax
 
-Noun declension rules are inventory data. A reusable pattern defines gender, singular suffix, plural suffix, and whether that pattern participates in the shared `Article + singular` shorthand syntax. Individual patterned nouns store a singular base plus the pattern ID; Parola derives their forms at study time.
+A noun card stores its actual morphology as `ruleId`, `base`, `gender`, `numberMode`, and `articleMode`. It does not store derived plural or article fields.
 
-The Inventory view exposes the pattern manager and noun-to-pattern assignments. Patterns are stored and synchronized with the rest of the inventory snapshot.
+A declension rule describes base-to-form transformations. Parola derives simple recognition by reversing those transformations. Gender and study policy are not part of a declension rule.
+
+A syntax rule describes the structure of a typed noun answer. Each syntax references an inference set. An inference set lists the declension rules that syntax may use to interpret the learner's input. Several syntaxes can share one inference set.
+
+The noun parser produces all complete candidates allowed by the input and active definitions. It does not consult the prompted card's actual rule while deciding whether syntax is valid. Verification compares the complete candidates with the card afterward.
+
+This gives three outcomes:
+
+- a matching candidate means correct;
+- complete candidates with no match mean wrong;
+- no complete candidate means invalid or incomplete syntax.
+
+The live preview may show syntax fields and possible declension candidates. It does not reveal whether a candidate matches the prompted card.
+
+See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the full model.
 
 ## Storage and sync
 
 Local and remote storage are not mutually exclusive modes. The app keeps a working local inventory; configuring an API URL adds an optional synchronized remote copy.
 
+The synchronized snapshot contains `cards`, `nounMorphology`, and `updatedAt`. `nounMorphology` contains declension rules, inference sets, and syntax rules.
+
 Both sides carry an inventory-level `updatedAt` timestamp. When they differ, the later timestamp wins. Local changes automatically push remotely when sync is configured. The user can choose whether a synchronized local copy persists between browser sessions and whether startup mismatches reconcile automatically or wait for an explicit Sync now action.
 
-Inventory JSON export/import contains the inventory payload (`cards` and `nounPatterns`) without export-format metadata.
+Inventory JSON export/import contains `cards` and `nounMorphology` without export-format metadata.
 
 ## Extension
 
@@ -87,7 +105,7 @@ The canonical extension release workflow is `.github/workflows/release-extension
 
 ## API
 
-The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It is deployed separately from the static web application.
+The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates that noun cards use the canonical noun schema and reference declension rules present in the snapshot.
 
 ## Deployment
 
