@@ -6,6 +6,9 @@
   padding: 10px 11px;
 }
 
+.answer-parse-preview.syntax-complete { border-color: #316149; }
+.answer-parse-preview.syntax-invalid { border-color: #6d3b3b; background: #251515; }
+
 .answer-parse-heading {
   display: flex;
   align-items: baseline;
@@ -31,6 +34,7 @@
 .answer-parse-preview.parsed-adjective .answer-parse-heading > strong { color: var(--adjective); }
 .answer-parse-preview.parsed-adverb .answer-parse-heading > strong { color: var(--adverb); }
 .answer-parse-preview.unparsed .answer-parse-heading > strong { color: #b7bec8; }
+.answer-parse-preview.syntax-invalid .answer-parse-heading > strong { color: #f5b0b0; }
 
 .answer-parse-message {
   margin: 5px 0 0;
