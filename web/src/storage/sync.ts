@@ -3,7 +3,6 @@ import {
   cloneNounMorphology,
   defaultNounMorphology,
   normalizeNounMorphology,
-  type NounMorphology,
 } from "../cards/nounMorphology";
 import { assertNoDuplicateCards, cloneCards } from "./cardCodec";
 import {
@@ -288,33 +287,6 @@ export class SyncStorage implements CardStorage {
     await this.initialize();
     if (!(this.snapshot?.cards ?? []).some((item) => item.id === id)) throw new Error("Card not found in local inventory.");
     await this.mutateCards((cards) => cards.filter((card) => card.id !== id));
-  }
-
-  async replaceCards(cards: Flashcard[]) {
-    const replacement = cloneCards(cards);
-    await this.mutateCards(() => replacement);
-    return cloneCards(replacement);
-  }
-
-  async listNounMorphology() {
-    return (await this.readInventory()).nounMorphology;
-  }
-
-  async replaceNounMorphology(morphology: NounMorphology) {
-    await this.initialize();
-    const replacement = normalizeNounMorphology(morphology);
-    const current = this.snapshot ?? emptySnapshot();
-    const next = assertInventoryState({
-      cards: cloneCards(current.cards),
-      nounMorphology: cloneNounMorphology(replacement),
-    });
-    this.snapshot = {
-      ...next,
-      updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
-    };
-    this.persistSnapshot();
-    await this.pushLocal();
-    return cloneNounMorphology(replacement);
   }
 
   async replaceInventory(state: InventoryState) {
