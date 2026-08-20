@@ -36,6 +36,12 @@ function normalizeText(value: string) {
   return value.normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/[’`]/g, "'").replace(/\s+/g, " ");
 }
 
+function inferArticle(fullForm: string | undefined, noun: string, fallback = "") {
+  if (!fullForm || !noun) return fallback;
+  if (!fullForm.endsWith(noun)) return fallback;
+  return fullForm.slice(0, -noun.length).trim() || fallback;
+}
+
 export function cloneNounPatterns(patterns: NounPattern[]) {
   return patterns.map((pattern) => ({ ...pattern }));
 }
@@ -109,22 +115,40 @@ export function nounPatternForCard(card: Flashcard, patterns: NounPattern[]) {
   return patterns.find((pattern) => pattern.id === patternId) ?? null;
 }
 
+export function storedNounForms(card: Flashcard): DerivedNounForms {
+  const d = card.details;
+  const singular = d.singular ?? card.italian;
+  const plural = d.plural ?? "";
+  return {
+    gender: d.gender === "feminine" ? "feminine" : "masculine",
+    singular,
+    plural,
+    definiteSingularArticle: d.definiteSingularArticle || inferArticle(d.definiteSingular, singular),
+    definitePluralArticle: d.definitePluralArticle || inferArticle(d.definitePlural, plural),
+    indefiniteArticle: d.indefiniteArticle || inferArticle(d.indefinite, singular),
+  };
+}
+
+export function resolvedNounForms(card: Flashcard, patterns: NounPattern[]) {
+  const pattern = nounPatternForCard(card, patterns);
+  if (!pattern) return storedNounForms(card);
+  return deriveNounPatternForms(pattern, card.details.singular ?? card.italian) ?? storedNounForms(card);
+}
+
 export function nounPatternMatchesCard(pattern: NounPattern, card: Flashcard) {
   if (card.type !== "noun") return false;
-  const singular = card.details.singular ?? card.italian;
-  const derived = deriveNounPatternForms(pattern, singular);
+  const actual = storedNounForms(card);
+  const derived = deriveNounPatternForms(pattern, actual.singular);
   if (!derived) return false;
-  const d = card.details;
-  const actualGender = d.gender === "feminine" ? "feminine" : "masculine";
   const fields = [
-    [derived.gender, actualGender],
-    [derived.singular, singular],
-    [derived.plural, d.plural ?? ""],
-    [derived.definiteSingularArticle, d.definiteSingularArticle ?? ""],
-    [derived.definitePluralArticle, d.definitePluralArticle ?? ""],
-    [derived.indefiniteArticle, d.indefiniteArticle ?? ""],
+    [derived.gender, actual.gender],
+    [derived.singular, actual.singular],
+    [derived.plural, actual.plural],
+    [derived.definiteSingularArticle, actual.definiteSingularArticle],
+    [derived.definitePluralArticle, actual.definitePluralArticle],
+    [derived.indefiniteArticle, actual.indefiniteArticle],
   ];
-  return fields.every(([expected, actual]) => normalizeText(expected) === normalizeText(actual));
+  return fields.every(([expected, value]) => normalizeText(expected) === normalizeText(value));
 }
 
 export function inferNounPatternId(card: Flashcard, patterns: NounPattern[]) {
