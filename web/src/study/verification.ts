@@ -1,16 +1,14 @@
 import type { Flashcard } from "../cards/types";
-import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
-import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
+import { getActiveNounMorphology } from "../cards/nounMorphologyRuntime";
+import { resolvedNounForms } from "../cards/nounMorphology";
 import type { AnswerKeywords } from "../components/StudyOptions";
+import { evaluateNounAnswer } from "./nounSyntax";
 
 export type VerificationField = {
   key: string;
   label: string;
   expected: string;
 };
-
-type NounGender = "masculine" | "feminine";
-export type NounNumberMode = "singular" | "plural";
 
 export function inferArticle(fullForm: string | undefined, noun: string | undefined, fallback: string) {
   if (!fullForm || !noun) return fallback;
@@ -34,83 +32,6 @@ export function keywordMatches(value: string, configured: string) {
   return normalizeAnswer(value) === normalizeAnswer(configured);
 }
 
-export function parseGender(value: string, keywords: AnswerKeywords): NounGender | null {
-  if (keywordMatches(value, keywords.masculine)) return "masculine";
-  if (keywordMatches(value, keywords.feminine)) return "feminine";
-  return null;
-}
-
-export function parseNumberMode(value: string, keywords: AnswerKeywords): NounNumberMode | null {
-  if (keywordMatches(value, keywords.singularOnly)) return "singular";
-  if (keywordMatches(value, keywords.pluralOnly)) return "plural";
-  return null;
-}
-
-export function parseNounMarkers(parts: string[], keywords: AnswerKeywords) {
-  let index = 0;
-  let gender: NounGender | null = null;
-  let numberMode: NounNumberMode | null = null;
-  const markers: Array<{ kind: "gender" | "number"; value: string }> = [];
-
-  while (index < parts.length && markers.length < 2) {
-    const token = parts[index] ?? "";
-    const parsedGender = parseGender(token, keywords);
-    if (parsedGender) {
-      if (gender) return { gender, numberMode, markers, rest: parts.slice(index), invalid: true };
-      gender = parsedGender;
-      markers.push({ kind: "gender", value: parsedGender });
-      index += 1;
-      continue;
-    }
-    const parsedNumber = parseNumberMode(token, keywords);
-    if (parsedNumber) {
-      if (numberMode) return { gender, numberMode, markers, rest: parts.slice(index), invalid: true };
-      numberMode = parsedNumber;
-      markers.push({ kind: "number", value: parsedNumber });
-      index += 1;
-      continue;
-    }
-    break;
-  }
-
-  const nextToken = parts[index] ?? "";
-  if (parseGender(nextToken, keywords) || parseNumberMode(nextToken, keywords)) {
-    return { gender, numberMode, markers, rest: parts.slice(index), invalid: true };
-  }
-  return { gender, numberMode, markers, rest: parts.slice(index), invalid: false };
-}
-
-export function parseNounShorthandAnswer(value: string, keywords: AnswerKeywords) {
-  let answer = value.normalize("NFC").trim().replace(/[’`]/g, "'").replace(/\s+/g, " ");
-  let explicitGender: NounGender | null = null;
-  const firstSpace = answer.search(/\s/);
-  if (firstSpace > 0) {
-    const possibleGender = answer.slice(0, firstSpace);
-    explicitGender = parseGender(possibleGender, keywords);
-    if (explicitGender) answer = answer.slice(firstSpace).trim();
-  }
-
-  let article = "";
-  let singular = "";
-  const elidedMatch = answer.match(/^(l'|un')(.+)$/i);
-  const spacedMatch = answer.match(/^(il|lo|la|un|uno|una)\s+(.+)$/i);
-  if (elidedMatch) [article, singular] = [elidedMatch[1].toLowerCase(), elidedMatch[2].trim()];
-  else if (spacedMatch) [article, singular] = [spacedMatch[1].toLowerCase(), spacedMatch[2].trim()];
-  else return null;
-
-  const articleGender: NounGender | null = ["il", "lo", "un", "uno"].includes(article)
-    ? "masculine"
-    : ["la", "una", "un'"].includes(article) ? "feminine" : null;
-  const gender = explicitGender ?? articleGender;
-  if (!gender || (explicitGender && articleGender && explicitGender !== articleGender)) return null;
-  return {
-    article,
-    singular,
-    gender,
-    articleKind: ["un", "uno", "una", "un'"].includes(article) ? "indefinite" as const : "definite" as const,
-  };
-}
-
 export function standardAdjectivePattern(masculineSingular: string) {
   const word = masculineSingular.trim();
   const lower = word.toLocaleLowerCase("it-IT");
@@ -131,21 +52,10 @@ export function cardSupportsStandardAdjectivePattern(card: Flashcard) {
   return Boolean(pattern && verificationFields(card).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
 }
 
-export function isDefinitePluralArticle(article: string) {
-  return ["i", "gli", "le"].includes(normalizeAnswer(article));
-}
-
 export function whitespaceParts(value: string) {
   return (value.match(/"[^"]*"|\S+/g) ?? []).map((part) => {
     const unquoted = part.startsWith('"') && part.endsWith('"') ? part.slice(1, -1) : part;
     return unquoted === "-" || unquoted === "—" ? "" : unquoted;
-  });
-}
-
-export function expandElidedArticleTokens(parts: string[]) {
-  return parts.flatMap((part) => {
-    const match = part.match(/^(l['’]|un['’])(.+)$/i);
-    return match ? [match[1], match[2]] : [part];
   });
 }
 
@@ -158,57 +68,7 @@ export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: A
   const d = card.details;
 
   if (card.type === "noun") {
-    const patterns = getActiveNounPatterns();
-    const forms = resolvedNounForms(card, patterns);
-    const pattern = nounPatternForCard(card, patterns);
-
-    if (whitespaceParts(answer).length <= 3 && pattern?.syntax === "article-singular") {
-      const parsed = parseNounShorthandAnswer(answer, keywords);
-      if (parsed) {
-        const expectedArticle = parsed.articleKind === "indefinite"
-          ? forms.indefiniteArticle
-          : forms.definiteSingularArticle;
-        return parsed.gender === forms.gender
-          && normalizeAnswer(parsed.article) === normalizeAnswer(expectedArticle)
-          && normalizeAnswer(parsed.singular) === normalizeAnswer(forms.singular);
-      }
-    }
-
-    const rawParts = whitespaceParts(answer);
-    const markerParse = parseNounMarkers(rawParts, keywords);
-    if (markerParse.invalid) return false;
-    if (markerParse.gender && markerParse.gender !== forms.gender) return false;
-
-    const expectsElidedArticle = [forms.definiteSingularArticle, forms.definitePluralArticle, forms.indefiniteArticle]
-      .some((article) => /^(l|un)['’]$/i.test(article));
-    const parts = expectsElidedArticle ? expandElidedArticleTokens(markerParse.rest) : markerParse.rest;
-
-    if (markerParse.numberMode === "singular") {
-      if (!forms.singular || forms.plural) return false;
-      return matchesExpected(parts, [
-        ...(forms.definiteSingularArticle ? [forms.definiteSingularArticle] : []),
-        forms.singular,
-        ...(forms.indefiniteArticle ? [forms.indefiniteArticle] : []),
-      ]);
-    }
-    if (markerParse.numberMode === "plural") {
-      if (forms.singular || !forms.plural) return false;
-      return matchesExpected(parts, [
-        ...(forms.definitePluralArticle ? [forms.definitePluralArticle] : []),
-        forms.plural,
-      ]);
-    }
-    if (!forms.singular && forms.plural && isDefinitePluralArticle(forms.definitePluralArticle)) {
-      return matchesExpected(parts, [forms.definitePluralArticle, forms.plural]);
-    }
-    if (!forms.singular || !forms.plural) return false;
-    return matchesExpected(parts, [
-      ...(forms.definiteSingularArticle ? [forms.definiteSingularArticle] : []),
-      forms.singular,
-      ...(forms.definitePluralArticle ? [forms.definitePluralArticle] : []),
-      forms.plural,
-      ...(forms.indefiniteArticle ? [forms.indefiniteArticle] : []),
-    ]);
+    return evaluateNounAnswer(card, answer, getActiveNounMorphology(), keywords).result === "correct";
   }
 
   if (card.type === "verb") {
@@ -228,7 +88,7 @@ export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: A
 export function verificationFields(card: Flashcard): VerificationField[] {
   const d = card.details;
   if (card.type === "noun") {
-    const forms = resolvedNounForms(card, getActiveNounPatterns());
+    const forms = resolvedNounForms(card, getActiveNounMorphology());
     return [
       { key: "singular", label: "Singular noun", expected: forms.singular },
       { key: "plural", label: "Plural noun", expected: forms.plural },
