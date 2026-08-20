@@ -1,5 +1,4 @@
 import type { Flashcard } from "../cards/types";
-import { setActiveNounMorphology } from "../cards/nounMorphologyRuntime";
 import {
   cloneNounMorphology,
   defaultNounMorphology,
@@ -26,12 +25,10 @@ export function readLocalSnapshot(): InventorySnapshot {
   const nounMorphology = storedMorphology
     ? normalizeNounMorphology(JSON.parse(storedMorphology) as unknown)
     : cloneNounMorphology(defaultNounMorphology);
-  setActiveNounMorphology(nounMorphology);
   return { cards: parsedCards.map(normalizeCard), nounMorphology, updatedAt };
 }
 
 export function writeLocalSnapshot(snapshot: InventorySnapshot) {
-  setActiveNounMorphology(snapshot.nounMorphology);
   window.localStorage.setItem(cardsKey, JSON.stringify(snapshot.cards));
   window.localStorage.setItem(nounMorphologyKey, JSON.stringify(snapshot.nounMorphology));
   if (snapshot.updatedAt) window.localStorage.setItem(updatedAtKey, snapshot.updatedAt);
