@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
+import type { NounMorphology } from "../cards/nounMorphology";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
   adjectiveCard,
@@ -30,17 +31,20 @@ type InventoryMetadataDraft = Record<string, { setName: string; tags: string }>;
 export function InventoryCardsEditor({
   cards,
   knownSets,
+  morphology,
   onSave,
   onOpen,
   onRemove,
 }: {
   cards: Flashcard[];
   knownSets: string[];
+  morphology: NounMorphology;
   onSave: (updated: Flashcard[], original: Flashcard[]) => Promise<boolean>;
   onOpen: (card: Flashcard) => void;
   onRemove: (id: number) => void;
 }) {
-  const [nounRows, setNounRows] = useState(() => cards.filter((card) => card.type === "noun").map(nounRowFromCard));
+  const nounRowsFromCards = () => cards.filter((card) => card.type === "noun").map((card) => nounRowFromCard(card, morphology));
+  const [nounRows, setNounRows] = useState<BatchRow[]>(nounRowsFromCards);
   const [verbRows, setVerbRows] = useState(() => cards.filter((card) => card.type === "verb").map(verbRowFromCard));
   const [adjectiveRows, setAdjectiveRows] = useState(() => cards.filter((card) => card.type === "adjective").map(adjectiveRowFromCard));
   const [adverbRows, setAdverbRows] = useState(() => cards.filter((card) => card.type === "adverb").map(adverbRowFromCard));
@@ -52,6 +56,10 @@ export function InventoryCardsEditor({
   const [error, setError] = useState("");
   const cardById = new Map(cards.map((card) => [card.id, card]));
   const counts = { noun: nounRows.length, verb: verbRows.length, adjective: adjectiveRows.length, adverb: adverbRows.length };
+
+  useEffect(() => {
+    setNounRows(nounRowsFromCards());
+  }, [morphology]);
 
   useEffect(() => {
     const previousById = new Map(previousCardsRef.current.map((card) => [card.id, card]));
@@ -106,7 +114,7 @@ export function InventoryCardsEditor({
     if (adverbRows.some((row) => !row.english.trim() || !row.form.trim())) { setType("adverb"); setError("Every adverb needs English and an Italian form."); return; }
 
     const updated: Flashcard[] = [
-      ...nounRows.map((row) => nounCard({ ...row, ...commonFor(row.id), english: row.english.trim(), singular: row.singular.trim(), plural: row.plural.trim() })),
+      ...nounRows.map((row) => nounCard({ ...row, ...commonFor(row.id), english: row.english.trim(), singular: row.singular.trim(), plural: row.plural.trim() }, morphology)),
       ...verbRows.map((row) => verbCard({ ...row, ...commonFor(row.id), english: row.english.trim(), infinitive: row.infinitive.trim(), io: row.io.trim(), tu: row.tu.trim(), luiLei: row.luiLei.trim(), noi: row.noi.trim(), voi: row.voi.trim(), loro: row.loro.trim(), participle: row.participle.trim() })),
       ...adjectiveRows.map((row) => adjectiveCard({ ...row, ...commonFor(row.id), english: row.english.trim(), masculineSingular: row.masculineSingular.trim(), feminineSingular: row.feminineSingular.trim(), masculinePlural: row.masculinePlural.trim(), femininePlural: row.femininePlural.trim() })),
       ...adverbRows.map((row) => adverbCard({ ...commonFor(row.id), english: row.english.trim(), form: row.form.trim() })),
