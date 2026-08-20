@@ -13,6 +13,7 @@ const maxBodyBytes = 1024 * 1024;
 
 const defaultNounMorphology = {
   declensionRules: [
+    { id: "identity", name: "Unchanged form", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
     { id: "o-i", name: "-o → -i", forms: { singular: { suffix: "o" }, plural: { suffix: "i" } } },
     { id: "e-i", name: "-e → -i", forms: { singular: { suffix: "e" }, plural: { suffix: "i" } } },
     { id: "a-e", name: "-a → -e", forms: { singular: { suffix: "a" }, plural: { suffix: "e" } } },
@@ -20,11 +21,10 @@ const defaultNounMorphology = {
     { id: "ca-che", name: "-ca → -che", forms: { singular: { suffix: "ca" }, plural: { suffix: "che" } } },
     { id: "ga-ghe", name: "-ga → -ghe", forms: { singular: { suffix: "ga" }, plural: { suffix: "ghe" } } },
     { id: "chio-chi", name: "-chio → -chi", forms: { singular: { suffix: "chio" }, plural: { suffix: "chi" } } },
-    { id: "ia-ie", name: "-ia → -ie", forms: { singular: { suffix: "ia" }, plural: { suffix: "ie" } } },
   ],
   inferenceSets: [
-    { id: "full-noun", name: "Full noun answers", declensionRuleIds: ["o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi", "ia-ie"] },
-    { id: "learned-shorthand", name: "Learned shorthand", declensionRuleIds: ["o-i", "e-i", "a-e", "a-i"] },
+    { id: "full-noun", name: "Full noun answers", declensionRuleIds: ["identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi"] },
+    { id: "learned-shorthand", name: "Learned shorthand", declensionRuleIds: ["o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe"] },
   ],
   syntaxRules: [
     {
@@ -122,6 +122,20 @@ function normalizeCard(value, { requireId = false } = {}) {
   const english = String(value.english || "").trim();
   const italian = String(value.italian || "").trim();
   if (!english || !italian) throw new Error("Card needs English and Italian text.");
+  const details = value.details && typeof value.details === "object" && !Array.isArray(value.details)
+    ? Object.fromEntries(Object.entries(value.details).map(([key, item]) => [key, String(item)]))
+    : {};
+  if (type === "noun") {
+    if (
+      !details.ruleId
+      || !Object.prototype.hasOwnProperty.call(details, "base")
+      || !["masculine", "feminine"].includes(details.gender)
+      || !["both", "singular", "plural"].includes(details.numberMode)
+      || !["automatic", "none"].includes(details.articleMode)
+    ) {
+      throw new Error("Noun card does not use the current base/rule noun schema.");
+    }
+  }
   return {
     ...(requireId ? { id } : {}),
     type,
@@ -129,9 +143,7 @@ function normalizeCard(value, { requireId = false } = {}) {
     italian,
     setName: typeof value.setName === "string" && value.setName.trim() ? value.setName.trim() : null,
     tags: Array.isArray(value.tags) ? [...new Set(value.tags.map(String).map((tag) => tag.trim()).filter(Boolean))] : [],
-    details: value.details && typeof value.details === "object" && !Array.isArray(value.details)
-      ? Object.fromEntries(Object.entries(value.details).map(([key, item]) => [key, String(item)]))
-      : {},
+    details,
   };
 }
 
@@ -224,6 +236,15 @@ function normalizeNounMorphology(value) {
   return { declensionRules, inferenceSets, syntaxRules };
 }
 
+function validateNounAssignments(cards, nounMorphology) {
+  const ruleIds = new Set(nounMorphology.declensionRules.map((rule) => rule.id));
+  for (const card of cards) {
+    if (card.type === "noun" && !ruleIds.has(card.details.ruleId)) {
+      throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.ruleId}.`);
+    }
+  }
+}
+
 async function ensureDataDirectory() {
   await mkdir(dirname(dataPath), { recursive: true });
 }
@@ -269,6 +290,7 @@ async function readUpdatedAt() {
 
 async function readState() {
   const [cards, nounMorphology, updatedAt] = await Promise.all([readCards(), readNounMorphology(), readUpdatedAt()]);
+  validateNounAssignments(cards, nounMorphology);
   return { cards, nounMorphology, updatedAt };
 }
 
@@ -280,6 +302,7 @@ async function writeAtomic(path, contents) {
 }
 
 async function writeState(cards, nounMorphology, updatedAt) {
+  validateNounAssignments(cards, nounMorphology);
   await writeAtomic(dataPath, `${JSON.stringify(cards, null, 2)}\n`);
   await writeAtomic(morphologyPath, `${JSON.stringify(nounMorphology, null, 2)}\n`);
   await writeAtomic(metadataPath, `${JSON.stringify({ updatedAt }, null, 2)}\n`);
@@ -349,6 +372,7 @@ const server = createServer(async (req, res) => {
         if (typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt))) return sendJson(res, 400, { error: "PUT /state requires a valid updatedAt timestamp." }, cors);
         const cards = body.cards.map((card) => normalizeCard(card, { requireId: true }));
         const nounMorphology = normalizeNounMorphology(body.nounMorphology);
+        validateNounAssignments(cards, nounMorphology);
         const result = await replaceStateIfNewer(cards, nounMorphology, body.updatedAt);
         if (result.conflict) return sendJson(res, 409, { error: "Remote inventory is newer.", state: result.state }, cors);
         return sendJson(res, 200, result.state, cors);
