@@ -1,4 +1,5 @@
 import type { Flashcard } from "../cards/types";
+import { setActiveNounPatterns } from "../cards/nounPatternRuntime";
 import {
   cloneNounPatterns,
   defaultNounPatterns,
@@ -27,10 +28,12 @@ export function readLocalSnapshot(): InventorySnapshot {
   const nounPatterns = storedPatterns
     ? normalizeNounPatterns(JSON.parse(storedPatterns) as unknown)
     : cloneNounPatterns(defaultNounPatterns);
+  setActiveNounPatterns(nounPatterns);
   return { cards: parsedCards.map(normalizeCard), nounPatterns, updatedAt };
 }
 
 export function writeLocalSnapshot(snapshot: InventorySnapshot) {
+  setActiveNounPatterns(snapshot.nounPatterns);
   window.localStorage.setItem(cardsKey, JSON.stringify(snapshot.cards));
   window.localStorage.setItem(nounPatternsKey, JSON.stringify(snapshot.nounPatterns));
   if (snapshot.updatedAt) window.localStorage.setItem(updatedAtKey, snapshot.updatedAt);
