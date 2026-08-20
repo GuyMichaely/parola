@@ -10,13 +10,12 @@ import {
   type CardStorage,
   type SyncLoadPolicy,
 } from "./storage";
-import type { CardType, Flashcard } from "./cards/types";
+import type { Flashcard } from "./cards/types";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
 import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";
 import {
   AddCardModal,
-  BulkEditCardsModal,
   EditCardModal,
   InventoryCardsEditor,
   localDateStamp,
@@ -28,7 +27,6 @@ import {
   normalizeAnswer,
   shuffled,
   withEnglishPromptFirst,
-  type AnswerSyntaxMode,
   type StudyItem,
 } from "./study/logic";
 
@@ -50,7 +48,6 @@ export default function Home() {
   }), [persistLocal, storageEndpoint, syncLoadPolicy]);
   const [adding, setAdding] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
-  const [bulkEditingCards, setBulkEditingCards] = useState<Flashcard[] | null>(null);
   const [current, setCurrent] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [verificationResult, setVerificationResult] = useState<"correct" | "wrong" | null>(null);
@@ -62,7 +59,6 @@ export default function Home() {
   const [answerKeywords, setAnswerKeywords] = useState<AnswerKeywords>(readAnswerKeywords);
   const [oneDirectionPerWord, setOneDirectionPerWord] = useState(false);
   const [englishFirstWhenBoth, setEnglishFirstWhenBoth] = useState(false);
-  const [compactAnswers, setCompactAnswers] = useState(false);
   const [directionSeed, setDirectionSeed] = useState(0);
   const [shuffleSeed, setShuffleSeed] = useState(() => Date.now() >>> 0);
   const [selectedInventoryTags, setSelectedInventoryTags] = useState<string[]>([]);
@@ -100,11 +96,6 @@ export default function Home() {
       || card.tags.some((tag) => selectedScopes.includes(`tag:${tag}`));
     return scopeMode === "only" ? belongsToSelectedScope : !belongsToSelectedScope;
   }), [cards, scopeMode, selectedScopes]);
-  const homogeneousStudyType = useMemo<CardType | null>(() => {
-    const types = new Set(scopedCards.map((item) => item.type));
-    return types.size === 1 ? Array.from(types)[0] ?? null : null;
-  }, [scopedCards]);
-  const answerSyntaxMode: AnswerSyntaxMode = compactAnswers && homogeneousStudyType && typeToVerify && promptMode !== "italian" ? "compact" : "universal";
   const allStudyItems = useMemo(() => scopedCards.flatMap((card): StudyItem[] => {
     if (promptMode === "english" || promptMode === "italian") {
       return [{ key: `${card.id}:${promptMode}`, card, promptLanguage: promptMode }];
@@ -158,10 +149,9 @@ export default function Home() {
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && (adding || editingCard || bulkEditingCards)) {
+      if (event.key === "Escape" && (adding || editingCard)) {
         setAdding(false);
         setEditingCard(null);
-        setBulkEditingCards(null);
         return;
       }
       if (view === "study" && typingItalian && verificationResult && event.key === "Enter") {
@@ -169,7 +159,7 @@ export default function Home() {
         advanceCard();
         return;
       }
-      if (adding || editingCard || bulkEditingCards || view !== "study" || !studyItem || typingItalian) return;
+      if (adding || editingCard || view !== "study" || !studyItem || typingItalian) return;
       const target = event.target as HTMLElement;
       if (["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
       if (event.code === "Space" || (!revealed && event.key === "Enter")) {
@@ -214,13 +204,11 @@ export default function Home() {
 
   function toggleScope(key: string) {
     setSelectedScopes((items) => items.includes(key) ? items.filter((item) => item !== key) : [...items, key]);
-    setCompactAnswers(false);
     resetStudyProgress();
   }
 
   function changeScopeMode(mode: ScopeMode) {
     setScopeMode(mode);
-    setCompactAnswers(false);
     resetStudyProgress();
   }
 
@@ -244,11 +232,6 @@ export default function Home() {
 
   function toggleEnglishFirstWhenBoth() {
     setEnglishFirstWhenBoth((value) => !value);
-    resetStudyProgress();
-  }
-
-  function toggleCompactAnswers() {
-    setCompactAnswers((value) => !value);
     resetStudyProgress();
   }
 
@@ -494,9 +477,6 @@ export default function Home() {
               onOneDirectionPerWord={toggleOneDirectionPerWord}
               englishFirstWhenBoth={englishFirstWhenBoth}
               onEnglishFirstWhenBoth={toggleEnglishFirstWhenBoth}
-              homogeneousType={homogeneousStudyType}
-              compactAnswers={compactAnswers}
-              onCompactAnswers={toggleCompactAnswers}
               answerKeywords={answerKeywords}
               onAnswerKeywords={setAnswerKeywords}
             />
@@ -526,14 +506,14 @@ export default function Home() {
               </div>
             ) : card && studyItem ? <>
               <div className="session-meta">
-                <span>{answerSyntaxMode === "compact" && homogeneousStudyType && <><i className={`type-indicator ${homogeneousStudyType}`} />{typeLabels[homogeneousStudyType]} mode · </>}{studyItem.promptLanguage} prompt{card.setName && <b>{card.setName}</b>}</span>
+                <span>{studyItem.promptLanguage} prompt{card.setName && <b>{card.setName}</b>}</span>
                 <span>{current + 1} / {studyItems.length}</span>
               </div>
               {typingItalian ? (
                 <div className={`flashcard verification-card ${verificationResult ?? ""}`}>
                   {!verificationResult ? <>
                     <div className="verification-prompt"><span className="answer-label">English prompt</span><h2>{card.english}</h2></div>
-                    <ItalianVerificationForm key={`${studyItem.key}:${answerSyntaxMode}`} card={card} syntaxMode={answerSyntaxMode} compactType={homogeneousStudyType} keywords={answerKeywords} onResult={verifyItalian} />
+                    <ItalianVerificationForm key={studyItem.key} card={card} keywords={answerKeywords} onResult={verifyItalian} />
                   </> : <>
                     <div className={`verification-result ${verificationResult}`} role="status">
                       <strong>{verificationResult === "correct" ? "Correct" : "Not quite"}</strong>
@@ -582,9 +562,6 @@ export default function Home() {
             <div className="inventory-sticky">
               <div className="inventory-control-row">
                 <input className="search-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search words, sets, or tags…" aria-label="Search inventory" />
-                <div className="inventory-actions">
-                  <button className="edit-filtered-button" onClick={() => setBulkEditingCards(tagMatchedCards)} disabled={!selectedInventoryTags.length || !tagMatchedCards.length} title={!selectedInventoryTags.length ? "Select one or more tags first" : undefined}>Focused edit{selectedInventoryTags.length ? ` (${tagMatchedCards.length})` : ""}</button>
-                </div>
               </div>
               <div className="tag-filter-row" aria-label="Filter by tags">
                 {inventoryTagOptions.map((tag) => tag.kind === "custom" ? <span className="filter-tag-group" key={tag.key}>
@@ -608,7 +585,6 @@ export default function Home() {
 
       {adding && <AddCardModal knownSets={setNames} onClose={() => setAdding(false)} onBatch={addBatch} />}
       {editingCard && <EditCardModal card={editingCard} knownSets={setNames} onClose={() => setEditingCard(null)} onSave={updateCard} />}
-      {bulkEditingCards && <BulkEditCardsModal cards={bulkEditingCards} onClose={() => setBulkEditingCards(null)} onSave={(updatedCards) => persistManyCards(updatedCards, bulkEditingCards, "Those card edits could not be saved. The previous cards were restored.")} />}
       {storageSettingsOpen && <StorageSettingsModal
         storage={storage}
         endpoint={storageEndpoint}
