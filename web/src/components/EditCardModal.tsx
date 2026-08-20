@@ -1,10 +1,9 @@
 import { type FormEvent, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
+import type { NounMorphology } from "../cards/nounMorphology";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
-  adjectiveCard,
   adjectiveRowFromCard,
-  adverbCard,
   adverbRowFromCard,
   nounCard,
   nounFormsError,
@@ -15,7 +14,6 @@ import {
   type BatchRow,
   type VerbBatchRow,
   updateNounRow,
-  verbCard,
   verbRowFromCard,
 } from "../cards/editorModel";
 import {
@@ -30,18 +28,22 @@ import {
 export function EditCardModal({
   card,
   knownSets,
+  morphology,
   onClose,
   onSave,
 }: {
   card: Flashcard;
   knownSets: string[];
+  morphology: NounMorphology;
   onClose: () => void;
   onSave: (card: Flashcard) => void;
 }) {
   const [formError, setFormError] = useState("");
   const [setName, setSetName] = useState(card.setName ?? "");
   const [tags, setTags] = useState(card.tags.join(", "));
-  const [nounRow, setNounRow] = useState<BatchRow>(() => nounRowFromCard(card));
+  const [nounRow, setNounRow] = useState<BatchRow>(() => card.type === "noun" ? nounRowFromCard(card, morphology) : {
+    id: String(card.id), english: card.english, gender: "masculine", singular: "", plural: "", definiteSingularArticle: "", definitePluralArticle: "", indefiniteArticle: "",
+  });
   const [verbRow, setVerbRow] = useState<VerbBatchRow>(() => verbRowFromCard(card));
   const [adjectiveRow, setAdjectiveRow] = useState<AdjectiveBatchRow>(() => adjectiveRowFromCard(card));
   const [adverbRow, setAdverbRow] = useState<AdverbBatchRow>(() => adverbRowFromCard(card));
@@ -68,7 +70,7 @@ export function EditCardModal({
         english: nounRow.english.trim(),
         gender: nounRow.gender,
         ...nounFields,
-      });
+      }, morphology);
     } else if (card.type === "verb") {
       if ([verbRow.english, verbRow.infinitive, verbRow.io, verbRow.tu, verbRow.luiLei, verbRow.noi, verbRow.voi, verbRow.loro, verbRow.participle].some((value) => !value.trim())) { setFormError("English, infinitive, all six present-tense forms, and the participle are required."); return; }
       updated = { ...common, english: verbRow.english.trim(), italian: verbRow.infinitive.trim(), details: {
