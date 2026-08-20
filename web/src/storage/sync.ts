@@ -1,5 +1,5 @@
 import type { Flashcard } from "../cards/types";
-import { cloneCards } from "./cardCodec";
+import { assertNoDuplicateCards, cloneCards } from "./cardCodec";
 import {
   clearLocalSnapshot,
   readLocalSnapshot,
@@ -233,6 +233,7 @@ export class SyncStorage implements CardStorage {
   async createCards(cards: Flashcard[]) {
     await this.initialize();
     const existing = this.snapshot?.cards ?? [];
+    assertNoDuplicateCards(existing, cards);
     let nextId = existing.reduce((max, card) => Math.max(max, card.id), 0) + 1;
     const inserted = cloneCards(cards).map((card) => ({ ...card, id: nextId++ }));
     await this.mutate((current) => [...inserted, ...current]);
