@@ -6,7 +6,6 @@ import {
   adjectiveRowFromCard,
   adverbCard,
   adverbRowFromCard,
-  deckTagPrefix,
   nounCard,
   nounFormsError,
   nounRowFromCard,
@@ -18,7 +17,6 @@ import {
   updateNounRow,
   verbCard,
   verbRowFromCard,
-  visibleTags,
 } from "../cards/editorModel";
 import {
   AdjectiveRowCells,
@@ -46,7 +44,7 @@ export function InventoryCardsEditor({
   const [verbRows, setVerbRows] = useState(() => cards.filter((card) => card.type === "verb").map(verbRowFromCard));
   const [adjectiveRows, setAdjectiveRows] = useState(() => cards.filter((card) => card.type === "adjective").map(adjectiveRowFromCard));
   const [adverbRows, setAdverbRows] = useState(() => cards.filter((card) => card.type === "adverb").map(adverbRowFromCard));
-  const [metadata, setMetadata] = useState<InventoryMetadataDraft>(() => Object.fromEntries(cards.map((card) => [String(card.id), { setName: card.setName ?? "", tags: visibleTags(card.tags).join(", ") }])));
+  const [metadata, setMetadata] = useState<InventoryMetadataDraft>(() => Object.fromEntries(cards.map((card) => [String(card.id), { setName: card.setName ?? "", tags: card.tags.join(", ") }])));
   const firstType: CardType = nounRows.length ? "noun" : verbRows.length ? "verb" : adjectiveRows.length ? "adjective" : "adverb";
   const [type, setType] = useState<CardType>(firstType);
   const [saving, setSaving] = useState(false);
@@ -60,11 +58,11 @@ export function InventoryCardsEditor({
 
   function commonFor(rowId: string) {
     const original = cardById.get(Number(rowId))!;
-    const rowMetadata = metadata[rowId] ?? { setName: original.setName ?? "", tags: visibleTags(original.tags).join(", ") };
+    const rowMetadata = metadata[rowId] ?? { setName: original.setName ?? "", tags: original.tags.join(", ") };
     return {
       id: original.id,
       setName: rowMetadata.setName.trim() || null,
-      tags: Array.from(new Set([...original.tags.filter((tag) => tag.startsWith(deckTagPrefix)), ...parseTags(rowMetadata.tags)])),
+      tags: parseTags(rowMetadata.tags),
     };
   }
 
