@@ -1,52 +1,75 @@
-import type { Flashcard } from "../cards/types";
-import { parseCardResponse, parseCardsResponse } from "./cardCodec";
-import type { CardStorage } from "./types";
+import { parseCardsResponse } from "./cardCodec";
 
-export class RemoteStorage implements CardStorage {
+export interface RemoteSnapshot {
+  cards: ReturnType<typeof parseCardsResponse>;
+  updatedAt: string | null;
+}
+
+export class RemoteConflictError extends Error {
+  readonly state: RemoteSnapshot;
+
+  constructor(state: RemoteSnapshot) {
+    super("Remote inventory changed since the last sync.");
+    this.state = state;
+  }
+}
+
+function stateUrl(endpoint: string) {
+  const normalized = endpoint.trim().replace(/\/$/, "");
+  if (normalized.endsWith("/state")) return normalized;
+  if (normalized.endsWith("/cards")) return `${normalized.slice(0, -6)}/state`;
+  return `${normalized}/state`;
+}
+
+function parseSnapshot(value: unknown): RemoteSnapshot {
+  const payload = value as { cards?: unknown; updatedAt?: unknown };
+  return {
+    cards: parseCardsResponse(payload),
+    updatedAt: typeof payload?.updatedAt === "string" && payload.updatedAt ? payload.updatedAt : null,
+  };
+}
+
+export class RemoteSyncClient {
   readonly label: string;
   private readonly endpoint: string;
 
   constructor(endpoint: string) {
-    this.endpoint = endpoint;
+    this.endpoint = stateUrl(endpoint);
     this.label = new URL(endpoint).host;
   }
 
-  private async request(init?: RequestInit, query = "") {
-    const response = await fetch(`${this.endpoint}${query}`, {
+  private async request(init?: RequestInit) {
+    const response = await fetch(this.endpoint, {
       ...init,
       headers: {
         ...(init?.body ? { "content-type": "application/json" } : {}),
         ...init?.headers,
       },
     });
-    if (!response.ok) {
-      let message = `Remote storage returned HTTP ${response.status}.`;
-      try {
-        const body = await response.json() as { error?: string };
-        if (body.error) message = body.error;
-      } catch {
-        // Preserve the HTTP status message when the body is not JSON.
-      }
-      throw new Error(message);
+
+    const text = response.status === 204 ? "" : await response.text();
+    const body = text ? JSON.parse(text) as unknown : null;
+
+    if (response.status === 409) {
+      const payload = body as { state?: unknown };
+      throw new RemoteConflictError(parseSnapshot(payload?.state));
     }
-    if (response.status === 204) return null;
-    const text = await response.text();
-    return text ? JSON.parse(text) as unknown : null;
+    if (!response.ok) {
+      const payload = body as { error?: unknown } | null;
+      const detail = payload && typeof payload.error === "string" ? payload.error : `HTTP ${response.status}`;
+      throw new Error(`Remote sync failed: ${detail}`);
+    }
+    return body;
   }
 
-  async listCards() {
-    return parseCardsResponse(await this.request());
+  async readState() {
+    return parseSnapshot(await this.request());
   }
 
-  async createCards(cards: Flashcard[]) {
-    return parseCardsResponse(await this.request({ method: "POST", body: JSON.stringify({ cards }) }));
-  }
-
-  async updateCard(card: Flashcard) {
-    return parseCardResponse(await this.request({ method: "PUT", body: JSON.stringify(card) }));
-  }
-
-  async deleteCard(id: number) {
-    await this.request({ method: "DELETE" }, `?id=${encodeURIComponent(id)}`);
+  async writeState(cards: RemoteSnapshot["cards"], baseUpdatedAt: string | null) {
+    return parseSnapshot(await this.request({
+      method: "PUT",
+      body: JSON.stringify({ cards, baseUpdatedAt }),
+    }));
   }
 }
