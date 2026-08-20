@@ -10,7 +10,7 @@ createRoot(document.getElementById("root")!).render(
     <div className="app-root">
       <Home />
       <aside className="noun-pattern-manager" aria-label="Noun pattern manager">
-        <div className="noun-pattern-manager-title">Declension rules</div>
+        <div style={{ width: "fit-content", margin: "0 0 6px auto", border: "1px solid var(--line)", borderRadius: 999, background: "#101317", color: "var(--muted)", padding: "5px 9px", fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>Declension rules</div>
         <NounPatternsPanel />
       </aside>
     </div>
