@@ -16,9 +16,7 @@ export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcar
   const keys = new Set(existing.map(cardDuplicateKey));
   for (const card of incoming) {
     const key = cardDuplicateKey(card);
-    if (keys.has(key)) {
-      throw new Error(`A ${card.type} card for “${card.italian}” / “${card.english}” already exists.`);
-    }
+    if (keys.has(key)) throw new Error(`A ${card.type} card for “${card.italian}” / “${card.english}” already exists.`);
     keys.add(key);
   }
 }
@@ -26,8 +24,14 @@ export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcar
 export function normalizeCard(value: unknown): Flashcard {
   if (!value || typeof value !== "object") throw new Error("Invalid card returned by storage.");
   const card = value as Partial<Flashcard>;
-  if (!Number.isFinite(card.id) || !card.type || !card.english || !card.italian) {
-    throw new Error("Storage returned an incomplete card.");
+  if (!Number.isFinite(card.id) || !card.type || !card.english || !card.italian) throw new Error("Storage returned an incomplete card.");
+  const details = card.details && typeof card.details === "object"
+    ? Object.fromEntries(Object.entries(card.details).map(([key, item]) => [key, String(item)]))
+    : {};
+  if (card.type === "noun") {
+    if (!details.ruleId || details.base === undefined || !["masculine", "feminine"].includes(details.gender) || !["both", "singular", "plural"].includes(details.numberMode) || !["automatic", "none"].includes(details.articleMode)) {
+      throw new Error(`Noun card ${card.id} does not use the current base/rule noun schema.`);
+    }
   }
   return {
     id: Number(card.id),
@@ -36,9 +40,7 @@ export function normalizeCard(value: unknown): Flashcard {
     italian: String(card.italian),
     setName: typeof card.setName === "string" && card.setName ? card.setName : null,
     tags: Array.isArray(card.tags) ? card.tags.map(String) : [],
-    details: card.details && typeof card.details === "object"
-      ? Object.fromEntries(Object.entries(card.details).map(([key, item]) => [key, String(item)]))
-      : {},
+    details,
   };
 }
 
