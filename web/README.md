@@ -10,34 +10,29 @@ The app is intentionally small and hosting-provider agnostic:
 - Vite only as a development/build tool.
 - Plain CSS.
 - No Next.js.
-- No application server.
-- No server-side database dependency.
-- Browser `localStorage` by default.
-- Optional user-supplied HTTP API for remote card storage.
+- No application server required for local-only use.
+- Browser `localStorage` for optional persistent local inventory state.
+- Optional user-supplied HTTP API for synchronization between machines.
 
 A production build is just static files in `dist/`. The build uses relative asset URLs, so the same `dist/` can be served at `/`, `/parola/`, or another directory without rebuilding.
 
-The canonical production deployment is `https://guymichaely.com/parola/`. The repository's single Pages workflow publishes this web build together with the signed Chrome extension release.
+The canonical production deployment is `https://guymichaely.com/parola/`.
 
-## Storage
+## Storage and sync
 
-Click the **Browser** / **Remote** storage control in the app header.
+Parola always has a local working inventory. With no API endpoint configured, it is local-only.
 
-### Browser storage
+Configure a sync API endpoint from **Storage & sync** to maintain a remote copy of the same timestamped inventory. Local and remote are not mutually exclusive storage modes.
 
-Leave the API endpoint blank. Cards are saved in this browser under the `parola:cards` localStorage key.
+When local and remote timestamps differ, the newer snapshot is authoritative. Local changes automatically push to remote while sync is configured. Settings control whether the local synchronized copy persists between browser sessions and whether startup mismatches sync automatically or wait for **Sync now**.
 
-### Remote storage
+See `docs/REMOTE_API.md` for the sync endpoint contract.
 
-Enter the complete URL of an API endpoint, for example:
+## Inventory transfer
 
-```text
-https://api.example.com/cards
-```
+**Storage & sync** can export/download the inventory, copy it to the clipboard, import a JSON file, or replace the inventory from pasted JSON.
 
-The browser talks directly to that endpoint. See `docs/REMOTE_API.md` for the small protocol it must implement.
-
-Switching storage locations does **not** copy cards from one location to another.
+The inventory JSON payload contains `cards` and `nounPatterns`; export-format/version/timestamp metadata is not added.
 
 ## Development
 
