@@ -138,26 +138,31 @@ function parseMarkers(tokens: string[], syntax: NounSyntaxRule, keywords: Answer
   return { invalid: false as const, index, gender, tantum, pieces, missingRequired };
 }
 
-function candidateGender(explicitGender: NounGender | null, fields: NounSyntaxField[], values: string[]) {
-  const genders = new Set<NounGender>();
-  if (explicitGender) genders.add(explicitGender);
+function candidateGenders(explicitGender: NounGender | null, fields: NounSyntaxField[], values: string[]): NounGender[] {
+  const articleGenders = new Set<NounGender>();
   fields.forEach((field, index) => {
     if (field.kind !== "article") return;
     const facts = articleFacts(values[index] ?? "");
-    if (facts?.gender) genders.add(facts.gender);
+    if (facts?.gender) articleGenders.add(facts.gender);
   });
-  if (genders.size !== 1) return null;
-  return [...genders][0] ?? null;
+
+  if (explicitGender) {
+    if ([...articleGenders].some((gender) => gender !== explicitGender)) return [];
+    return [explicitGender];
+  }
+  if (articleGenders.size > 1) return [];
+  if (articleGenders.size === 1) return [[...articleGenders][0]!];
+  return ["masculine", "feminine"];
 }
 
 function buildCandidates(
   syntax: NounSyntaxRule,
   morphology: NounMorphology,
-  gender: NounGender | null,
+  genders: NounGender[],
   values: string[],
 ): NounSyntaxCandidate[] {
   const inferenceSet = morphology.inferenceSets.find((set) => set.id === syntax.inferenceSetId);
-  if (!inferenceSet || !gender) return [];
+  if (!inferenceSet || !genders.length) return [];
   const result: NounSyntaxCandidate[] = [];
 
   for (const ruleId of inferenceSet.declensionRuleIds) {
@@ -177,26 +182,29 @@ function buildCandidates(
 
     const singular = syntax.numberMode === "plural" ? "" : generateNounForm(rule, base, "singular") ?? "";
     const plural = syntax.numberMode === "singular" ? "" : generateNounForm(rule, base, "plural") ?? "";
-    const articles = suggestedNounArticles(gender, singular, plural, syntax.articleMode);
-    const articlesMatch = syntax.fields.every((field, index) => {
-      if (field.kind !== "article") return true;
-      return normalize(values[index] ?? "") === normalize(expectedArticle(field, articles));
-    });
-    if (!articlesMatch) continue;
 
-    result.push({
-      syntaxRuleId: syntax.id,
-      syntaxName: syntax.name,
-      declensionRuleId: rule.id,
-      declensionRuleName: rule.name,
-      definition: {
-        ruleId: rule.id,
-        base,
-        gender,
-        numberMode: syntax.numberMode,
-        articleMode: syntax.articleMode,
-      },
-    });
+    for (const gender of genders) {
+      const articles = suggestedNounArticles(gender, singular, plural, syntax.articleMode);
+      const articlesMatch = syntax.fields.every((field, index) => {
+        if (field.kind !== "article") return true;
+        return normalize(values[index] ?? "") === normalize(expectedArticle(field, articles));
+      });
+      if (!articlesMatch) continue;
+
+      result.push({
+        syntaxRuleId: syntax.id,
+        syntaxName: syntax.name,
+        declensionRuleId: rule.id,
+        declensionRuleName: rule.name,
+        definition: {
+          ruleId: rule.id,
+          base,
+          gender,
+          numberMode: syntax.numberMode,
+          articleMode: syntax.articleMode,
+        },
+      });
+    }
   }
   return result;
 }
@@ -254,12 +262,12 @@ export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morp
     };
   }
 
-  const gender = candidateGender(markerParse.gender, syntax.fields, values);
-  if (!gender) {
-    return { syntax, status: "not-applicable", pieces, missing: [], candidates: [], consumedTokens: originalTokens.length, reason: "The supplied fields do not determine one consistent noun gender." };
+  const genders = candidateGenders(markerParse.gender, syntax.fields, values);
+  if (!genders.length) {
+    return { syntax, status: "not-applicable", pieces, missing: [], candidates: [], consumedTokens: originalTokens.length, reason: "The supplied gender and articles conflict." };
   }
 
-  const candidates = buildCandidates(syntax, morphology, gender, values);
+  const candidates = buildCandidates(syntax, morphology, genders, values);
   return {
     syntax,
     status: "complete",
