@@ -275,7 +275,7 @@ export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morp
     missing: [],
     candidates,
     consumedTokens: originalTokens.length,
-    reason: candidates.length ? "Syntax is complete." : "The syntax is complete, but no allowed declension rule recognizes the supplied forms.",
+    reason: candidates.length ? "Syntax is complete." : "Syntax is complete, but the supplied forms do not produce an allowed morphology candidate.",
   };
 }
 
@@ -296,11 +296,12 @@ export function choosePreviewAttempt(attempts: NounSyntaxAttempt[]) {
 export function evaluateNounAnswer(card: Flashcard, rawValue: string, morphology: NounMorphology, keywords: AnswerKeywords): NounAnswerEvaluation {
   if (card.type !== "noun") throw new Error("Noun evaluator requires a noun card.");
   const attempts = analyzeNounInput(rawValue, morphology, keywords);
-  const candidates = attempts.flatMap((attempt) => attempt.status === "complete" ? attempt.candidates : []);
+  const completeAttempts = attempts.filter((attempt) => attempt.status === "complete");
+  const candidates = completeAttempts.flatMap((attempt) => attempt.candidates);
   const target = nounDefinitionForCard(card);
   const matchingCandidates = candidates.filter((candidate) => nounDefinitionMatches(candidate.definition, target));
   return {
-    result: matchingCandidates.length ? "correct" : candidates.length ? "wrong" : "invalid",
+    result: matchingCandidates.length ? "correct" : completeAttempts.length ? "wrong" : "invalid",
     attempts,
     candidates,
     matchingCandidates,
