@@ -1,10 +1,11 @@
 import type { CardType, Flashcard } from "../cards/types";
+import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
+import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
 import {
   cardSupportsStandardAdjectivePattern,
   expandElidedArticleTokens,
   hasImplicitNounShape,
-  inferArticle,
   keywordMatches,
   parseGender,
   parseNounShorthandAnswer,
@@ -57,38 +58,32 @@ function nounFieldLabels(card: Flashcard, numberMode: "singular" | "plural" | nu
     return ["Definite singular article", "Singular", "Definite plural article", "Plural", "Indefinite article"];
   }
 
-  const d = card.details;
-  const singular = d.singular === undefined ? card.italian : d.singular;
-  const plural = d.plural ?? "";
-  const definiteSingularArticle = d.definiteSingularArticle || inferArticle(d.definiteSingular, singular, "");
-  const definitePluralArticle = d.definitePluralArticle || inferArticle(d.definitePlural, plural, "");
-  const indefiniteArticle = d.indefiniteArticle || inferArticle(d.indefinite, singular, "");
-
+  const forms = resolvedNounForms(card, getActiveNounPatterns());
   if (numberMode === "singular") {
     return [
-      ...(definiteSingularArticle ? ["Definite singular article"] : []),
-      ...(singular ? ["Singular"] : []),
-      ...(indefiniteArticle ? ["Indefinite article"] : []),
+      ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
+      ...(forms.singular ? ["Singular"] : []),
+      ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
     ];
   }
   if (numberMode === "plural") {
     return [
-      ...(definitePluralArticle ? ["Definite plural article"] : []),
-      ...(plural ? ["Plural"] : []),
+      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
+      ...(forms.plural ? ["Plural"] : []),
     ];
   }
-  if (!singular && plural) {
+  if (!forms.singular && forms.plural) {
     return [
-      ...(definitePluralArticle ? ["Definite plural article"] : []),
+      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
       "Plural",
     ];
   }
   return [
-    ...(definiteSingularArticle ? ["Definite singular article"] : []),
-    ...(singular ? ["Singular"] : []),
-    ...(definitePluralArticle ? ["Definite plural article"] : []),
-    ...(plural ? ["Plural"] : []),
-    ...(indefiniteArticle ? ["Indefinite article"] : []),
+    ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
+    ...(forms.singular ? ["Singular"] : []),
+    ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
+    ...(forms.plural ? ["Plural"] : []),
+    ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
   ];
 }
 
@@ -180,16 +175,20 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
         { label: shorthand.articleKind === "indefinite" ? "Indefinite article" : "Definite article", value: shorthand.article },
         { label: "Singular", value: shorthand.singular },
       ];
-      if (card.type === "noun" && card.details.patternSyntax === "article-singular") {
-        status = "complete";
-        message = `${card.details.patternName || "This noun pattern"} allows Article + singular shorthand; the omitted forms come from the assigned pattern.`;
-      } else if (card.type === "noun") {
-        const labels = nounFieldLabels(card, null);
-        missing = labels.slice(2);
-        status = "partial";
-        message = card.details.patternId && card.details.patternId !== "manual"
-          ? `${card.details.patternName || "This noun pattern"} currently requires full forms. Continue with the remaining fields.`
-          : "This noun uses manual forms. The shorthand is recognizable, but continue with the remaining stored fields.";
+      if (card.type === "noun") {
+        const patterns = getActiveNounPatterns();
+        const pattern = nounPatternForCard(card, patterns);
+        if (pattern?.syntax === "article-singular") {
+          status = "complete";
+          message = `${pattern.name} allows Article + singular shorthand; the omitted forms come from the assigned pattern.`;
+        } else {
+          const labels = nounFieldLabels(card, null);
+          missing = labels.slice(2);
+          status = "partial";
+          message = pattern
+            ? `${pattern.name} currently requires full forms. Continue with the remaining fields.`
+            : "This noun uses manual forms. The shorthand is recognizable, but continue with the remaining stored fields.";
+        }
       } else {
         status = "complete";
       }
@@ -211,11 +210,14 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
         index += 1;
       }
 
-      if (card.type === "noun" && numberMode === "singular" && Boolean(card.details.plural)) {
-        return analyzed(type, source, pieces, "This card has both singular and plural forms, so singular-only syntax is not valid for it.", "invalid");
-      }
-      if (card.type === "noun" && numberMode === "plural" && Boolean(card.details.singular ?? card.italian)) {
-        return analyzed(type, source, pieces, "This card has a singular form, so plural-only syntax is not valid for it.", "invalid");
+      if (card.type === "noun") {
+        const forms = resolvedNounForms(card, getActiveNounPatterns());
+        if (numberMode === "singular" && Boolean(forms.plural)) {
+          return analyzed(type, source, pieces, "This card has both singular and plural forms, so singular-only syntax is not valid for it.", "invalid");
+        }
+        if (numberMode === "plural" && Boolean(forms.singular)) {
+          return analyzed(type, source, pieces, "This card has a singular form, so plural-only syntax is not valid for it.", "invalid");
+        }
       }
 
       const values = expandElidedArticleTokens(rawParts.slice(index));
