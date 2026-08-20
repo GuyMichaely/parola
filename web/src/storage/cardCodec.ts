@@ -4,6 +4,25 @@ export function cloneCards(cards: Flashcard[]) {
   return cards.map((card) => ({ ...card, tags: [...card.tags], details: { ...card.details } }));
 }
 
+function normalizeIdentityText(value: string) {
+  return value.normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/\s+/g, " ");
+}
+
+export function cardDuplicateKey(card: Pick<Flashcard, "type" | "english" | "italian">) {
+  return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${normalizeIdentityText(card.italian)}`;
+}
+
+export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcard[]) {
+  const keys = new Set(existing.map(cardDuplicateKey));
+  for (const card of incoming) {
+    const key = cardDuplicateKey(card);
+    if (keys.has(key)) {
+      throw new Error(`A ${card.type} card for “${card.italian}” / “${card.english}” already exists.`);
+    }
+    keys.add(key);
+  }
+}
+
 export function normalizeCard(value: unknown): Flashcard {
   if (!value || typeof value !== "object") throw new Error("Invalid card returned by storage.");
   const card = value as Partial<Flashcard>;
