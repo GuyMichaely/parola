@@ -2,7 +2,7 @@ import { BrowserStorage } from "./browser";
 import { SyncStorage, setLocalSyncStatus, type SyncStorageOptions } from "./sync";
 import { readSyncLoadPolicy, readSyncPersistLocal } from "./settings";
 
-export type { CardStorage } from "./types";
+export type { CardStorage, InventoryState } from "./types";
 export type { SyncLoadPolicy } from "./settings";
 export type { SyncStatusState } from "./sync";
 export {
