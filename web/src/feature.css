@@ -76,6 +76,23 @@
   font-size: 11px;
 }
 
+.mistake-tag-creator {
+  width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.mistake-tag-creator label { display: flex; flex-direction: column; gap: 5px; }
+.mistake-tag-creator label span { color: var(--muted); font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; }
+.mistake-tag-creator input { width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 6px; background: #101317; color: var(--text); padding: 0 10px; }
+.mistake-tag-creator button { align-self: end; min-height: 42px; border-radius: 7px; padding: 0 14px; font-weight: 650; }
+.tag-created { grid-column: 1 / -1; border: 1px solid #316149; border-radius: 6px; background: #12241a; color: #a7e6c3 !important; padding: 10px 12px; }
+
 .inventory-transfer-panel {
   margin-top: 16px;
   border: 1px solid var(--line);
