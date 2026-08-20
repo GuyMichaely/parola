@@ -64,6 +64,14 @@ function newerSide(local: InventorySnapshot, remote: RemoteSnapshot): "local" | 
   return "local";
 }
 
+function nextTimestamp(...values: Array<string | null | undefined>) {
+  const floor = values.reduce((max, value) => {
+    const parsed = timestamp(value ?? null);
+    return parsed === null ? max : Math.max(max, parsed);
+  }, Number.NEGATIVE_INFINITY);
+  return new Date(Math.max(Date.now(), Number.isFinite(floor) ? floor + 1 : Date.now())).toISOString();
+}
+
 export class SyncStorage implements CardStorage {
   readonly label: string;
   private readonly remote: RemoteSyncClient;
@@ -71,6 +79,7 @@ export class SyncStorage implements CardStorage {
   private readonly loadPolicy: SyncLoadPolicy;
   private snapshot: InventorySnapshot | null = null;
   private initialization: Promise<void> | null = null;
+  private latestRemoteUpdatedAt: string | null = null;
 
   constructor(endpoint: string, options: SyncStorageOptions) {
     this.remote = new RemoteSyncClient(endpoint);
@@ -87,6 +96,7 @@ export class SyncStorage implements CardStorage {
   }
 
   private adoptRemote(remote: RemoteSnapshot) {
+    this.latestRemoteUpdatedAt = remote.updatedAt;
     this.snapshot = { cards: cloneCards(remote.cards), updatedAt: remote.updatedAt };
     this.persistSnapshot();
     setSyncStatus({ status: "synced", message: "Synced" });
@@ -100,11 +110,13 @@ export class SyncStorage implements CardStorage {
         cards: cloneCards(this.snapshot.cards),
         updatedAt: this.snapshot.updatedAt,
       });
+      this.latestRemoteUpdatedAt = saved.updatedAt;
       this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
       this.persistSnapshot();
       setSyncStatus({ status: "synced", message: "Synced" });
     } catch (error) {
       if (error instanceof RemoteConflictError) {
+        this.latestRemoteUpdatedAt = error.state.updatedAt;
         if (this.loadPolicy === "automatic") this.adoptRemote(error.state);
         else setSyncStatus({ status: "pending", message: "Sync available" });
         return;
@@ -114,6 +126,8 @@ export class SyncStorage implements CardStorage {
   }
 
   private async reconcile(local: InventorySnapshot, remote: RemoteSnapshot, force: boolean) {
+    this.latestRemoteUpdatedAt = remote.updatedAt;
+
     if (cardsEqual(local, remote)) {
       this.snapshot = {
         cards: cloneCards(local.cards),
@@ -139,7 +153,7 @@ export class SyncStorage implements CardStorage {
 
     this.snapshot = {
       cards: cloneCards(local.cards),
-      updatedAt: local.updatedAt ?? new Date().toISOString(),
+      updatedAt: local.updatedAt ?? nextTimestamp(remote.updatedAt),
     };
     this.persistSnapshot();
     await this.pushLocal();
@@ -167,7 +181,7 @@ export class SyncStorage implements CardStorage {
     const current = this.snapshot ?? { cards: [], updatedAt: null };
     this.snapshot = {
       cards: cloneCards(operation(cloneCards(current.cards))),
-      updatedAt: new Date().toISOString(),
+      updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
     };
     this.persistSnapshot();
     await this.pushLocal();
