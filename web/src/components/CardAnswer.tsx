@@ -5,6 +5,7 @@ import { typeLabels } from "../cardTypes";
 import type { AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import { verifyPowerAnswer } from "../study/logic";
+import { evaluateNounAnswer } from "../study/nounSyntax";
 
 export function NounAnswer({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
   const forms = resolvedNounForms(card, morphology);
@@ -25,6 +26,34 @@ export function NounAnswer({ card, morphology }: { card: Flashcard; morphology: 
       {!hasArticles && <p className="noun-article-note">No articles</p>}
     </div>
   );
+}
+
+export function NounAnswerDiagnostic({ card, answer, keywords, morphology }: { card: Flashcard; answer: string; keywords: AnswerKeywords; morphology: NounMorphology }) {
+  if (card.type !== "noun") return null;
+  const evaluation = evaluateNounAnswer(card, answer, morphology, keywords);
+  if (evaluation.result === "correct") return null;
+
+  if (!evaluation.candidates.length) {
+    return <div className="submitted-answer noun-answer-diagnostic">
+      <span>How Parola interpreted it</span>
+      <strong>No allowed declension rule recognized the completed noun syntax.</strong>
+    </div>;
+  }
+
+  const uniqueCandidates = Array.from(new Map(evaluation.candidates.map((candidate) => {
+    const key = `${candidate.syntaxRuleId}\u0000${candidate.declensionRuleId}\u0000${candidate.definition.base}\u0000${candidate.definition.gender}`;
+    return [key, candidate] as const;
+  })).values());
+
+  return <div className="submitted-answer noun-answer-diagnostic">
+    <span>How Parola interpreted it</span>
+    <div>
+      {uniqueCandidates.map((candidate) => <p key={`${candidate.syntaxRuleId}:${candidate.declensionRuleId}:${candidate.definition.base}:${candidate.definition.gender}`}>
+        <strong>{candidate.declensionRuleName}</strong>
+        {` · base ${candidate.definition.base || "∅"} · ${candidate.definition.gender} · ${candidate.syntaxName}`}
+      </p>)}
+    </div>
+  </div>;
 }
 
 export function VerbAnswer({ card }: { card: Flashcard }) {
