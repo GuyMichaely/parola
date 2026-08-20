@@ -1,17 +1,16 @@
 import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
-import { getActiveNounPatterns } from "./nounPatternRuntime";
-import { resolvedNounForms, suggestedNounArticles } from "./nounPatterns";
+import { getActiveNounMorphology } from "./nounMorphologyRuntime";
 import {
-  inferArticle,
-  normalizeAnswer,
-  standardAdjectivePattern,
-} from "../study/logic";
+  inferNounDefinitionFromForms,
+  resolvedNounForms,
+  suggestedNounArticles,
+} from "./nounMorphology";
+import { standardAdjectivePattern } from "../study/logic";
 
 export type BatchRow = {
   id: string;
   english: string;
-  patternId: string;
   gender: "masculine" | "feminine";
   singular: string;
   plural: string;
@@ -92,7 +91,7 @@ export function clearBatchDraft(type: CardType) {
   try {
     window.localStorage.removeItem(cardAdderDraftKey(type));
   } catch {
-    // Draft persistence is a convenience; saving cards must still work if storage is unavailable.
+    // Draft persistence is optional.
   }
 }
 
@@ -100,7 +99,7 @@ export function writeBatchDraft<Row>(type: CardType, draft: BatchDraft<Row>) {
   try {
     window.localStorage.setItem(cardAdderDraftKey(type), JSON.stringify(draft));
   } catch {
-    // Keep the editor usable when the browser blocks or exhausts local storage.
+    // Keep the editor usable when local storage is unavailable.
   }
 }
 
@@ -108,7 +107,7 @@ export function writeCardAdderType(type: CardType) {
   try {
     window.localStorage.setItem(cardAdderTypeKey, type);
   } catch {
-    // Keep the editor usable when the browser blocks local storage.
+    // Keep the editor usable when local storage is unavailable.
   }
 }
 
@@ -123,9 +122,7 @@ export function joinArticle(article: string, noun: string) {
   const cleanArticle = article.trim();
   const cleanNoun = noun.trim();
   if (!cleanArticle) return cleanNoun;
-  return cleanArticle.endsWith("’") || cleanArticle.endsWith("'")
-    ? `${cleanArticle}${cleanNoun}`
-    : `${cleanArticle} ${cleanNoun}`;
+  return cleanArticle.endsWith("’") || cleanArticle.endsWith("'") ? `${cleanArticle}${cleanNoun}` : `${cleanArticle} ${cleanNoun}`;
 }
 
 export function parseTags(value: string) {
@@ -144,7 +141,6 @@ export function emptyBatchRow(id: string): BatchRow {
   return {
     id,
     english: "",
-    patternId: "manual",
     gender: "masculine",
     singular: "",
     plural: "",
@@ -167,30 +163,11 @@ export function nounFormsError(input: Pick<BatchRow, "singular" | "plural" | "de
 }
 
 export function emptyVerbBatchRow(id: string): VerbBatchRow {
-  return {
-    id,
-    english: "",
-    infinitive: "",
-    io: "",
-    tu: "",
-    luiLei: "",
-    noi: "",
-    voi: "",
-    loro: "",
-    auxiliary: "avere",
-    participle: "",
-  };
+  return { id, english: "", infinitive: "", io: "", tu: "", luiLei: "", noi: "", voi: "", loro: "", auxiliary: "avere", participle: "" };
 }
 
 export function emptyAdjectiveBatchRow(id: string): AdjectiveBatchRow {
-  return {
-    id,
-    english: "",
-    masculineSingular: "",
-    feminineSingular: "",
-    masculinePlural: "",
-    femininePlural: "",
-  };
+  return { id, english: "", masculineSingular: "", feminineSingular: "", masculinePlural: "", femininePlural: "" };
 }
 
 export function emptyAdverbBatchRow(id: string): AdverbBatchRow {
@@ -202,17 +179,24 @@ export function nounCard(input: {
   english: string;
   setName: string | null;
   tags: string[];
-  patternId?: string;
-  gender: string;
+  gender: "masculine" | "feminine";
   singular: string;
   plural: string;
   definiteSingularArticle: string;
   definitePluralArticle: string;
   indefiniteArticle: string;
 }): Flashcard {
-  const definiteSingular = joinArticle(input.definiteSingularArticle, input.singular);
-  const definitePlural = joinArticle(input.definitePluralArticle, input.plural);
-  const indefinite = joinArticle(input.indefiniteArticle, input.singular);
+  const definition = inferNounDefinitionFromForms({
+    singular: input.singular,
+    plural: input.plural,
+    gender: input.gender,
+    definiteSingularArticle: input.definiteSingularArticle,
+    definitePluralArticle: input.definitePluralArticle,
+    indefiniteArticle: input.indefiniteArticle,
+  }, getActiveNounMorphology());
+  if (!definition) {
+    throw new Error(`No configured declension rule can represent ${input.singular || input.plural}. Define the morphology rule first.`);
+  }
   return {
     id: input.id,
     type: "noun",
@@ -221,16 +205,11 @@ export function nounCard(input: {
     setName: input.setName,
     tags: input.tags,
     details: {
-      patternId: "manual",
-      gender: input.gender,
-      singular: input.singular,
-      plural: input.plural,
-      definiteSingularArticle: input.definiteSingularArticle,
-      definitePluralArticle: input.definitePluralArticle,
-      indefiniteArticle: input.indefiniteArticle,
-      definiteSingular,
-      definitePlural,
-      indefinite,
+      ruleId: definition.ruleId,
+      base: definition.base,
+      gender: definition.gender,
+      numberMode: definition.numberMode,
+      articleMode: definition.articleMode,
     },
   };
 }
@@ -243,16 +222,7 @@ export function verbCard(input: Omit<VerbBatchRow, "id"> & { id: number; setName
     italian: input.infinitive,
     setName: input.setName,
     tags: input.tags,
-    details: {
-      io: input.io,
-      tu: input.tu,
-      luiLei: input.luiLei,
-      noi: input.noi,
-      voi: input.voi,
-      loro: input.loro,
-      auxiliary: input.auxiliary,
-      participle: input.participle,
-    },
+    details: { io: input.io, tu: input.tu, luiLei: input.luiLei, noi: input.noi, voi: input.voi, loro: input.loro, auxiliary: input.auxiliary, participle: input.participle },
   };
 }
 
@@ -264,12 +234,7 @@ export function adjectiveCard(input: Omit<AdjectiveBatchRow, "id"> & { id: numbe
     italian: input.masculineSingular,
     setName: input.setName,
     tags: input.tags,
-    details: {
-      masculineSingular: input.masculineSingular,
-      feminineSingular: input.feminineSingular,
-      masculinePlural: input.masculinePlural,
-      femininePlural: input.femininePlural,
-    },
+    details: { masculineSingular: input.masculineSingular, feminineSingular: input.feminineSingular, masculinePlural: input.masculinePlural, femininePlural: input.femininePlural },
   };
 }
 
@@ -278,11 +243,10 @@ export function adverbCard(input: Omit<AdverbBatchRow, "id"> & { id: number; set
 }
 
 export function nounRowFromCard(card: Flashcard): BatchRow {
-  const forms = resolvedNounForms(card, getActiveNounPatterns());
+  const forms = resolvedNounForms(card, getActiveNounMorphology());
   return {
     id: String(card.id),
     english: card.english,
-    patternId: "manual",
     gender: forms.gender,
     singular: forms.singular,
     plural: forms.plural,
@@ -310,7 +274,6 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
   return {
     id: row.id,
     english: row.english ?? "",
-    patternId: "manual",
     gender: row.gender === "feminine" ? "feminine" : "masculine",
     singular,
     plural,
@@ -321,10 +284,10 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
 }
 
 export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K]) {
-  const nextRow = { ...row, patternId: "manual", [field]: value } as BatchRow;
+  const nextRow = { ...row, [field]: value } as BatchRow;
   if (field === "singular" || field === "plural" || field === "gender") {
-    const previous = suggestedNounArticles(row.gender, row.singular, row.plural);
-    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural);
+    const previous = suggestedNounArticles(row.gender, row.singular, row.plural, row.definiteSingularArticle || row.definitePluralArticle || row.indefiniteArticle ? "automatic" : "none");
+    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, nextRow.definiteSingularArticle || nextRow.definitePluralArticle || nextRow.indefiniteArticle ? "automatic" : "none");
     const keepOrSuggest = (current: string, previousSuggestion: string, nextSuggestion: string) => !current || current === previousSuggestion ? nextSuggestion : current;
     return {
       ...nextRow,
@@ -336,4 +299,4 @@ export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K,
   return nextRow;
 }
 
-export { suggestedNounArticles };
+export { suggestedNounArticles, standardAdjectivePattern };
