@@ -1,14 +1,17 @@
 import { BrowserStorage } from "./browser";
-import { SyncStorage, readSyncStatus, setLocalSyncStatus, subscribeSyncStatus, type SyncStorageOptions, type SyncStatusState } from "./sync";
+import { SyncStorage, setLocalSyncStatus, type SyncStorageOptions } from "./sync";
+import { readSyncLoadPolicy, readSyncPersistLocal } from "./settings";
 
 export type { CardStorage } from "./types";
-export type { SyncLoadPolicy } from "./settings";
+export type { StorageMode, SyncLoadPolicy } from "./settings";
 export type { SyncStatusState } from "./sync";
 export {
   readStorageEndpoint,
+  readStorageMode,
   readSyncLoadPolicy,
   readSyncPersistLocal,
   saveStorageEndpoint,
+  saveStorageMode,
   saveSyncLoadPolicy,
   saveSyncPersistLocal,
 } from "./settings";
@@ -21,5 +24,8 @@ export function createCardStorage(endpoint: string, options?: SyncStorageOptions
     setLocalSyncStatus();
     return new BrowserStorage();
   }
-  return new SyncStorage(normalizedEndpoint, options ?? { persistLocal: true, loadPolicy: "automatic" });
+  return new SyncStorage(normalizedEndpoint, options ?? {
+    persistLocal: readSyncPersistLocal(),
+    loadPolicy: readSyncLoadPolicy(),
+  });
 }
