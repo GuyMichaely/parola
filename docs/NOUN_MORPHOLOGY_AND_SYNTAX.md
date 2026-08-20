@@ -86,24 +86,32 @@ Parola does not choose one morphology before checking the answer. It keeps every
 For each noun answer:
 
 1. Try each syntax definition against the typed tokens.
-2. For each applicable syntax, try every compatible declension rule in its inference set.
+2. For each structurally complete syntax, try every compatible declension rule in its inference set.
 3. Let each declension rule recognize the noun fields and infer a base.
-4. Use parsed articles and markers as grammatical facts. A candidate must agree with those facts.
-5. Compare all complete candidates with the prompted card's actual noun definition.
+4. Use parsed articles and markers as grammatical facts. Ambiguous facts can branch into several interpretations. Conflicting facts make that syntax inapplicable.
+5. Compare all produced candidates with the prompted card's actual noun definition.
 
 The result follows three rules:
 
 - If any candidate matches the card, the answer is correct.
-- If at least one complete candidate exists but none matches the card, the answer is wrong.
-- If no complete candidate exists, the input has invalid or incomplete syntax.
+- Otherwise, if at least one syntax is structurally complete, the answer is wrong. A complete syntax can therefore be wrong even when no allowed declension rule produces a candidate.
+- If no syntax is structurally complete, the input is invalid or incomplete.
 
 Syntax parsing does not consult the prompted card's actual declension rule. That keeps syntax validity separate from correctness.
 
+### Ambiguous grammatical facts
+
+Some typed forms do not determine every fact by themselves. For example, definite singular `l’` can introduce either a masculine or feminine noun. If no explicit gender marker resolves it, the parser branches and tries both genders. It does not consult the prompted card to choose one.
+
+If the answer contains contradictory facts, such as an explicit masculine marker paired with an unambiguously feminine article, that syntax is not applicable.
+
 ## Live preview
 
-The live preview can show the parsed syntax fields and every declension rule that currently recognizes the input. It must not mark any candidate as matching or not matching the prompted card before submission.
+The live preview is structural. It shows which answer syntax is being recognized, the fields already consumed, and any fields still needed. It does not display noun declension candidates or indicate which candidate would match the prompted card.
 
-For `lo specchio`, the preview may therefore show `-o -> -i` and `-chio -> -chi` as possible interpretations if both are allowed by the active inference set. That information comes from the typed characters and the configured rules, not from the target card.
+This prevents the preview from revealing the morphology being tested. The candidate set still exists internally and is used after submission to decide whether a structurally complete answer is correct or wrong.
+
+A preview and submission can therefore differ in one important way: the preview may say that the noun syntax is complete even when the allowed morphology rules cannot interpret the supplied noun form. Submission then records that answer as wrong rather than rejecting it as invalid syntax.
 
 ## Example: specchio and cetriolo
 
@@ -118,7 +126,7 @@ Suppose `learned-shorthand` initially contains `o-i` but not `chio-chi`.
 
 `il cetriolo` produces an `o-i` candidate with base `cetriol`. It matches the card and is correct.
 
-`lo specchio` is valid `Article + singular` syntax. The allowed `o-i` rule recognizes the final `o` and produces base `specchi`. A complete candidate exists, but it does not match the card's actual `chio-chi` definition. The answer is wrong, not syntactically invalid.
+`lo specchio` is valid `Article + singular` syntax. The allowed `o-i` rule recognizes the final `o` and produces base `specchi`. A candidate exists, but it does not match the card's actual `chio-chi` definition. The answer is wrong, not syntactically invalid.
 
 Later, add `chio-chi` to `learned-shorthand`. The same input now also produces a `chio-chi` candidate with base `spec`. That candidate matches the card, so `lo specchio` becomes correct.
 
@@ -129,15 +137,15 @@ Nothing about `specchio` changed. Only the learner's permitted inference set cha
 These are separate cards even though both contain the surface string `vestiti` somewhere in their paradigms.
 
 ```text
-dress:   rule o-i,        base vestit,  number both
+dress:   rule o-i,         base vestit,   number both
 clothes: rule plural-base, base vestiti, number plural
 ```
 
 The `dress` rule derives `vestito` and `vestiti` from `vestit`. The `clothes` rule has only a plural form and treats `vestiti` itself as the base. Parola never derives `vestito` as a form of the `clothes` card.
 
-## Storage
+## Inventory state
 
-The inventory snapshot contains:
+Cards and noun morphology form one inventory state:
 
 ```json
 {
@@ -150,4 +158,4 @@ The inventory snapshot contains:
 }
 ```
 
-There is one current schema. Old representations are migrated once outside the application rather than supported by permanent compatibility code.
+Storage reads and whole-inventory writes treat those values as one validated snapshot. A noun card must reference an existing compatible rule, and its stored primary `italian` value must agree with the primary form generated by its canonical noun definition.
