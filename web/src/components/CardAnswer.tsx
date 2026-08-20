@@ -96,7 +96,7 @@ export function ItalianVerificationForm({ card, keywords, morphology, onResult }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (syntax.status !== "complete") {
+    if (!syntax.checkable) {
       setSyntaxRejected(true);
       return;
     }
