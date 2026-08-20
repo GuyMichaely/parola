@@ -29,26 +29,53 @@ A synchronization snapshot contains the complete inventory plus its last-change 
       "setName": null,
       "tags": [],
       "details": {
-        "patternId": "masculine-o-i",
-        "singular": "ombrello"
+        "ruleId": "o-i",
+        "base": "ombrell",
+        "gender": "masculine",
+        "numberMode": "both",
+        "articleMode": "automatic"
       }
     }
   ],
-  "nounPatterns": [
-    {
-      "id": "masculine-o-i",
-      "name": "Masculine -o → -i",
-      "gender": "masculine",
-      "singularSuffix": "o",
-      "pluralSuffix": "i",
-      "syntax": "article-singular"
-    }
-  ],
+  "nounMorphology": {
+    "declensionRules": [
+      {
+        "id": "o-i",
+        "name": "-o → -i",
+        "forms": {
+          "singular": { "suffix": "o" },
+          "plural": { "suffix": "i" }
+        }
+      }
+    ],
+    "inferenceSets": [
+      {
+        "id": "learned-shorthand",
+        "name": "Learned shorthand",
+        "declensionRuleIds": ["o-i"]
+      }
+    ],
+    "syntaxRules": [
+      {
+        "id": "article-singular",
+        "name": "Article + singular",
+        "markers": [{ "kind": "gender", "required": false }],
+        "markerOrder": "any",
+        "fields": [
+          { "kind": "article", "definiteness": "definite", "number": "singular" },
+          { "kind": "noun", "number": "singular" }
+        ],
+        "numberMode": "both",
+        "articleMode": "automatic",
+        "inferenceSetId": "learned-shorthand"
+      }
+    ]
+  },
   "updatedAt": "2026-08-20T03:00:00.000Z"
 }
 ```
 
-`updatedAt` must be a valid timestamp. Parola uses it for snapshot-level last-write-wins synchronization; it does not merge individual cards.
+`updatedAt` must be a valid timestamp. Parola uses it for snapshot-level last-write-wins synchronization. It does not merge individual cards or morphology definitions.
 
 ## Read state
 
@@ -76,13 +103,15 @@ If the server state is newer, return HTTP `409` with the current server snapshot
   "error": "Remote inventory is newer.",
   "state": {
     "cards": [ ... ],
-    "nounPatterns": [ ... ],
+    "nounMorphology": { ... },
     "updatedAt": "2026-08-20T03:05:00.000Z"
   }
 }
 ```
 
 If timestamps are equal but the snapshots differ, also return `409` rather than arbitrarily overwriting one copy.
+
+The service should reject noun cards whose `ruleId` does not exist in the accompanying `nounMorphology.declensionRules` collection.
 
 ## Errors
 
