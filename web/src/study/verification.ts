@@ -1,6 +1,5 @@
 import type { Flashcard } from "../cards/types";
-import { getActiveNounMorphology } from "../cards/nounMorphologyRuntime";
-import { resolvedNounForms } from "../cards/nounMorphology";
+import { resolvedNounForms, type NounMorphology } from "../cards/nounMorphology";
 import type { AnswerKeywords } from "../components/StudyOptions";
 import { evaluateNounAnswer } from "./nounSyntax";
 
@@ -63,12 +62,12 @@ export function matchesExpected(actual: string[], expected: string[]) {
   return actual.length === expected.length && actual.every((value, index) => normalizeAnswer(value) === normalizeAnswer(expected[index] ?? ""));
 }
 
-export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: AnswerKeywords) {
+export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: AnswerKeywords, morphology: NounMorphology) {
   const answer = rawValue.trim();
   const d = card.details;
 
   if (card.type === "noun") {
-    return evaluateNounAnswer(card, answer, getActiveNounMorphology(), keywords).result === "correct";
+    return evaluateNounAnswer(card, answer, morphology, keywords).result === "correct";
   }
 
   if (card.type === "verb") {
@@ -85,10 +84,11 @@ export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: A
   return matchesExpected(adjectiveParts, [d.masculineSingular || card.italian, d.feminineSingular, d.masculinePlural, d.femininePlural]);
 }
 
-export function verificationFields(card: Flashcard): VerificationField[] {
+export function verificationFields(card: Flashcard, morphology?: NounMorphology): VerificationField[] {
   const d = card.details;
   if (card.type === "noun") {
-    const forms = resolvedNounForms(card, getActiveNounMorphology());
+    if (!morphology) throw new Error("Noun verification fields require noun morphology.");
+    const forms = resolvedNounForms(card, morphology);
     return [
       { key: "singular", label: "Singular noun", expected: forms.singular },
       { key: "plural", label: "Plural noun", expected: forms.plural },
