@@ -44,13 +44,72 @@ Two sync preferences are user-configurable:
 1. **Keep a persistent local copy** — when enabled, synchronized state remains in browser `localStorage` between sessions. When disabled, remote state is still used as the working inventory during the session but the synchronized inventory is not retained locally across reloads.
 2. **When local and remote differ on load** — either synchronize automatically or report that sync is available and wait for the user to choose **Sync now**. In both cases the later timestamp is authoritative; the setting changes timing, not conflict direction.
 
-The header exposes sync state such as checking, syncing, synced, sync available, or not synced.
+The canonical remote contract is a complete `GET /state` / `PUT /state` snapshot containing `cards`, `nounPatterns`, and `updatedAt`.
 
 ## Inventory categorization
 
 Cards have optional sets and ordinary tags. There is no separate deck model.
 
 The previous deck implementation was only a hidden tag namespace (`__deck__:`) with special UI treatment, so that distinction has been removed. Mistake-group creation now adds an ordinary tag. Existing strings that happen to use the old prefix are treated as ordinary visible tags rather than receiving compatibility behavior.
+
+The Inventory grid is part of normal page flow rather than a vertically scrolling box. Wide tables may scroll horizontally. The old separate focused/bulk-edit workflow has been removed; the inline inventory grid and normal single-card editor are the canonical editing interfaces.
+
+## Typed English → Italian verification
+
+The prompted card already determines the expected part of speech. The user does **not** enter a noun/verb/adjective/adverb prefix, and there is no separate part-of-speech/compact study mode.
+
+The parser preview includes part of speech as an ordinary parsed field and then interprets the answer only according to that prompted grammar.
+
+The only configurable answer keywords are noun markers:
+
+- masculine;
+- feminine;
+- singular-only;
+- plural-only.
+
+Gender and tantum markers may appear in either order.
+
+Typed-answer syntax has three useful states:
+
+- a syntactically plausible partial answer remains visible as an in-progress parse and shows which fields are still required;
+- a syntactically invalid answer is explicitly marked invalid;
+- a syntactically complete answer can be submitted and then judged for correctness.
+
+Syntax validity is deliberately separate from correctness. For noun shorthand, an input is syntactically complete when it matches an enabled shorthand syntax/pattern class; only after submission is it compared with the prompted card. This prevents the live parser from revealing that the user chose the wrong declension pattern before the answer is submitted.
+
+Submitting incomplete/invalid syntax gives visible error feedback rather than silently doing nothing.
+
+## Configurable noun patterns
+
+Noun declension patterns are reusable inventory data. A pattern defines:
+
+- an ID and display name;
+- gender;
+- singular suffix;
+- plural suffix;
+- whether study shorthand is **Full forms required** or **Article + singular**.
+
+A patterned noun stores its singular base and pattern ID. Parola derives the plural and articles at study time.
+
+Multiple patterns can opt into the same **Article + singular** syntax. This lets a learner keep a newly learned pattern explicit at first, then later admit it into the common shorthand. For example, `Masculine -chio → -chi` can initially require the full declension and later allow `m lo specchio`.
+
+The Inventory view exposes **Declension rules / Noun patterns**, where the user edits pattern classes and assigns nouns to them. Pattern definitions are part of the inventory snapshot and therefore synchronize between machines.
+
+## Inventory transfer
+
+The Storage & sync dialog provides manual inventory backup/restore:
+
+- export the complete inventory to a JSON file;
+- copy the same inventory JSON to the clipboard;
+- import a JSON file as a full inventory replacement;
+- paste inventory JSON into a text box and import it.
+
+The canonical transfer payload contains:
+
+- `cards`;
+- `nounPatterns`.
+
+It does **not** contain export metadata such as `format`, `version`, or `exportedAt`. Sync timestamps are internal synchronization metadata and are not part of manual inventory export.
 
 ## Extension capture model
 
@@ -88,34 +147,6 @@ When a breaking storage/schema change is useful:
 - then remove the old schema/compatibility code.
 
 The target is one clean canonical model, not permanent support for historical representations.
-
-## Current web-app UX
-
-The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI includes a realtime parsing preview that explains how Parola is interpreting the current input.
-
-Typed-answer syntax has three useful states:
-
-- a syntactically plausible partial answer remains visible as an in-progress parse and shows which fields are still required;
-- a syntactically invalid answer is explicitly marked invalid;
-- only syntactically complete answers can be submitted for correctness checking.
-
-Regular noun shorthand such as article + singular noun is intentionally accepted only when Parola can infer every omitted stored form using its supported regular-noun pattern. Otherwise the preview shows the shorthand as incomplete and lists the remaining noun fields needed for the full form.
-
-Card creation blocks duplicates with the same part of speech, English prompt, and canonical Italian field, using normalized case/Unicode comparison. Duplicate cards within the same new batch are blocked as well.
-
-Study rating hotkeys follow the left-to-right button order: **1 = Wrong**, **2 = Right**, while Enter remains a Right shortcut.
-
-The Storage & sync dialog also provides manual inventory backup/restore:
-
-- export the complete inventory to a JSON file;
-- copy the same inventory JSON to the clipboard;
-- import a JSON file as a full inventory replacement;
-- paste inventory JSON into a text box and import it;
-- cards carry their sets, tags, and grammatical details in the export.
-
-The canonical inventory transfer JSON is simply an object containing `cards`; it does not contain `format`, `version`, or `exportedAt`. Sync timestamps are internal synchronization metadata and are not part of the manual inventory export.
-
-Inventory import/export concerns inventory data, not transient study-session state or UI preferences.
 
 ## Completed extension cleanup
 
@@ -216,7 +247,7 @@ Once batch enrichment is reliable, allow newly captured words to enter the same 
 
 ## Immediate next steps
 
-1. Verify the new local-first synchronization flow against the deployed Azure API from two browser/machine states, including newer-local, newer-remote, automatic, ask-first, and remote-unavailable cases.
+1. Verify the local-first synchronization flow against the deployed Azure API from two browser/machine states, including newer-local, newer-remote, automatic, ask-first, and remote-unavailable cases.
 2. Verify that the cleaned workflows successfully publish the current signed extension release without automated browser testing.
 3. Update the installed extension through the existing feed and confirm that its manifest now points to the GitHub Releases feed.
 4. Complete the one-time extension deployment separation by making Pages web-only.
