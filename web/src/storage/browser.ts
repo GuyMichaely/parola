@@ -7,15 +7,13 @@ import {
   type NounMorphology,
 } from "../cards/nounMorphology";
 import { assertNoDuplicateCards, cloneCards, normalizeCard } from "./cardCodec";
-import type { CardStorage } from "./types";
+import type { CardStorage, InventoryState } from "./types";
 
 const cardsKey = "parola:cards";
 const nounMorphologyKey = "parola:noun-morphology";
 const updatedAtKey = "parola:cards-updated-at";
 
-export interface InventorySnapshot {
-  cards: Flashcard[];
-  nounMorphology: NounMorphology;
+export interface InventorySnapshot extends InventoryState {
   updatedAt: string | null;
 }
 
@@ -51,6 +49,13 @@ function timestamped(cards: Flashcard[], nounMorphology: NounMorphology): Invent
     cards: cloneCards(cards),
     nounMorphology: cloneNounMorphology(nounMorphology),
     updatedAt: new Date().toISOString(),
+  };
+}
+
+function cloneState(state: InventoryState): InventoryState {
+  return {
+    cards: cloneCards(state.cards),
+    nounMorphology: cloneNounMorphology(state.nounMorphology),
   };
 }
 
@@ -104,5 +109,14 @@ export class BrowserStorage implements CardStorage {
     const replacement = normalizeNounMorphology(morphology);
     writeLocalSnapshot(timestamped(snapshot.cards, replacement));
     return cloneNounMorphology(replacement);
+  }
+
+  async replaceInventory(state: InventoryState) {
+    const replacement = {
+      cards: cloneCards(state.cards),
+      nounMorphology: normalizeNounMorphology(state.nounMorphology),
+    };
+    writeLocalSnapshot(timestamped(replacement.cards, replacement.nounMorphology));
+    return cloneState(replacement);
   }
 }
