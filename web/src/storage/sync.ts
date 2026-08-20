@@ -7,14 +7,19 @@ import {
   type InventorySnapshot,
 } from "./browser";
 import { RemoteConflictError, RemoteSyncClient, type RemoteSnapshot } from "./remote";
-import { readSyncConflictPolicy, readSyncPersistLocal } from "./settings";
+import type { SyncLoadPolicy } from "./settings";
 import type { CardStorage } from "./types";
 
-export type SyncStatus = "local" | "checking" | "syncing" | "synced" | "conflict" | "offline";
+export type SyncStatus = "local" | "checking" | "syncing" | "synced" | "pending" | "offline";
 
 export interface SyncStatusState {
   status: SyncStatus;
   message: string;
+}
+
+export interface SyncStorageOptions {
+  persistLocal: boolean;
+  loadPolicy: SyncLoadPolicy;
 }
 
 let currentSyncStatus: SyncStatusState = { status: "local", message: "Local only" };
@@ -39,40 +44,39 @@ function setSyncStatus(state: SyncStatusState) {
   for (const listener of syncListeners) listener(state);
 }
 
-function snapshotEquals(left: InventorySnapshot, right: InventorySnapshot) {
+function cardsEqual(left: InventorySnapshot | RemoteSnapshot, right: InventorySnapshot | RemoteSnapshot) {
   return JSON.stringify(left.cards) === JSON.stringify(right.cards);
 }
 
-function timestampValue(value: string | null) {
+function timestamp(value: string | null) {
   if (!value) return null;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function newerSide(local: InventorySnapshot, remote: RemoteSnapshot): "local" | "remote" | null {
-  const localTime = timestampValue(local.updatedAt);
-  const remoteTime = timestampValue(remote.updatedAt);
-  if (localTime === null || remoteTime === null || localTime === remoteTime) return null;
-  return localTime > remoteTime ? "local" : "remote";
-}
-
-function nextLocalTimestamp() {
-  return new Date().toISOString();
+function newerSide(local: InventorySnapshot, remote: RemoteSnapshot): "local" | "remote" {
+  const localTime = timestamp(local.updatedAt);
+  const remoteTime = timestamp(remote.updatedAt);
+  if (localTime !== null && remoteTime !== null) return localTime >= remoteTime ? "local" : "remote";
+  if (localTime !== null) return "local";
+  if (remoteTime !== null) return "remote";
+  if (!local.cards.length && remote.cards.length) return "remote";
+  return "local";
 }
 
 export class SyncStorage implements CardStorage {
   readonly label: string;
   private readonly remote: RemoteSyncClient;
-  private readonly persistLocal = readSyncPersistLocal();
-  private readonly conflictPolicy = readSyncConflictPolicy();
+  private readonly persistLocal: boolean;
+  private readonly loadPolicy: SyncLoadPolicy;
   private snapshot: InventorySnapshot | null = null;
-  private remoteUpdatedAt: string | null = null;
   private initialization: Promise<void> | null = null;
-  private unresolvedConflict = false;
 
-  constructor(endpoint: string) {
+  constructor(endpoint: string, options: SyncStorageOptions) {
     this.remote = new RemoteSyncClient(endpoint);
     this.label = this.remote.label;
+    this.persistLocal = options.persistLocal;
+    this.loadPolicy = options.loadPolicy;
     setSyncStatus({ status: "checking", message: "Checking sync…" });
   }
 
@@ -84,127 +88,75 @@ export class SyncStorage implements CardStorage {
 
   private adoptRemote(remote: RemoteSnapshot) {
     this.snapshot = { cards: cloneCards(remote.cards), updatedAt: remote.updatedAt };
-    this.remoteUpdatedAt = remote.updatedAt;
-    this.unresolvedConflict = false;
     this.persistSnapshot();
     setSyncStatus({ status: "synced", message: "Synced" });
   }
 
   private async pushLocal() {
-    if (!this.snapshot) return;
+    if (!this.snapshot?.updatedAt) return;
     setSyncStatus({ status: "syncing", message: "Syncing…" });
     try {
-      const saved = await this.remote.writeState(this.snapshot.cards, this.remoteUpdatedAt);
+      const saved = await this.remote.writeState({
+        cards: cloneCards(this.snapshot.cards),
+        updatedAt: this.snapshot.updatedAt,
+      });
       this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
-      this.remoteUpdatedAt = saved.updatedAt;
-      this.unresolvedConflict = false;
       this.persistSnapshot();
       setSyncStatus({ status: "synced", message: "Synced" });
     } catch (error) {
       if (error instanceof RemoteConflictError) {
-        await this.handleRemoteConflict(error.state);
+        if (this.loadPolicy === "automatic") this.adoptRemote(error.state);
+        else setSyncStatus({ status: "pending", message: "Sync available" });
         return;
       }
-      this.persistSnapshot();
       setSyncStatus({ status: "offline", message: "Not synced" });
     }
   }
 
-  private async handleRemoteConflict(remote: RemoteSnapshot) {
-    if (!this.snapshot) return;
-    this.remoteUpdatedAt = remote.updatedAt;
-    const side = newerSide(this.snapshot, remote);
-
-    if (this.conflictPolicy === "newest" && side) {
-      if (side === "remote") {
-        this.adoptRemote(remote);
-        return;
-      }
-      try {
-        const saved = await this.remote.writeState(this.snapshot.cards, this.remoteUpdatedAt);
-        this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
-        this.remoteUpdatedAt = saved.updatedAt;
-        this.unresolvedConflict = false;
-        this.persistSnapshot();
-        setSyncStatus({ status: "synced", message: "Synced" });
-        return;
-      } catch {
-        // A second concurrent change should remain visible as an unresolved conflict.
-      }
-    }
-
-    this.unresolvedConflict = true;
-    this.persistSnapshot();
-    setSyncStatus({ status: "conflict", message: "Sync conflict" });
-  }
-
-  private async reconcile(local: InventorySnapshot, remote: RemoteSnapshot) {
-    this.remoteUpdatedAt = remote.updatedAt;
-
-    if (snapshotEquals(local, remote)) {
-      this.snapshot = { cards: cloneCards(remote.cards), updatedAt: remote.updatedAt ?? local.updatedAt };
+  private async reconcile(local: InventorySnapshot, remote: RemoteSnapshot, force: boolean) {
+    if (cardsEqual(local, remote)) {
+      this.snapshot = {
+        cards: cloneCards(local.cards),
+        updatedAt: newerSide(local, remote) === "remote" ? remote.updatedAt : local.updatedAt,
+      };
       this.persistSnapshot();
       setSyncStatus({ status: "synced", message: "Synced" });
       return;
     }
 
-    if (!local.cards.length && remote.cards.length) {
+    const side = newerSide(local, remote);
+    if (!force && this.loadPolicy === "ask" && local.cards.length) {
+      this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
+      this.persistSnapshot();
+      setSyncStatus({ status: "pending", message: "Sync available" });
+      return;
+    }
+
+    if (side === "remote") {
       this.adoptRemote(remote);
       return;
     }
-    if (local.cards.length && !remote.cards.length && remote.updatedAt === null) {
-      this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt ?? nextLocalTimestamp() };
-      await this.pushLocal();
-      return;
-    }
 
-    const side = newerSide(local, remote);
-    if (this.conflictPolicy === "newest" && side) {
-      if (side === "remote") this.adoptRemote(remote);
-      else {
-        this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
-        await this.pushLocal();
-      }
-      return;
-    }
-
-    if (this.conflictPolicy === "ask" && side) {
-      const sideLabel = side === "remote" ? "remote server" : "this device";
-      const confirmed = window.confirm(
-        `Parola is not synced. The newer inventory is on ${sideLabel}.\n\nLocal updated: ${local.updatedAt ?? "unknown"}\nRemote updated: ${remote.updatedAt ?? "unknown"}\n\nSync now using the newer inventory?`,
-      );
-      if (confirmed) {
-        if (side === "remote") this.adoptRemote(remote);
-        else {
-          this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
-          await this.pushLocal();
-        }
-        return;
-      }
-    }
-
-    this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
-    this.unresolvedConflict = true;
+    this.snapshot = {
+      cards: cloneCards(local.cards),
+      updatedAt: local.updatedAt ?? new Date().toISOString(),
+    };
     this.persistSnapshot();
-    setSyncStatus({ status: "conflict", message: "Sync conflict" });
+    await this.pushLocal();
   }
 
   private async initialize() {
     if (this.initialization) return this.initialization;
     this.initialization = (async () => {
-      const local = readLocalSnapshot();
+      const local = this.persistLocal ? readLocalSnapshot() : { cards: [], updatedAt: null };
+      this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
       setSyncStatus({ status: "checking", message: "Checking sync…" });
       try {
         const remote = await this.remote.readState();
-        await this.reconcile(local, remote);
+        await this.reconcile(local, remote, false);
       } catch {
-        if (local.cards.length || this.persistLocal) {
-          this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
-          setSyncStatus({ status: "offline", message: "Not synced" });
-          return;
-        }
-        this.snapshot = { cards: [], updatedAt: null };
-        setSyncStatus({ status: "offline", message: "Remote unavailable" });
+        this.persistSnapshot();
+        setSyncStatus({ status: "offline", message: "Not synced" });
       }
     })();
     return this.initialization;
@@ -215,14 +167,23 @@ export class SyncStorage implements CardStorage {
     const current = this.snapshot ?? { cards: [], updatedAt: null };
     this.snapshot = {
       cards: cloneCards(operation(cloneCards(current.cards))),
-      updatedAt: nextLocalTimestamp(),
+      updatedAt: new Date().toISOString(),
     };
     this.persistSnapshot();
-    if (this.unresolvedConflict && this.conflictPolicy === "ask") {
-      setSyncStatus({ status: "conflict", message: "Sync conflict" });
-      return;
-    }
     await this.pushLocal();
+  }
+
+  async syncNow() {
+    await this.initialize();
+    setSyncStatus({ status: "checking", message: "Checking sync…" });
+    try {
+      const remote = await this.remote.readState();
+      const local = this.snapshot ?? { cards: [], updatedAt: null };
+      await this.reconcile(local, remote, true);
+    } catch {
+      setSyncStatus({ status: "offline", message: "Not synced" });
+    }
+    return cloneCards(this.snapshot?.cards ?? []);
   }
 
   async listCards() {
@@ -242,7 +203,7 @@ export class SyncStorage implements CardStorage {
   async updateCard(card: Flashcard) {
     await this.initialize();
     if (!(this.snapshot?.cards ?? []).some((item) => item.id === card.id)) {
-      throw new Error("Card not found in synced storage.");
+      throw new Error("Card not found in local inventory.");
     }
     await this.mutate((cards) => cards.map((item) => item.id === card.id ? cloneCards([card])[0] : item));
     return cloneCards([card])[0];
@@ -251,13 +212,12 @@ export class SyncStorage implements CardStorage {
   async deleteCard(id: number) {
     await this.initialize();
     if (!(this.snapshot?.cards ?? []).some((item) => item.id === id)) {
-      throw new Error("Card not found in synced storage.");
+      throw new Error("Card not found in local inventory.");
     }
     await this.mutate((cards) => cards.filter((card) => card.id !== id));
   }
 
   async replaceCards(cards: Flashcard[]) {
-    await this.initialize();
     const replacement = cloneCards(cards);
     await this.mutate(() => replacement);
     return cloneCards(replacement);
