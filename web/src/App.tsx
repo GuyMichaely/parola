@@ -382,7 +382,7 @@ export default function Home() {
       setCards((items) => [...savedCards, ...items.filter((item) => !temporaryIds.has(item.id))]);
       setSaveState("saved");
     } catch (error) {
-      setCards((items) => items.filter((item) => !temporaryIds.has(item.id));
+      setCards((items) => items.filter((item) => !temporaryIds.has(item.id)));
       setSaveState("failed");
       setSyncWarning("That batch could not be saved and was removed. Please try again.");
       throw error;
@@ -517,8 +517,8 @@ export default function Home() {
                     {mistakeKeys.length > 0 && <button className="wrong-button" onClick={studyMistakes}>Study mistakes ({mistakeKeys.length})</button>}
                   </>}
                 </div>
-                {!mistakeOnlyKeys && mistakeKeys.length > 0 && <div className="problem-deck-creator">
-                  {createdMistakeTagName ? <p className="deck-created" role="status">Created tag <strong>#{createdMistakeTagName}</strong></p> : <>
+                {!mistakeOnlyKeys && mistakeKeys.length > 0 && <div className="mistake-tag-creator">
+                  {createdMistakeTagName ? <p className="tag-created" role="status">Created tag <strong>#{createdMistakeTagName}</strong></p> : <>
                     <label><span>Mistake tag name</span><input value={effectiveMistakeTagName} onChange={(event) => setMistakeTagName(event.target.value)} /></label>
                     <button className="neutral-button" onClick={() => void createMistakeTag()} disabled={!effectiveMistakeTagName.trim() || saveState === "saving"}>Create mistake tag</button>
                   </>}
