@@ -64,6 +64,7 @@ export type ResolvedNounForms = NounDefinition & {
 
 export const defaultNounMorphology: NounMorphology = {
   declensionRules: [
+    { id: "identity", name: "Unchanged form", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
     { id: "o-i", name: "-o → -i", forms: { singular: { suffix: "o" }, plural: { suffix: "i" } } },
     { id: "e-i", name: "-e → -i", forms: { singular: { suffix: "e" }, plural: { suffix: "i" } } },
     { id: "a-e", name: "-a → -e", forms: { singular: { suffix: "a" }, plural: { suffix: "e" } } },
@@ -71,18 +72,17 @@ export const defaultNounMorphology: NounMorphology = {
     { id: "ca-che", name: "-ca → -che", forms: { singular: { suffix: "ca" }, plural: { suffix: "che" } } },
     { id: "ga-ghe", name: "-ga → -ghe", forms: { singular: { suffix: "ga" }, plural: { suffix: "ghe" } } },
     { id: "chio-chi", name: "-chio → -chi", forms: { singular: { suffix: "chio" }, plural: { suffix: "chi" } } },
-    { id: "ia-ie", name: "-ia → -ie", forms: { singular: { suffix: "ia" }, plural: { suffix: "ie" } } },
   ],
   inferenceSets: [
     {
       id: "full-noun",
       name: "Full noun answers",
-      declensionRuleIds: ["o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi", "ia-ie"],
+      declensionRuleIds: ["identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi"],
     },
     {
       id: "learned-shorthand",
       name: "Learned shorthand",
-      declensionRuleIds: ["o-i", "e-i", "a-e", "a-i"],
+      declensionRuleIds: ["o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe"],
     },
   ],
   syntaxRules: [
@@ -290,6 +290,7 @@ export function generateNounForm(rule: NounDeclensionRule, base: string, number:
 export function recognizeNounForm(rule: NounDeclensionRule, surface: string, number: NounFormNumber) {
   const value = surface.normalize("NFC").trim();
   const suffix = rule.forms[number].suffix.normalize("NFC");
+  if (!suffix) return value;
   if (!normalizeText(value).endsWith(normalizeText(suffix))) return null;
   return value.slice(0, value.length - suffix.length);
 }
@@ -394,9 +395,10 @@ export function inferNounDefinitionFromForms(input: {
       specificity: Math.max(rule.forms.singular.suffix.length, rule.forms.plural.suffix.length),
     });
   }
-  matches.sort((left, right) => right.specificity - left.specificity);
+  matches.sort((left, right) => right.specificity - left.specificity || left.ruleId.localeCompare(right.ruleId));
   const match = matches[0];
   if (!match) return null;
+  if (matches[1]?.specificity === match.specificity) return null;
   const { specificity: _specificity, ...definition } = match;
   return definition;
 }
