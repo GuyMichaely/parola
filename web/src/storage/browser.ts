@@ -98,24 +98,6 @@ export class BrowserStorage implements CardStorage {
     writeLocalSnapshot(timestamped(updated, snapshot.nounMorphology));
   }
 
-  async replaceCards(cards: Flashcard[]) {
-    const snapshot = readLocalSnapshot();
-    const replacement = cloneCards(cards);
-    writeLocalSnapshot(timestamped(replacement, snapshot.nounMorphology));
-    return cloneCards(replacement);
-  }
-
-  async listNounMorphology() {
-    return cloneNounMorphology(readLocalSnapshot().nounMorphology);
-  }
-
-  async replaceNounMorphology(morphology: NounMorphology) {
-    const snapshot = readLocalSnapshot();
-    const replacement = normalizeNounMorphology(morphology);
-    writeLocalSnapshot(timestamped(snapshot.cards, replacement));
-    return cloneNounMorphology(replacement);
-  }
-
   async replaceInventory(state: InventoryState) {
     const replacement = assertInventoryState({
       cards: cloneCards(state.cards),
