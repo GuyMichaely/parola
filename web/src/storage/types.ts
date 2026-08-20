@@ -13,9 +13,6 @@ export interface CardStorage {
   createCards(cards: Flashcard[]): Promise<Flashcard[]>;
   updateCard(card: Flashcard): Promise<Flashcard>;
   deleteCard(id: number): Promise<void>;
-  replaceCards(cards: Flashcard[]): Promise<Flashcard[]>;
-  listNounMorphology(): Promise<NounMorphology>;
-  replaceNounMorphology(morphology: NounMorphology): Promise<NounMorphology>;
   replaceInventory(state: InventoryState): Promise<InventoryState>;
   syncNow?(): Promise<InventoryState>;
 }
