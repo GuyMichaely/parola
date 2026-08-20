@@ -207,12 +207,6 @@
   color: #a7e6c3;
 }
 
-.inventory-table-wrap {
-  max-height: none !important;
-  overflow-y: visible !important;
-}
-.inventory-table-wrap .batch-table th { position: static !important; }
-
 @media (max-width: 600px) {
   .answer-parse-pieces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .answer-parse-piece { min-width: 0; }
