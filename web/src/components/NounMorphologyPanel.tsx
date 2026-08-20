@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Flashcard } from "../cards/types";
 import {
   cloneNounMorphology,
@@ -42,6 +42,15 @@ function assignmentsFor(cards: Flashcard[]) {
   })) as Record<number, Assignment>;
 }
 
+function nounSourceFingerprint(cards: Flashcard[], morphology: NounMorphology) {
+  return JSON.stringify({
+    morphology,
+    nouns: cards
+      .filter((card) => card.type === "noun")
+      .map((card) => ({ id: card.id, details: card.details })),
+  });
+}
+
 export function NounMorphologyPanel({
   cards,
   morphology,
@@ -54,20 +63,36 @@ export function NounMorphologyPanel({
   const [draft, setDraft] = useState(() => cloneNounMorphology(morphology));
   const [assignments, setAssignments] = useState<Record<number, Assignment>>(() => assignmentsFor(cards));
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [sourceChanged, setSourceChanged] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const appliedSourceRef = useRef(nounSourceFingerprint(cards, morphology));
 
   useEffect(() => {
+    const nextFingerprint = nounSourceFingerprint(cards, morphology);
+    if (nextFingerprint === appliedSourceRef.current) return;
+    if (dirty) {
+      setSourceChanged(true);
+      return;
+    }
     setDraft(cloneNounMorphology(morphology));
     setAssignments(assignmentsFor(cards));
-  }, [cards, morphology]);
+    appliedSourceRef.current = nextFingerprint;
+    setSourceChanged(false);
+  }, [cards, dirty, morphology]);
 
   const nounCards = useMemo(() => cards.filter((card) => card.type === "noun"), [cards]);
 
-  function changeMorphology(update: (value: NounMorphology) => NounMorphology) {
-    setDraft((current) => update(cloneNounMorphology(current)));
+  function markEdited() {
+    setDirty(true);
     setMessage("");
     setError("");
+  }
+
+  function changeMorphology(update: (value: NounMorphology) => NounMorphology) {
+    setDraft((current) => update(cloneNounMorphology(current)));
+    markEdited();
   }
 
   function updateRule(id: string, patch: Partial<NounDeclensionRule>) {
@@ -124,11 +149,21 @@ export function NounMorphologyPanel({
 
   function updateAssignment(cardId: number, field: keyof Assignment, value: string) {
     setAssignments((current) => ({ ...current, [cardId]: { ...current[cardId], [field]: value } }));
-    setMessage("");
+    markEdited();
+  }
+
+  function reloadCurrentSource() {
+    setDraft(cloneNounMorphology(morphology));
+    setAssignments(assignmentsFor(cards));
+    appliedSourceRef.current = nounSourceFingerprint(cards, morphology);
+    setDirty(false);
+    setSourceChanged(false);
+    setMessage("Reloaded current noun morphology and assignments.");
     setError("");
   }
 
   async function save() {
+    if (sourceChanged) return;
     setSaving(true);
     setMessage("");
     setError("");
@@ -160,6 +195,11 @@ export function NounMorphologyPanel({
         return { ...nextCard, italian: forms.singular || forms.plural };
       });
       await onSave({ cards: updatedCards, nounMorphology: normalized });
+      setDraft(cloneNounMorphology(normalized));
+      setAssignments(assignmentsFor(updatedCards));
+      appliedSourceRef.current = nounSourceFingerprint(updatedCards, normalized);
+      setDirty(false);
+      setSourceChanged(false);
       setMessage("Saved noun morphology and assignments.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Noun morphology could not be saved.");
@@ -172,6 +212,11 @@ export function NounMorphologyPanel({
     <summary>Noun morphology & syntax</summary>
     <div className="noun-patterns-body">
       <p>Cards store a base and their actual declension rule. A rule defines only the number forms it supports. Syntax rules decide what the learner may type. Inference sets decide which declension rules a syntax may infer.</p>
+
+      {sourceChanged && <div className="sync-warning" role="alert">
+        <p>The noun inventory changed while this morphology draft had unsaved edits. The draft was preserved, but it cannot be saved over the newer inventory.</p>
+        <button type="button" className="neutral-button" onClick={reloadCurrentSource}>Discard draft and reload current inventory</button>
+      </div>}
 
       <h3>Declension rules</h3>
       <div className="noun-patterns-table-wrap">
@@ -242,7 +287,7 @@ export function NounMorphologyPanel({
 
       {message && <p className="inventory-transfer-message" role="status">{message}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="noun-pattern-actions"><button type="button" className="primary-button" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save morphology"}</button></div>
+      <div className="noun-pattern-actions"><button type="button" className="primary-button" onClick={() => void save()} disabled={saving || sourceChanged}>{saving ? "Saving…" : "Save morphology"}</button></div>
     </div>
   </details>;
 }
