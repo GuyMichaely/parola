@@ -4,7 +4,7 @@ Parola is an Italian flashcard suite with three independently understandable par
 
 - `web/` — static React/Vite frontend.
 - `extension/` — Chrome extension for staging words and contexts before review/import.
-- `api/` — optional Node card-storage API.
+- `api/` — optional Node synchronization API.
 
 ## Production
 
@@ -20,7 +20,7 @@ The public repository is the canonical source for both the web app and extension
 
 The optional API is deployed separately to Azure by `.github/workflows/deploy-api.yml`.
 
-The frontend uses browser `localStorage` by default and can instead use any HTTP endpoint implementing `web/docs/REMOTE_API.md`.
+The frontend always has a local working inventory. Configuring an API endpoint adds timestamp-based synchronization with a remote copy so the same inventory can be kept in sync across machines.
 
 ## Project checkpoint
 
