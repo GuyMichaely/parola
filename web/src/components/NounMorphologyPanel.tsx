@@ -9,6 +9,7 @@ import {
   type NounDeclensionRule,
   type NounFormNumber,
   type NounMorphology,
+  type NounSyntaxRule,
 } from "../cards/nounMorphology";
 import type { InventoryState } from "../storage";
 
@@ -147,6 +148,13 @@ export function NounMorphologyPanel({
     }));
   }
 
+  function updateSyntax(id: string, patch: Partial<NounSyntaxRule>) {
+    changeMorphology((current) => ({
+      ...current,
+      syntaxRules: current.syntaxRules.map((syntax) => syntax.id === id ? { ...syntax, ...patch } : syntax),
+    }));
+  }
+
   function updateAssignment(cardId: number, field: keyof Assignment, value: string) {
     setAssignments((current) => ({ ...current, [cardId]: { ...current[cardId], [field]: value } }));
     markEdited();
@@ -244,14 +252,14 @@ export function NounMorphologyPanel({
       </div>)}
 
       <h3>Syntax rules</h3>
-      <p>Syntax definitions are data-driven but read-only in this UI. They use the inference sets above.</p>
+      <p>Syntax structure is data-driven and remains read-only here. Names and inference-set associations are editable.</p>
       <div className="noun-patterns-table-wrap">
         <table className="noun-patterns-table">
           <thead><tr><th>Name</th><th>Input shape</th><th>Inference set</th></tr></thead>
           <tbody>{draft.syntaxRules.map((syntax) => <tr key={syntax.id}>
-            <td>{syntax.name}</td>
+            <td><input value={syntax.name} onChange={(event) => updateSyntax(syntax.id, { name: event.target.value })} /></td>
             <td><code>{syntaxDescription(syntax)}</code></td>
-            <td>{draft.inferenceSets.find((set) => set.id === syntax.inferenceSetId)?.name ?? syntax.inferenceSetId}</td>
+            <td><select value={syntax.inferenceSetId} onChange={(event) => updateSyntax(syntax.id, { inferenceSetId: event.target.value })}>{draft.inferenceSets.map((set) => <option key={set.id} value={set.id}>{set.name}</option>)}</select></td>
           </tr>)}</tbody>
         </table>
       </div>
