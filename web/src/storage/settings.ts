@@ -1,4 +1,4 @@
-const endpointKey = "parola:sync-endpoint";
+const endpointKey = "parola:storage-endpoint";
 const persistLocalKey = "parola:sync-persist-local";
 const loadPolicyKey = "parola:sync-load-policy";
 
