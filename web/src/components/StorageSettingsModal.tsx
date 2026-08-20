@@ -1,25 +1,35 @@
 import { type FormEvent, useRef, useState } from "react";
 import {
-  createCardStorage,
   parseInventory,
   replaceInventory,
   serializeInventory,
-  type StorageMode,
+  type CardStorage,
+  type SyncLoadPolicy,
+  type SyncStatusState,
 } from "../storage";
 
 export function StorageSettingsModal({
-  mode,
+  storage,
   endpoint,
+  persistLocal,
+  loadPolicy,
+  syncStatus,
   onClose,
   onApply,
+  onSyncNow,
 }: {
-  mode: StorageMode;
+  storage: CardStorage;
   endpoint: string;
+  persistLocal: boolean;
+  loadPolicy: SyncLoadPolicy;
+  syncStatus: SyncStatusState;
   onClose: () => void;
-  onApply: (mode: StorageMode, endpoint: string) => Promise<void>;
+  onApply: (endpoint: string, persistLocal: boolean, loadPolicy: SyncLoadPolicy) => Promise<void>;
+  onSyncNow: () => Promise<void>;
 }) {
-  const [draftMode, setDraftMode] = useState<StorageMode>(mode);
   const [draftEndpoint, setDraftEndpoint] = useState(endpoint);
+  const [draftPersistLocal, setDraftPersistLocal] = useState(persistLocal);
+  const [draftLoadPolicy, setDraftLoadPolicy] = useState<SyncLoadPolicy>(loadPolicy);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
@@ -27,25 +37,18 @@ export function StorageSettingsModal({
   const [transferError, setTransferError] = useState("");
   const [importText, setImportText] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
-
-  function currentStorage() {
-    if (mode === "remote" && !endpoint.trim()) throw new Error("The active remote storage endpoint is empty.");
-    return createCardStorage(mode === "remote" ? endpoint : "");
-  }
+  const syncConfigured = Boolean(endpoint.trim());
+  const draftSyncConfigured = Boolean(draftEndpoint.trim());
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
-    if (draftMode === "remote" && !draftEndpoint.trim()) {
-      setError("Enter a remote API endpoint before selecting remote storage.");
-      return;
-    }
     setSaving(true);
     try {
-      await onApply(draftMode, draftEndpoint.trim());
+      await onApply(draftEndpoint.trim(), draftSyncConfigured ? draftPersistLocal : true, draftLoadPolicy);
       onClose();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Storage could not be changed.");
+      setError(caught instanceof Error ? caught.message : "Sync settings could not be changed.");
     } finally {
       setSaving(false);
     }
@@ -56,7 +59,7 @@ export function StorageSettingsModal({
     setTransferMessage("");
     setTransferBusy(true);
     try {
-      const cards = await currentStorage().listCards();
+      const cards = await storage.listCards();
       const blob = new Blob([serializeInventory(cards)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -64,7 +67,7 @@ export function StorageSettingsModal({
       anchor.download = `parola-inventory-${new Date().toISOString().slice(0, 10)}.json`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setTransferMessage(`Exported ${cards.length} ${cards.length === 1 ? "card" : "cards"} from ${mode === "remote" ? "remote" : "browser"} storage.`);
+      setTransferMessage(`Exported ${cards.length} ${cards.length === 1 ? "card" : "cards"}.`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be exported.");
     } finally {
@@ -78,7 +81,7 @@ export function StorageSettingsModal({
     setTransferBusy(true);
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser context.");
-      const cards = await currentStorage().listCards();
+      const cards = await storage.listCards();
       await navigator.clipboard.writeText(serializeInventory(cards));
       setTransferMessage(`Copied ${cards.length} ${cards.length === 1 ? "card" : "cards"} to the clipboard.`);
     } catch (caught) {
@@ -89,10 +92,9 @@ export function StorageSettingsModal({
   }
 
   async function replaceWithImportedInventory(importedCards: ReturnType<typeof parseInventory>, sourceDescription: string) {
-    const storage = currentStorage();
     const currentCards = await storage.listCards();
     const confirmed = window.confirm(
-      `Replace the current ${currentCards.length}-card ${mode === "remote" ? "remote" : "browser"} inventory with the ${importedCards.length}-card inventory ${sourceDescription}?\n\nThis replaces the whole active inventory.`,
+      `Replace the current ${currentCards.length}-card inventory with the ${importedCards.length}-card inventory ${sourceDescription}?\n\nThis replaces the whole inventory and will sync remotely when sync is configured.`,
     );
     if (!confirmed) {
       setTransferMessage("Import canceled; the current inventory was not changed.");
@@ -135,41 +137,80 @@ export function StorageSettingsModal({
     }
   }
 
+  async function syncNow() {
+    setTransferError("");
+    setTransferMessage("");
+    setTransferBusy(true);
+    try {
+      await onSyncNow();
+      setTransferMessage("Sync check completed. The newer timestamp was kept.");
+    } catch (caught) {
+      setTransferError(caught instanceof Error ? caught.message : "Inventory could not be synced.");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
   return <div className="modal-backdrop" onMouseDown={() => { if (!transferBusy) onClose(); }}>
     <form className="modal storage-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header">
-        <div><h2>Storage</h2><p className="modal-subtitle">Choose which saved storage location Parola uses.</p></div>
+        <div><h2>Storage & sync</h2><p className="modal-subtitle">Keep a local inventory and optionally synchronize it through your API server.</p></div>
         <button type="button" className="icon-button" onClick={onClose} disabled={transferBusy} aria-label="Close storage settings">×</button>
       </header>
-      <div className="storage-option-copy">
-        <strong>The endpoint and active storage mode are saved separately.</strong>
-        <p>You can keep the Azure endpoint saved here while continuing to use browser localStorage. Switching storage changes which inventory is shown; it does not copy cards between locations.</p>
-      </div>
-      <div className="storage-mode-options" role="radiogroup" aria-label="Active card storage">
-        <label className={draftMode === "browser" ? "selected" : ""}>
-          <input type="radio" name="storage-mode" checked={draftMode === "browser"} onChange={() => setDraftMode("browser")} />
-          <span><strong>Browser</strong><small>Use this browser's localStorage.</small></span>
-        </label>
-        <label className={draftMode === "remote" ? "selected" : ""}>
-          <input type="radio" name="storage-mode" checked={draftMode === "remote"} onChange={() => setDraftMode("remote")} />
-          <span><strong>Remote</strong><small>Use the saved API endpoint.</small></span>
-        </label>
-      </div>
+
       <label className="field full-field">
-        <span>Remote API endpoint</span>
+        <span>Sync API endpoint</span>
         <input
           type="url"
           inputMode="url"
           value={draftEndpoint}
           onChange={(event) => setDraftEndpoint(event.target.value)}
-          placeholder="https://example.com/api/cards"
+          placeholder="https://example.com/cards"
           autoComplete="off"
         />
       </label>
+      <div className="storage-option-copy">
+        <strong>{syncConfigured ? `Current status: ${syncStatus.message}` : "Local only"}</strong>
+        <p>{syncConfigured
+          ? "Parola keeps working with its local state and synchronizes the complete inventory snapshot with this server. The copy with the later timestamp wins."
+          : "With no API endpoint configured, Parola stores the inventory locally in this browser."}</p>
+        {syncConfigured && <div className="inventory-transfer-actions">
+          <button type="button" className="neutral-button" onClick={() => void syncNow()} disabled={saving || transferBusy}>Sync now</button>
+        </div>}
+      </div>
+
+      <label className="switch-option">
+        <input
+          type="checkbox"
+          checked={draftSyncConfigured ? draftPersistLocal : true}
+          disabled={!draftSyncConfigured}
+          onChange={(event) => setDraftPersistLocal(event.target.checked)}
+        />
+        <span>
+          <strong>Keep a persistent local copy</strong>
+          <small>{draftSyncConfigured ? "Store the synchronized inventory in this browser between sessions." : "Required when no sync server is configured."}</small>
+        </span>
+      </label>
+
+      <div className="storage-option-copy">
+        <strong>When local and remote timestamps differ</strong>
+        <p>The later timestamp is always authoritative. This setting only controls whether Parola reconciles immediately when it opens.</p>
+      </div>
+      <div className="storage-mode-options" role="radiogroup" aria-label="Sync on load behavior">
+        <label className={draftLoadPolicy === "automatic" ? "selected" : ""}>
+          <input type="radio" name="sync-load-policy" checked={draftLoadPolicy === "automatic"} onChange={() => setDraftLoadPolicy("automatic")} />
+          <span><strong>Automatically sync</strong><small>Immediately copy the newer state over the older state.</small></span>
+        </label>
+        <label className={draftLoadPolicy === "ask" ? "selected" : ""}>
+          <input type="radio" name="sync-load-policy" checked={draftLoadPolicy === "ask"} onChange={() => setDraftLoadPolicy("ask")} />
+          <span><strong>Ask first</strong><small>Show that sync is available and wait for Sync now.</small></span>
+        </label>
+      </div>
+
       <section className="inventory-transfer-panel" aria-label="Inventory import and export">
         <div>
           <strong>Inventory backup & restore</strong>
-          <p>Export or copy the complete inventory from the currently active <b>{mode === "remote" ? "remote" : "browser"}</b> storage, or replace it from Parola inventory JSON. Draft storage changes above do not apply until you click Apply.</p>
+          <p>Export or copy the current inventory, or replace it from Parola inventory JSON.</p>
         </div>
         <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void exportInventory()} disabled={saving || transferBusy}>Export inventory</button>
@@ -205,14 +246,14 @@ export function StorageSettingsModal({
         <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void importInventoryText()} disabled={saving || transferBusy || !importText.trim()}>Import pasted JSON</button>
         </div>
-        <p className="inventory-transfer-note">Import replaces the whole active inventory. Export or copy first if you want a backup.</p>
+        <p className="inventory-transfer-note">Import replaces the whole inventory. Export or copy first if you want a backup.</p>
         {transferMessage && <p className="inventory-transfer-message" role="status">{transferMessage}</p>}
         {transferError && <p className="form-error" role="alert">{transferError}</p>}
       </section>
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer className="modal-actions">
         <button type="button" className="text-button" onClick={onClose} disabled={saving || transferBusy}>Cancel</button>
-        <button type="submit" className="primary-button" disabled={saving || transferBusy}>{saving ? "Checking…" : "Apply"}</button>
+        <button type="submit" className="primary-button" disabled={saving || transferBusy}>{saving ? "Applying…" : "Apply"}</button>
       </footer>
     </form>
   </div>;
