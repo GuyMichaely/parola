@@ -1,65 +1,128 @@
 # Noun morphology and answer syntax
 
-This document defines the target noun model. The current implementation should be changed to match it rather than preserved for compatibility.
+Parola keeps a noun's actual morphology separate from what the learner is allowed to type during study.
 
-## Keep morphology separate from answer syntax
+## Noun cards
 
-A noun's morphology and the syntax accepted during study are different data.
+A noun card stores these morphology facts:
 
-A noun that follows a rule stores the information needed to derive its forms:
+- `ruleId`, the noun's actual declension rule;
+- `base`, the string that the rule transforms;
+- `gender`;
+- `numberMode`, one of `both`, `singular`, or `plural`;
+- `articleMode`, currently `automatic` or `none`.
 
-- a declension rule ID;
-- a base form and whether that base is singular or plural;
-- gender;
-- number behavior: both numbers, singular-only, or plural-only;
-- article behavior, normally automatic, with an option for no article when needed.
+The card does not store derived plurals or articles. Parola generates them when it needs them.
 
-A declension rule only describes the spelling transformation between singular and plural. Gender and study syntax do not belong to the rule. For example, `-e -> -i` can be shared by masculine and feminine nouns.
+For example, `cetriolo` can use rule `o-i` with base `cetriol`. `specchio` can use rule `chio-chi` with base `spec`.
 
-Parola derives the available singular and plural forms from the noun instance plus its rule. It derives articles from gender, number behavior, article behavior, and the spelling of the resulting form.
+A noun with no useful declensional counterpart can use the `identity` rule. Its surface form is its base. This avoids assigning a singular-only noun such as `Venezia` an arbitrary unseen plural pattern.
 
-Manual nouns may keep explicit forms when no useful rule describes them.
+## Declension rules
 
-## Answer syntax is separate data
+A declension rule describes transformations between a base and noun forms. It does not contain gender or study policy.
 
-Study syntax definitions describe what fields the user may type and which declension rules that syntax is allowed to infer.
+For example:
 
-For example, an `Article + singular` syntax may accept:
+```json
+{
+  "id": "o-i",
+  "forms": {
+    "singular": { "suffix": "o" },
+    "plural": { "suffix": "i" }
+  }
+}
+```
 
-`<definite singular article> <singular noun>`
+Generation and recognition use the same definition.
 
-Optional noun markers such as gender or tantum may be parsed separately from the core syntax.
+- Generate singular: append `o` to the base.
+- Recognize singular: if the observed form ends in `o`, remove that suffix to recover a candidate base.
+- Generate plural: append `i`.
+- Recognize plural: if the observed form ends in `i`, remove it.
 
-The syntax definition contains the declension rule IDs that it may infer. A learner can therefore change which rules a short syntax covers without changing any noun's actual morphology.
+Parola derives recognition from generation when the transformation is safely reversible. If a future transformation cannot be inverted this way, the rule model can gain an explicit recognition override rather than duplicating inverse logic for every rule.
 
-## How Parola chooses a rule from typed text
+## Syntax rules
 
-When a syntax can infer more than one declension rule, Parola inspects the supplied noun form and finds the allowed rules whose suffixes match it. The most specific matching suffix wins. If two matches have the same specificity, the syntax definition's rule order breaks the tie.
+A syntax rule describes the structure of a typed answer. It does not encode noun-specific morphology.
 
-This is deliberately based on the user's answer, not on the prompted card's stored rule. The live parser should decide whether an answer is syntactically valid without revealing whether the inferred morphology is correct for the prompt.
+For example, `Article + singular` contains these fields:
 
-After parsing, Parola derives a candidate set of noun forms from the syntax-selected rule and compares that candidate with the prompted noun's canonical forms.
+```text
+[gender] <definite singular article> <singular noun>
+```
+
+A syntax can also require markers such as singular-only or plural-only. Marker order is currently flexible, so gender and tantum markers can be interchanged.
+
+Syntax rules are stored as data. The current UI shows them but does not edit their structure yet.
+
+## Inference sets
+
+Each syntax rule references an inference set. The inference set lists the declension rules that syntax is allowed to infer.
+
+Several syntaxes can share one inference set. This lets study policy change once for several equivalent shorthand forms. For example, an article-based shorthand and a gender-based shorthand can both use the same `learned-shorthand` inference set.
+
+Adding `chio-chi` to that inference set means every syntax that references it may begin inferring `chio-chi`. The noun cards do not change.
+
+## Candidate parsing
+
+Parola does not choose one morphology before checking the answer. It keeps every applicable interpretation as a candidate.
+
+For each noun answer:
+
+1. Try each syntax definition against the typed tokens.
+2. For each applicable syntax, try every declension rule in its inference set.
+3. Let each declension rule recognize the noun fields and infer a base.
+4. Use parsed articles and markers as grammatical facts. A candidate must agree with those facts.
+5. Compare all complete candidates with the prompted card's actual noun definition.
+
+The result follows three rules:
+
+- If any candidate matches the card, the answer is correct.
+- If at least one complete candidate exists but none matches the card, the answer is wrong.
+- If no complete candidate exists, the input has invalid or incomplete syntax.
+
+Syntax parsing does not consult the prompted card's actual declension rule. That keeps syntax validity separate from correctness.
+
+## Live preview
+
+The live preview can show the parsed syntax fields and every declension rule that currently recognizes the input. It must not mark any candidate as matching or not matching the prompted card before submission.
+
+For `lo specchio`, the preview may therefore show `-o -> -i` and `-chio -> -chi` as possible interpretations if both are allowed by the active inference set. That information comes from the typed characters and the configured rules, not from the target card.
 
 ## Example: specchio and cetriolo
 
-`specchio` is always assigned to `-chio -> -chi`.
+Assume these cards:
 
-`cetriolo` is always assigned to `-o -> -i`.
+```text
+cetriolo: rule o-i, base cetriol
+specchio: rule chio-chi, base spec
+```
 
-Suppose `Article + singular` initially allows only `-o -> -i`.
+Suppose `learned-shorthand` initially contains `o-i` but not `chio-chi`.
 
-`il cetriolo` parses under `-o -> -i`, derives `cetrioli`, and matches the stored noun. It is correct.
+`il cetriolo` produces an `o-i` candidate with base `cetriol`. It matches the card and is correct.
 
-`lo specchio` is still a complete, valid instance of the same answer syntax. Because `-o -> -i` is the only allowed rule, Parola derives `specchii`. That candidate does not match the stored `-chio -> -chi` noun, so the submitted answer is wrong. The live syntax preview must not reveal this before submission.
+`lo specchio` is valid `Article + singular` syntax. The allowed `o-i` rule recognizes the final `o` and produces base `specchi`. A complete candidate exists, but it does not match the card's actual `chio-chi` definition. The answer is wrong, not syntactically invalid.
 
-Later, the learner can add `-chio -> -chi` to the rules allowed by `Article + singular`. Both `-o -> -i` and `-chio -> -chi` match the characters in `specchio`, but `-chio` is the more specific suffix. Parola therefore chooses `-chio -> -chi`, derives `specchi`, and accepts `lo specchio`.
+Later, add `chio-chi` to `learned-shorthand`. The same input now also produces a `chio-chi` candidate with base `spec`. That candidate matches the card, so `lo specchio` becomes correct.
 
-The noun did not change. The learner changed what the shorthand syntax is allowed to infer.
+Nothing about `specchio` changed. Only the learner's permitted inference set changed.
 
-## Schema changes
+## Storage
 
-Do not keep the current `nounPatterns` representation as a compatibility layer. Replace it with the clean target model when this design is implemented.
+The inventory snapshot contains:
 
-The inventory will need separate collections for declension rules and answer syntax definitions. Noun cards will need canonical morphology fields rather than a pattern that also owns gender and study syntax.
+```json
+{
+  "cards": [],
+  "nounMorphology": {
+    "declensionRules": [],
+    "inferenceSets": [],
+    "syntaxRules": []
+  }
+}
+```
 
-Preserve real user data with a one-time migration outside the application repository. Do not commit permanent readers, fallback branches, or legacy-field handling for the old schema.
+There is one current schema. Old representations are migrated once outside the application rather than supported by permanent compatibility code.
