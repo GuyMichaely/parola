@@ -1,14 +1,12 @@
 import { type FormEvent, useState } from "react";
 import type { Flashcard } from "../cards/types";
-import { getActiveNounMorphology } from "../cards/nounMorphologyRuntime";
-import { resolvedNounForms, ruleForNounCard } from "../cards/nounMorphology";
+import { resolvedNounForms, ruleForNounCard, type NounMorphology } from "../cards/nounMorphology";
 import { typeLabels } from "../cardTypes";
 import type { AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import { verifyPowerAnswer } from "../study/logic";
 
-export function NounAnswer({ card }: { card: Flashcard }) {
-  const morphology = getActiveNounMorphology();
+export function NounAnswer({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
   const forms = resolvedNounForms(card, morphology);
   const rule = ruleForNounCard(card, morphology);
   const hasArticles = Boolean(forms.definiteSingularArticle || forms.definitePluralArticle || forms.indefiniteArticle);
@@ -65,15 +63,15 @@ export function AdverbAnswer({ card }: { card: Flashcard }) {
   return <div className="answer-content"><span className="answer-label">Italian · adverb</span><h2>{card.italian}</h2><p className="noun-article-note">Invariant</p></div>;
 }
 
-export function CardAnswer({ card }: { card: Flashcard }) {
-  if (card.type === "noun") return <NounAnswer card={card} />;
+export function CardAnswer({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
+  if (card.type === "noun") return <NounAnswer card={card} morphology={morphology} />;
   if (card.type === "verb") return <VerbAnswer card={card} />;
   if (card.type === "adverb") return <AdverbAnswer card={card} />;
   return <AdjectiveAnswer card={card} />;
 }
 
-export function ItalianPrompt({ card }: { card: Flashcard }) {
-  const nounForm = card.type === "noun" ? resolvedNounForms(card, getActiveNounMorphology()).singular : "";
+export function ItalianPrompt({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
+  const nounForm = card.type === "noun" ? resolvedNounForms(card, morphology).singular : "";
   return (
     <div className="question-content">
       <span className="answer-label">Italian</span>
@@ -91,10 +89,10 @@ export function EnglishAnswer({ card, showType = false }: { card: Flashcard; sho
   );
 }
 
-export function ItalianVerificationForm({ card, keywords, onResult }: { card: Flashcard; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
+export function ItalianVerificationForm({ card, keywords, morphology, onResult }: { card: Flashcard; keywords: AnswerKeywords; morphology: NounMorphology; onResult: (correct: boolean, answer: string) => void }) {
   const [answer, setAnswer] = useState("");
   const [syntaxRejected, setSyntaxRejected] = useState(false);
-  const syntax = analyzeAnswerSyntax(card, answer, keywords);
+  const syntax = analyzeAnswerSyntax(card, answer, keywords, morphology);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,7 +101,7 @@ export function ItalianVerificationForm({ card, keywords, onResult }: { card: Fl
       return;
     }
     setSyntaxRejected(false);
-    onResult(verifyPowerAnswer(card, answer, keywords), answer);
+    onResult(verifyPowerAnswer(card, answer, keywords, morphology), answer);
   }
 
   const placeholder = card.type === "noun"
@@ -118,7 +116,7 @@ export function ItalianVerificationForm({ card, keywords, onResult }: { card: Fl
         <span className="answer-label">Type the Italian · {typeLabels[card.type]}</span>
       </div>
       <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" value={answer} onChange={(event) => { setAnswer(event.target.value); setSyntaxRejected(false); }} required aria-invalid={syntaxRejected || syntax.status === "invalid"} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
-      <AnswerParsePreview card={card} value={answer} keywords={keywords} />
+      <AnswerParsePreview card={card} value={answer} keywords={keywords} morphology={morphology} />
       {syntaxRejected && <p className="syntax-submit-error" role="alert">The answer cannot be checked until its syntax is complete and valid.</p>}
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
