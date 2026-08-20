@@ -17,7 +17,6 @@ import {
   defaultNounMorphology,
   type NounMorphology,
 } from "./cards/nounMorphology";
-import { setActiveNounMorphology } from "./cards/nounMorphologyRuntime";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
 import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";
@@ -147,7 +146,6 @@ export default function Home() {
         if (!active) return;
         setCards(storedCards);
         setNounMorphology(storedMorphology);
-        setActiveNounMorphology(storedMorphology);
       })
       .catch((error) => {
         if (!active) return;
@@ -156,10 +154,6 @@ export default function Home() {
       .finally(() => { if (active) setLoadingCards(false); });
     return () => { active = false; };
   }, [storage]);
-
-  useEffect(() => {
-    setActiveNounMorphology(nounMorphology);
-  }, [nounMorphology]);
 
   useEffect(() => {
     writeAnswerKeywords(answerKeywords);
@@ -440,7 +434,6 @@ export default function Home() {
       const saved = await storage.replaceInventory(nextState);
       setCards(saved.cards);
       setNounMorphology(saved.nounMorphology);
-      setActiveNounMorphology(saved.nounMorphology);
       removeUnavailableInventoryTags(saved.cards);
       setCurrent(0);
       setSessionComplete(false);
@@ -463,7 +456,6 @@ export default function Home() {
       await createCardStorage("").replaceInventory(latestState);
       setCards(latestState.cards);
       setNounMorphology(latestState.nounMorphology);
-      setActiveNounMorphology(latestState.nounMorphology);
     }
 
     saveStorageEndpoint(normalizedEndpoint);
@@ -483,7 +475,6 @@ export default function Home() {
     const nextState = await storage.syncNow();
     setCards(nextState.cards);
     setNounMorphology(nextState.nounMorphology);
-    setActiveNounMorphology(nextState.nounMorphology);
     removeUnavailableInventoryTags(nextState.cards);
     setCurrent(0);
     setSessionComplete(false);
@@ -557,21 +548,21 @@ export default function Home() {
                 <div className={`flashcard verification-card ${verificationResult ?? ""}`}>
                   {!verificationResult ? <>
                     <div className="verification-prompt"><span className="answer-label">English prompt</span><h2>{card.english}</h2></div>
-                    <ItalianVerificationForm key={studyItem.key} card={card} keywords={answerKeywords} onResult={verifyItalian} />
+                    <ItalianVerificationForm key={studyItem.key} card={card} keywords={answerKeywords} morphology={nounMorphology} onResult={verifyItalian} />
                   </> : <>
                     <div className={`verification-result ${verificationResult}`} role="status">
                       <strong>{verificationResult === "correct" ? "Correct" : "Not quite"}</strong>
                       <span>{verificationResult === "correct" ? "Your Italian matched every stored field." : "Compare your response with the stored answer below."}</span>
                     </div>
                     <div className="submitted-answer"><span>Your answer</span><strong>{submittedAnswer}</strong></div>
-                    <div className="verified-answer-stack"><EnglishAnswer card={card} /><CardAnswer card={card} /></div>
+                    <div className="verified-answer-stack"><EnglishAnswer card={card} /><CardAnswer card={card} morphology={nounMorphology} /></div>
                   </>}
                 </div>
               ) : (
                 <button className="flashcard" onClick={() => setRevealed((value) => !value)} aria-label={revealed ? `Show ${studyItem.promptLanguage} prompt` : `Show ${studyItem.promptLanguage === "english" ? "Italian" : "English"} answer`}>
                   {!revealed
-                    ? studyItem.promptLanguage === "english" ? <div className="question-content"><span className="answer-label">English</span><h2>{card.english}</h2></div> : <ItalianPrompt card={card} />
-                    : studyItem.promptLanguage === "english" ? <CardAnswer card={card} /> : <EnglishAnswer card={card} showType />}
+                    ? studyItem.promptLanguage === "english" ? <div className="question-content"><span className="answer-label">English</span><h2>{card.english}</h2></div> : <ItalianPrompt card={card} morphology={nounMorphology} />
+                    : studyItem.promptLanguage === "english" ? <CardAnswer card={card} morphology={nounMorphology} /> : <EnglishAnswer card={card} showType />}
                 </button>
               )}
               {typingItalian ? (
@@ -619,6 +610,7 @@ export default function Home() {
               key={`${selectedInventoryTags.join("|")}:${query}:${filteredCards.map((item) => item.id).join(",")}`}
               cards={filteredCards}
               knownSets={setNames}
+              morphology={nounMorphology}
               onOpen={setEditingCard}
               onRemove={removeCard}
               onSave={(updatedCards, originalCards) => persistManyCards(updatedCards, originalCards, "Those inventory edits could not be saved. The previous cards were restored.")}
@@ -627,8 +619,8 @@ export default function Home() {
         )}
       </div>
 
-      {adding && <AddCardModal knownSets={setNames} onClose={() => setAdding(false)} onBatch={addBatch} />}
-      {editingCard && <EditCardModal card={editingCard} knownSets={setNames} onClose={() => setEditingCard(null)} onSave={updateCard} />}
+      {adding && <AddCardModal knownSets={setNames} morphology={nounMorphology} onClose={() => setAdding(false)} onBatch={addBatch} />}
+      {editingCard && <EditCardModal card={editingCard} knownSets={setNames} morphology={nounMorphology} onClose={() => setEditingCard(null)} onSave={updateCard} />}
       {storageSettingsOpen && <StorageSettingsModal
         storage={storage}
         endpoint={storageEndpoint}
