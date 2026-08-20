@@ -76,6 +76,30 @@
   font-size: 11px;
 }
 
+.syntax-submit-error {
+  margin: 9px 0 0;
+  border: 1px solid #6d3b3b;
+  border-radius: 5px;
+  background: #251515;
+  color: #f5b0b0;
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+.verification-form.syntax-rejected .power-answer-field input {
+  border-color: #b95c5c;
+  box-shadow: 0 0 0 2px rgba(185, 92, 92, .18);
+  animation: syntax-reject-pulse .22s ease-out 2;
+}
+
+.verification-form.syntax-rejected .answer-parse-preview {
+  border-color: #8d4949;
+}
+
+@keyframes syntax-reject-pulse {
+  50% { transform: translateX(3px); }
+}
+
 .mistake-tag-creator {
   width: min(520px, 100%);
   display: grid;
@@ -183,6 +207,16 @@
 .inventory-transfer-message {
   color: #a7e6c3;
 }
+
+/* Inventory rows scroll with the page instead of living in a viewport-height box. */
+.inventory-table-wrap {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+.inventory-table-wrap .batch-table th { position: static !important; }
+
+/* The inline grid already edits the filtered cards, so the separate focused-edit entry point is redundant. */
+.library-view .inventory-actions { display: none; }
 
 @media (max-width: 600px) {
   .answer-parse-pieces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
