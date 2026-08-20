@@ -131,16 +131,6 @@ export function cardSupportsStandardAdjectivePattern(card: Flashcard) {
   return Boolean(pattern && verificationFields(card).every((field) => normalizeAnswer(pattern[field.key as keyof typeof pattern] ?? "") === normalizeAnswer(field.expected)));
 }
 
-export function genderIndicatedByArticles(articles: string[]): NounGender | null {
-  const genders = new Set(articles.flatMap((article) => {
-    const normalized = normalizeAnswer(article);
-    if (["il", "lo", "i", "gli", "un", "uno"].includes(normalized)) return ["masculine" as const];
-    if (["la", "le", "una", "un'"].includes(normalized)) return ["feminine" as const];
-    return [];
-  }));
-  return genders.size === 1 ? [...genders][0] : null;
-}
-
 export function isDefinitePluralArticle(article: string) {
   return ["i", "gli", "le"].includes(normalizeAnswer(article));
 }
@@ -150,15 +140,6 @@ export function whitespaceParts(value: string) {
     const unquoted = part.startsWith('"') && part.endsWith('"') ? part.slice(1, -1) : part;
     return unquoted === "-" || unquoted === "—" ? "" : unquoted;
   });
-}
-
-export function hasImplicitNounShape(value: string, keywords: AnswerKeywords) {
-  const parts = whitespaceParts(value);
-  const markerParse = parseNounMarkers(parts, keywords);
-  const token = normalizeAnswer(markerParse.rest[0] ?? "");
-  return markerParse.markers.length > 0
-    || ["il", "lo", "la", "l'", "i", "gli", "le", "un", "uno", "una", "un'"].includes(token)
-    || /^(?:l'|un').+/.test(token);
 }
 
 export function expandElidedArticleTokens(parts: string[]) {
