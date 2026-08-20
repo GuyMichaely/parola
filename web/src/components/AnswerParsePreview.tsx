@@ -1,15 +1,18 @@
 import type { CardType, Flashcard } from "../cards/types";
+import {
+  nounPatternForCard,
+  resolvedNounForms,
+  type NounPattern,
+} from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
 import {
   cardSupportsStandardAdjectivePattern,
-  cardSupportsStandardNounPattern,
   expandElidedArticleTokens,
   hasImplicitNounShape,
-  inferArticle,
   keywordMatches,
   parseGender,
+  parseNounShorthandAnswer,
   parsePowerAnswerPrefix,
-  parseRegularNounAnswer,
   whitespaceParts,
   type AnswerSyntaxMode,
 } from "../study/logic";
@@ -51,45 +54,39 @@ function labeledPieces(values: string[], labels: string[]) {
   }));
 }
 
-function nounFieldLabels(card: Flashcard, numberMode: "singular" | "plural" | null) {
+function nounFieldLabels(card: Flashcard, numberMode: "singular" | "plural" | null, nounPatterns: NounPattern[]) {
   if (card.type !== "noun") {
     if (numberMode === "singular") return ["Definite singular article", "Singular", "Indefinite article"];
     if (numberMode === "plural") return ["Definite plural article", "Plural"];
     return ["Definite singular article", "Singular", "Definite plural article", "Plural", "Indefinite article"];
   }
 
-  const d = card.details;
-  const singular = d.singular === undefined ? card.italian : d.singular;
-  const plural = d.plural ?? "";
-  const definiteSingularArticle = d.definiteSingularArticle || inferArticle(d.definiteSingular, singular, "");
-  const definitePluralArticle = d.definitePluralArticle || inferArticle(d.definitePlural, plural, "");
-  const indefiniteArticle = d.indefiniteArticle || inferArticle(d.indefinite, singular, "");
-
+  const forms = resolvedNounForms(card, nounPatterns);
   if (numberMode === "singular") {
     return [
-      ...(definiteSingularArticle ? ["Definite singular article"] : []),
-      ...(singular ? ["Singular"] : []),
-      ...(indefiniteArticle ? ["Indefinite article"] : []),
+      ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
+      ...(forms.singular ? ["Singular"] : []),
+      ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
     ];
   }
   if (numberMode === "plural") {
     return [
-      ...(definitePluralArticle ? ["Definite plural article"] : []),
-      ...(plural ? ["Plural"] : []),
+      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
+      ...(forms.plural ? ["Plural"] : []),
     ];
   }
-  if (!singular && plural) {
+  if (!forms.singular && forms.plural) {
     return [
-      ...(definitePluralArticle ? ["Definite plural article"] : []),
+      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
       "Plural",
     ];
   }
   return [
-    ...(definiteSingularArticle ? ["Definite singular article"] : []),
-    ...(singular ? ["Singular"] : []),
-    ...(definitePluralArticle ? ["Definite plural article"] : []),
-    ...(plural ? ["Plural"] : []),
-    ...(indefiniteArticle ? ["Indefinite article"] : []),
+    ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
+    ...(forms.singular ? ["Singular"] : []),
+    ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
+    ...(forms.plural ? ["Plural"] : []),
+    ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
   ];
 }
 
@@ -111,7 +108,14 @@ function analyzed(
   return { type, source, pieces, message, status, missing };
 }
 
-export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMode: AnswerSyntaxMode, compactType: CardType | null, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
+export function analyzeAnswerSyntax(
+  card: Flashcard,
+  rawValue: string,
+  syntaxMode: AnswerSyntaxMode,
+  compactType: CardType | null,
+  keywords: AnswerKeywords,
+  nounPatterns: NounPattern[],
+): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
   if (!trimmed) return analyzed(null, "", [], "Start typing to see how Parola interprets each part of the answer.", "empty");
 
@@ -173,7 +177,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
 
   if (type === "noun") {
     const rawParts = whitespaceParts(answer);
-    const shorthand = rawParts.length <= 3 ? parseRegularNounAnswer(answer, keywords) : null;
+    const shorthand = rawParts.length <= 3 ? parseNounShorthandAnswer(answer, keywords) : null;
     if (shorthand) {
       const explicitGender = parseGender(rawParts[0] ?? "", keywords);
       pieces = [
@@ -181,14 +185,19 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
         { label: shorthand.articleKind === "indefinite" ? "Indefinite article" : "Definite article", value: shorthand.article },
         { label: "Singular", value: shorthand.singular },
       ];
-      if (card.type === "noun" && cardSupportsStandardNounPattern(card)) {
-        status = "complete";
-        message = "Regular noun shorthand is complete; Parola can infer the omitted regular forms before checking the answer.";
-      } else if (card.type === "noun") {
-        const labels = nounFieldLabels(card, null);
-        missing = labels.slice(2);
-        status = "partial";
-        message = "The shorthand is recognizable, but this card is not eligible for Parola’s regular-noun inference. Continue with the remaining stored noun fields.";
+      if (card.type === "noun") {
+        const pattern = nounPatternForCard(card, nounPatterns);
+        if (pattern?.syntax === "article-singular") {
+          status = "complete";
+          message = `${pattern.name} uses the Article + singular shorthand; the remaining forms are derived from the assigned pattern.`;
+        } else {
+          const labels = nounFieldLabels(card, null, nounPatterns);
+          missing = labels.slice(2);
+          status = "partial";
+          message = pattern
+            ? `${pattern.name} currently requires full forms. The shorthand is recognizable, but continue with the remaining fields.`
+            : "This noun uses manual forms. The shorthand is recognizable, but continue with the remaining stored fields.";
+        }
       } else {
         status = "complete";
       }
@@ -210,15 +219,18 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
         index += 1;
       }
 
-      if (card.type === "noun" && numberMode === "singular" && Boolean(card.details.plural)) {
-        return analyzed(type, source, pieces, "This card stores both singular and plural forms, so singular-only syntax is not valid for it.", "invalid");
-      }
-      if (card.type === "noun" && numberMode === "plural" && Boolean(card.details.singular ?? card.italian)) {
-        return analyzed(type, source, pieces, "This card stores a singular form, so plural-only syntax is not valid for it.", "invalid");
+      if (card.type === "noun") {
+        const forms = resolvedNounForms(card, nounPatterns);
+        if (numberMode === "singular" && Boolean(forms.plural)) {
+          return analyzed(type, source, pieces, "This card has both singular and plural forms, so singular-only syntax is not valid for it.", "invalid");
+        }
+        if (numberMode === "plural" && Boolean(forms.singular)) {
+          return analyzed(type, source, pieces, "This card has a singular form, so plural-only syntax is not valid for it.", "invalid");
+        }
       }
 
       const values = expandElidedArticleTokens(rawParts.slice(index));
-      const labels = nounFieldLabels(card, numberMode);
+      const labels = nounFieldLabels(card, numberMode, nounPatterns);
       pieces.push(...labeledPieces(values, labels));
 
       if (explicitGender && values[0]) {
@@ -298,8 +310,22 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
   return analyzed(type, source, pieces, message, status, missing);
 }
 
-export function AnswerParsePreview({ card, value, syntaxMode, compactType, keywords }: { card: Flashcard; value: string; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords }) {
-  const preview = analyzeAnswerSyntax(card, value, syntaxMode, compactType, keywords);
+export function AnswerParsePreview({
+  card,
+  value,
+  syntaxMode,
+  compactType,
+  keywords,
+  nounPatterns,
+}: {
+  card: Flashcard;
+  value: string;
+  syntaxMode: AnswerSyntaxMode;
+  compactType: CardType | null;
+  keywords: AnswerKeywords;
+  nounPatterns: NounPattern[];
+}) {
+  const preview = analyzeAnswerSyntax(card, value, syntaxMode, compactType, keywords, nounPatterns);
   const heading = preview.status === "invalid"
     ? "Invalid"
     : preview.type
