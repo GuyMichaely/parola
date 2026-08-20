@@ -32,7 +32,9 @@ export function readSyncStatus() {
 export function subscribeSyncStatus(listener: (state: SyncStatusState) => void) {
   syncListeners.add(listener);
   listener(currentSyncStatus);
-  return () => syncListeners.delete(listener);
+  return () => {
+    syncListeners.delete(listener);
+  };
 }
 
 export function setLocalSyncStatus() {
