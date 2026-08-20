@@ -1,5 +1,5 @@
 import type { Flashcard } from "../cards/types";
-import { cloneCards, normalizeCard } from "./cardCodec";
+import { assertNoDuplicateCards, cloneCards, normalizeCard } from "./cardCodec";
 import type { CardStorage } from "./types";
 
 const cardsKey = "parola:cards";
@@ -43,6 +43,7 @@ export class BrowserStorage implements CardStorage {
 
   async createCards(cards: Flashcard[]) {
     const existing = readLocalSnapshot().cards;
+    assertNoDuplicateCards(existing, cards);
     let nextId = existing.reduce((max, card) => Math.max(max, card.id), 0) + 1;
     const inserted = cards.map((card) => ({ ...card, id: nextId++ }));
     writeLocalSnapshot(timestamped([...inserted, ...existing]));
