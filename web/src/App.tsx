@@ -315,23 +315,24 @@ export default function Home() {
     setSession({ right: 0, wrong: 0, skipped: 0 });
   }
 
-  async function persistManyCards(updatedCards: Flashcard[], originalCards: Flashcard[], failureMessage: string) {
+  async function persistManyCards(updatedCards: Flashcard[], _originalCards: Flashcard[], failureMessage: string) {
+    const previousCards = cards;
     const updatedById = new Map(updatedCards.map((item) => [item.id, item]));
-    const optimisticCards = cards.map((item) => updatedById.get(item.id) ?? item);
+    const optimisticCards = previousCards.map((item) => updatedById.get(item.id) ?? item);
     setCards(optimisticCards);
     removeUnavailableInventoryTags(optimisticCards);
     setSyncWarning("");
     setSaveState("saving");
     try {
-      const saved = await Promise.all(updatedCards.map((item) => storage.updateCard(item)));
-      const savedById = new Map(saved.map((savedCard) => [savedCard.id, savedCard]));
-      setCards((items) => items.map((item) => savedById.get(item.id) ?? item));
+      const saved = await storage.replaceInventory({ cards: optimisticCards, nounMorphology });
+      setCards(saved.cards);
+      setNounMorphology(saved.nounMorphology);
+      removeUnavailableInventoryTags(saved.cards);
       setSaveState("saved");
       return true;
     } catch {
-      await Promise.allSettled(originalCards.map((item) => storage.updateCard(item)));
-      const originalById = new Map(originalCards.map((item) => [item.id, item]));
-      setCards((items) => items.map((item) => originalById.get(item.id) ?? item));
+      setCards(previousCards);
+      removeUnavailableInventoryTags(previousCards);
       setSaveState("failed");
       setSyncWarning(failureMessage);
       return false;
