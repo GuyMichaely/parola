@@ -68,8 +68,8 @@ export function StorageSettingsModal({
   }
 
   async function currentInventory() {
-    const [cards, nounPatterns] = await Promise.all([storage.listCards(), storage.listNounPatterns()]);
-    return { cards, nounPatterns };
+    const [cards, nounMorphology] = await Promise.all([storage.listCards(), storage.listNounMorphology()]);
+    return { cards, nounMorphology };
   }
 
   async function exportInventory() {
@@ -78,14 +78,14 @@ export function StorageSettingsModal({
     setTransferBusy(true);
     try {
       const inventory = await currentInventory();
-      const blob = new Blob([serializeInventory(inventory.cards, inventory.nounPatterns)], { type: "application/json" });
+      const blob = new Blob([serializeInventory(inventory.cards, inventory.nounMorphology)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `parola-inventory-${new Date().toISOString().slice(0, 10)}.json`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setTransferMessage(`Exported ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} and ${inventory.nounPatterns.length} noun patterns.`);
+      setTransferMessage(`Exported ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} with noun morphology.`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be exported.");
     } finally {
@@ -100,8 +100,8 @@ export function StorageSettingsModal({
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser context.");
       const inventory = await currentInventory();
-      await navigator.clipboard.writeText(serializeInventory(inventory.cards, inventory.nounPatterns));
-      setTransferMessage(`Copied ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} and ${inventory.nounPatterns.length} noun patterns to the clipboard.`);
+      await navigator.clipboard.writeText(serializeInventory(inventory.cards, inventory.nounMorphology));
+      setTransferMessage(`Copied ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} with noun morphology to the clipboard.`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be copied.");
     } finally {
@@ -112,14 +112,14 @@ export function StorageSettingsModal({
   async function replaceWithImportedInventory(imported: ReturnType<typeof parseInventory>, sourceDescription: string) {
     const current = await currentInventory();
     const confirmed = window.confirm(
-      `Replace the current ${current.cards.length}-card inventory with the ${imported.cards.length}-card inventory ${sourceDescription}?\n\nThis replaces cards and noun-pattern definitions and will sync remotely when sync is configured.`,
+      `Replace the current ${current.cards.length}-card inventory with the ${imported.cards.length}-card inventory ${sourceDescription}?\n\nThis replaces cards and noun morphology and will sync remotely when sync is configured.`,
     );
     if (!confirmed) {
       setTransferMessage("Import canceled; the current inventory was not changed.");
       return;
     }
     const saved = await replaceInventory(storage, current, imported);
-    setTransferMessage(`Imported ${saved.cards.length} ${saved.cards.length === 1 ? "card" : "cards"} and ${saved.nounPatterns.length} noun patterns. Reloading Parola…`);
+    setTransferMessage(`Imported ${saved.cards.length} ${saved.cards.length === 1 ? "card" : "cards"} with noun morphology. Reloading Parola…`);
     window.location.reload();
   }
 
@@ -178,14 +178,7 @@ export function StorageSettingsModal({
 
       <label className="field full-field">
         <span>Sync API endpoint</span>
-        <input
-          type="url"
-          inputMode="url"
-          value={draftEndpoint}
-          onChange={(event) => setDraftEndpoint(event.target.value)}
-          placeholder="https://example.com/cards"
-          autoComplete="off"
-        />
+        <input type="url" inputMode="url" value={draftEndpoint} onChange={(event) => setDraftEndpoint(event.target.value)} placeholder="https://example.com/cards" autoComplete="off" />
       </label>
       <div className="storage-option-copy">
         <strong>{syncConfigured ? `Current status: ${syncStatus.message}` : "Local only"}</strong>
@@ -198,12 +191,7 @@ export function StorageSettingsModal({
       </div>
 
       <label className="switch-option">
-        <input
-          type="checkbox"
-          checked={draftSyncConfigured ? draftPersistLocal : true}
-          disabled={!draftSyncConfigured}
-          onChange={(event) => setDraftPersistLocal(event.target.checked)}
-        />
+        <input type="checkbox" checked={draftSyncConfigured ? draftPersistLocal : true} disabled={!draftSyncConfigured} onChange={(event) => setDraftPersistLocal(event.target.checked)} />
         <span>
           <strong>Keep a persistent local copy</strong>
           <small>{draftSyncConfigured ? "Store the synchronized inventory in this browser between sessions." : "Required when no sync server is configured."}</small>
@@ -228,7 +216,7 @@ export function StorageSettingsModal({
       <section className="inventory-transfer-panel" aria-label="Inventory import and export">
         <div>
           <strong>Inventory backup & restore</strong>
-          <p>Export or copy the current cards and noun-pattern definitions, or replace them from Parola inventory JSON.</p>
+          <p>Export or copy the current cards and noun morphology, or replace them from Parola inventory JSON.</p>
         </div>
         <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void exportInventory()} disabled={saving || transferBusy}>Export inventory</button>
@@ -244,21 +232,11 @@ export function StorageSettingsModal({
           <textarea
             value={importText}
             onChange={(event) => setImportText(event.target.value)}
-            placeholder={'{\n  "cards": [...],\n  "nounPatterns": [...]\n}'}
+            placeholder={'{\n  "cards": [...],\n  "nounMorphology": { ... }\n}'}
             rows={8}
             disabled={saving || transferBusy}
             spellCheck={false}
-            style={{
-              width: "100%",
-              resize: "vertical",
-              border: "1px solid var(--line)",
-              borderRadius: "6px",
-              background: "#0e1115",
-              color: "var(--text)",
-              padding: "10px 11px",
-              font: "inherit",
-              lineHeight: 1.45,
-            }}
+            style={{ width: "100%", resize: "vertical", border: "1px solid var(--line)", borderRadius: "6px", background: "#0e1115", color: "var(--text)", padding: "10px 11px", font: "inherit", lineHeight: 1.45 }}
           />
         </label>
         <div className="inventory-transfer-actions">
