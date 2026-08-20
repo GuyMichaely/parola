@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
@@ -45,6 +45,7 @@ export function InventoryCardsEditor({
   const [adjectiveRows, setAdjectiveRows] = useState(() => cards.filter((card) => card.type === "adjective").map(adjectiveRowFromCard));
   const [adverbRows, setAdverbRows] = useState(() => cards.filter((card) => card.type === "adverb").map(adverbRowFromCard));
   const [metadata, setMetadata] = useState<InventoryMetadataDraft>(() => Object.fromEntries(cards.map((card) => [String(card.id), { setName: card.setName ?? "", tags: card.tags.join(", ") }])));
+  const previousCardsRef = useRef(cards);
   const firstType: CardType = nounRows.length ? "noun" : verbRows.length ? "verb" : adjectiveRows.length ? "adjective" : "adverb";
   const [type, setType] = useState<CardType>(firstType);
   const [saving, setSaving] = useState(false);
@@ -52,8 +53,37 @@ export function InventoryCardsEditor({
   const cardById = new Map(cards.map((card) => [card.id, card]));
   const counts = { noun: nounRows.length, verb: verbRows.length, adjective: adjectiveRows.length, adverb: adverbRows.length };
 
+  useEffect(() => {
+    const previousById = new Map(previousCardsRef.current.map((card) => [card.id, card]));
+    setMetadata((current) => {
+      const next: InventoryMetadataDraft = {};
+      for (const card of cards) {
+        const id = String(card.id);
+        const previous = previousById.get(card.id);
+        const existing = current[id];
+        if (!previous || !existing) {
+          next[id] = { setName: card.setName ?? "", tags: card.tags.join(", ") };
+          continue;
+        }
+
+        const removedTags = new Set(previous.tags.filter((tag) => !card.tags.includes(tag)));
+        const addedTags = card.tags.filter((tag) => !previous.tags.includes(tag));
+        const draftTags = parseTags(existing.tags).filter((tag) => !removedTags.has(tag));
+        for (const tag of addedTags) {
+          if (!draftTags.includes(tag)) draftTags.push(tag);
+        }
+        next[id] = {
+          setName: existing.setName === (previous.setName ?? "") ? (card.setName ?? "") : existing.setName,
+          tags: draftTags.join(", "),
+        };
+      }
+      return next;
+    });
+    previousCardsRef.current = cards;
+  }, [cards]);
+
   function updateMetadata(id: string, field: "setName" | "tags", value: string) {
-    setMetadata((items) => ({ ...items, [id]: { ...items[id], [field]: value } }));
+    setMetadata((items) => ({ ...items, [id]: { ...items[id], [field]: value }));
   }
 
   function commonFor(rowId: string) {
@@ -93,7 +123,7 @@ export function InventoryCardsEditor({
     return <>
       <td><input aria-label={`Set for ${original.english}`} list="known-card-sets" value={rowMetadata?.setName ?? ""} onChange={(event) => updateMetadata(rowId, "setName", event.target.value)} placeholder="Optional" /></td>
       <td><input aria-label={`Tags for ${original.english}`} value={rowMetadata?.tags ?? ""} onChange={(event) => updateMetadata(rowId, "tags", event.target.value)} placeholder="tag, tag" /></td>
-      <td><div className="inventory-row-actions"><button type="button" className="row-open" onClick={() => onOpen(original)} aria-label={`Open focused editor for ${original.english}`} title="Focused editor">↗</button><button type="button" className="row-remove" onClick={() => { if (window.confirm(`Remove ${original.english}?`)) onRemove(original.id); }} aria-label={`Remove ${original.english}`} title="Remove card">×</button></div></td>
+      <td><div className="inventory-row-actions"><button type="button" className="row-open" onClick={() => onOpen(original)} aria-label={`Edit ${original.english}`} title="Edit card">↗</button><button type="button" className="row-remove" onClick={() => { if (window.confirm(`Remove ${original.english}?`)) onRemove(original.id); }} aria-label={`Remove ${original.english}`} title="Remove card">×</button></div></td>
     </>;
   }
 
