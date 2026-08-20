@@ -3,6 +3,7 @@ import {
   type NounMorphology,
 } from "../cards/nounMorphology";
 import { parseCardsResponse } from "./cardCodec";
+import { assertInventoryState } from "./inventoryState";
 
 export interface RemoteSnapshot {
   cards: ReturnType<typeof parseCardsResponse>;
@@ -29,10 +30,13 @@ function stateUrl(endpoint: string) {
 function parseSnapshot(value: unknown): RemoteSnapshot {
   const payload = value as { cards?: unknown; nounMorphology?: unknown; updatedAt?: unknown };
   if (!payload?.nounMorphology) throw new Error("Remote state does not contain nounMorphology.");
-  const nounMorphology = normalizeNounMorphology(payload.nounMorphology);
-  return {
+  const state = {
     cards: parseCardsResponse(payload),
-    nounMorphology,
+    nounMorphology: normalizeNounMorphology(payload.nounMorphology),
+  };
+  assertInventoryState(state);
+  return {
+    ...state,
     updatedAt: typeof payload?.updatedAt === "string" && payload.updatedAt ? payload.updatedAt : null,
   };
 }
