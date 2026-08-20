@@ -12,15 +12,15 @@ A noun card stores these morphology facts:
 - `numberMode`, one of `both`, `singular`, or `plural`;
 - `articleMode`, currently `automatic` or `none`.
 
-The card does not store derived plurals or articles. Parola generates them when it needs them.
+The card does not store derived forms or articles. Parola generates them when it needs them.
 
 For example, `cetriolo` can use rule `o-i` with base `cetriol`. `specchio` can use rule `chio-chi` with base `spec`.
 
-A noun with no useful declensional counterpart can use the `identity` rule. Its surface form is its base. This avoids assigning a singular-only noun such as `Venezia` an arbitrary unseen plural pattern.
+A tantum noun does not borrow a hypothetical two-number declension merely because its visible form resembles one. A pluralia-tantum card for `clothes` uses `plural-base` with base `vestiti`. A separate `dress` card uses `o-i` with base `vestit`. Likewise, a singular-only `Venezia` card uses `singular-base` with base `Venezia`.
 
 ## Declension rules
 
-A declension rule describes transformations between a base and noun forms. It does not contain gender or study policy.
+A declension rule describes transformations between a base and the noun forms that rule actually supports. It does not contain gender or study policy. A rule may define both numbers or only one.
 
 For example:
 
@@ -34,12 +34,24 @@ For example:
 }
 ```
 
+`plural-base` instead defines only a plural form:
+
+```json
+{
+  "id": "plural-base",
+  "forms": {
+    "plural": { "suffix": "" }
+  }
+}
+```
+
+With an empty suffix, the base is already the surface form. `base: "vestiti"` therefore generates and recognizes `vestiti`, and the rule contains no singular transformation.
+
 Generation and recognition use the same definition.
 
-- Generate singular: append `o` to the base.
-- Recognize singular: if the observed form ends in `o`, remove that suffix to recover a candidate base.
-- Generate plural: append `i`.
-- Recognize plural: if the observed form ends in `i`, remove it.
+- Generate a supported form by appending its suffix to the base.
+- Recognize a supported form by removing that suffix from the observed form.
+- A missing form is unsupported. Parola does not generate or recognize it through that rule.
 
 Parola derives recognition from generation when the transformation is safely reversible. If a future transformation cannot be inverted this way, the rule model can gain an explicit recognition override rather than duplicating inverse logic for every rule.
 
@@ -65,6 +77,8 @@ Several syntaxes can share one inference set. This lets study policy change once
 
 Adding `chio-chi` to that inference set means every syntax that references it may begin inferring `chio-chi`. The noun cards do not change.
 
+A syntax also has a number mode. Parola only tries declension rules whose supported forms match that mode. A pluralia-tantum syntax therefore uses plural-only rules such as `plural-base`, rather than treating an ordinary two-number rule as a pluralia-tantum noun definition.
+
 ## Candidate parsing
 
 Parola does not choose one morphology before checking the answer. It keeps every applicable interpretation as a candidate.
@@ -72,7 +86,7 @@ Parola does not choose one morphology before checking the answer. It keeps every
 For each noun answer:
 
 1. Try each syntax definition against the typed tokens.
-2. For each applicable syntax, try every declension rule in its inference set.
+2. For each applicable syntax, try every compatible declension rule in its inference set.
 3. Let each declension rule recognize the noun fields and infer a base.
 4. Use parsed articles and markers as grammatical facts. A candidate must agree with those facts.
 5. Compare all complete candidates with the prompted card's actual noun definition.
@@ -109,6 +123,17 @@ Suppose `learned-shorthand` initially contains `o-i` but not `chio-chi`.
 Later, add `chio-chi` to `learned-shorthand`. The same input now also produces a `chio-chi` candidate with base `spec`. That candidate matches the card, so `lo specchio` becomes correct.
 
 Nothing about `specchio` changed. Only the learner's permitted inference set changed.
+
+## Example: dress and clothes
+
+These are separate cards even though both contain the surface string `vestiti` somewhere in their paradigms.
+
+```text
+dress:   rule o-i,        base vestit,  number both
+clothes: rule plural-base, base vestiti, number plural
+```
+
+The `dress` rule derives `vestito` and `vestiti` from `vestit`. The `clothes` rule has only a plural form and treats `vestiti` itself as the base. Parola never derives `vestito` as a form of the `clothes` card.
 
 ## Storage
 
