@@ -1,6 +1,11 @@
 import type { Flashcard } from "../cards/types";
 import type { NounMorphology } from "../cards/nounMorphology";
 
+export type InventoryState = {
+  cards: Flashcard[];
+  nounMorphology: NounMorphology;
+};
+
 export interface CardStorage {
   readonly label: string;
   listCards(): Promise<Flashcard[]>;
@@ -10,5 +15,6 @@ export interface CardStorage {
   replaceCards(cards: Flashcard[]): Promise<Flashcard[]>;
   listNounMorphology(): Promise<NounMorphology>;
   replaceNounMorphology(morphology: NounMorphology): Promise<NounMorphology>;
-  syncNow?(): Promise<Flashcard[]>;
+  replaceInventory(state: InventoryState): Promise<InventoryState>;
+  syncNow?(): Promise<InventoryState>;
 }
