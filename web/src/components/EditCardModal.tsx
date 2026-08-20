@@ -6,7 +6,6 @@ import {
   adjectiveRowFromCard,
   adverbCard,
   adverbRowFromCard,
-  deckTagPrefix,
   nounCard,
   nounFormsError,
   nounRowFromCard,
@@ -18,7 +17,6 @@ import {
   updateNounRow,
   verbCard,
   verbRowFromCard,
-  visibleTags,
 } from "../cards/editorModel";
 import {
   AdjectiveRowCells,
@@ -42,7 +40,7 @@ export function EditCardModal({
 }) {
   const [formError, setFormError] = useState("");
   const [setName, setSetName] = useState(card.setName ?? "");
-  const [tags, setTags] = useState(visibleTags(card.tags).join(", "));
+  const [tags, setTags] = useState(card.tags.join(", "));
   const [nounRow, setNounRow] = useState<BatchRow>(() => nounRowFromCard(card));
   const [verbRow, setVerbRow] = useState<VerbBatchRow>(() => verbRowFromCard(card));
   const [adjectiveRow, setAdjectiveRow] = useState<AdjectiveBatchRow>(() => adjectiveRowFromCard(card));
@@ -50,12 +48,11 @@ export function EditCardModal({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const preservedDeckTags = card.tags.filter((tag) => tag.startsWith(deckTagPrefix));
     const common = {
       id: card.id,
       type: card.type,
       setName: setName.trim() || null,
-      tags: Array.from(new Set([...preservedDeckTags, ...parseTags(tags)])),
+      tags: parseTags(tags),
     };
     let updated: Flashcard;
     if (card.type === "noun") {
