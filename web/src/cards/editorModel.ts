@@ -1,15 +1,20 @@
 import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
 import {
+  deriveNounPatternForms,
+  suggestedNounArticles,
+  type NounPattern,
+} from "./nounPatterns";
+import {
   inferArticle,
   normalizeAnswer,
   standardAdjectivePattern,
-  standardNounPattern,
 } from "../study/logic";
 
 export type BatchRow = {
   id: string;
   english: string;
+  patternId: string;
   gender: "masculine" | "feminine";
   singular: string;
   plural: string;
@@ -142,6 +147,7 @@ export function emptyBatchRow(id: string): BatchRow {
   return {
     id,
     english: "",
+    patternId: "manual",
     gender: "masculine",
     singular: "",
     plural: "",
@@ -160,6 +166,16 @@ export function nounFormsError(input: Pick<BatchRow, "singular" | "plural" | "de
   if (!singular && !plural) return "Enter at least a singular or plural form.";
   if (!singular && (definiteSingular || indefinite)) return "Singular articles require a singular noun form.";
   if (!plural && definitePlural) return "A definite plural article requires a plural noun form.";
+  return "";
+}
+
+export function nounPatternError(row: BatchRow, patterns: NounPattern[]) {
+  if (row.patternId === "manual") return "";
+  const pattern = patterns.find((item) => item.id === row.patternId);
+  if (!pattern) return "The selected noun pattern no longer exists.";
+  if (!deriveNounPatternForms(pattern, row.singular)) {
+    return `${pattern.name} requires a singular base ending in “${pattern.singularSuffix}”.`;
+  }
   return "";
 }
 
@@ -199,6 +215,7 @@ export function nounCard(input: {
   english: string;
   setName: string | null;
   tags: string[];
+  patternId: string;
   gender: string;
   singular: string;
   plural: string;
@@ -217,6 +234,7 @@ export function nounCard(input: {
     setName: input.setName,
     tags: input.tags,
     details: {
+      patternId: input.patternId,
       gender: input.gender,
       singular: input.singular,
       plural: input.plural,
@@ -279,6 +297,7 @@ export function nounRowFromCard(card: Flashcard): BatchRow {
   return {
     id: String(card.id),
     english: card.english,
+    patternId: d.patternId || "manual",
     gender: d.gender === "feminine" ? "feminine" : "masculine",
     singular,
     plural,
@@ -306,6 +325,7 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
   return {
     id: row.id,
     english: row.english ?? "",
+    patternId: typeof row.patternId === "string" && row.patternId ? row.patternId : "manual",
     gender: row.gender === "feminine" ? "feminine" : "masculine",
     singular,
     plural,
@@ -315,32 +335,44 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
   };
 }
 
-export function suggestedNounArticles(gender: BatchRow["gender"], singular: string, plural: string) {
-  const startsWithVowel = (word: string) => /^[aeiouàèéìòóù]/u.test(normalizeAnswer(word));
-  const takesLoSet = (word: string) => {
-    const normalized = normalizeAnswer(word);
-    return /^(?:z|x|y|gn|ps|pn)/u.test(normalized)
-      || /^s[^aeiouàèéìòóù]/u.test(normalized)
-      || /^i[aeouàèéòóù]/u.test(normalized);
-  };
-  if (gender === "feminine") {
+function applyPattern(row: BatchRow, patterns: NounPattern[]) {
+  const pattern = patterns.find((item) => item.id === row.patternId);
+  if (!pattern) return row;
+  const derived = deriveNounPatternForms(pattern, row.singular);
+  if (!derived) {
     return {
-      definiteSingularArticle: singular.trim() ? (startsWithVowel(singular) ? "l’" : "la") : "",
-      definitePluralArticle: plural.trim() ? "le" : "",
-      indefiniteArticle: singular.trim() ? (startsWithVowel(singular) ? "un’" : "una") : "",
+      ...row,
+      gender: pattern.gender,
+      plural: "",
+      definiteSingularArticle: "",
+      definitePluralArticle: "",
+      indefiniteArticle: "",
     };
   }
   return {
-    definiteSingularArticle: singular.trim() ? (startsWithVowel(singular) ? "l’" : takesLoSet(singular) ? "lo" : "il") : "",
-    definitePluralArticle: plural.trim() ? (startsWithVowel(plural) || takesLoSet(plural) ? "gli" : "i") : "",
-    indefiniteArticle: singular.trim() ? (takesLoSet(singular) ? "uno" : "un") : "",
+    ...row,
+    gender: derived.gender,
+    plural: derived.plural,
+    definiteSingularArticle: derived.definiteSingularArticle,
+    definitePluralArticle: derived.definitePluralArticle,
+    indefiniteArticle: derived.indefiniteArticle,
   };
 }
 
-export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K]) {
+export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K], patterns: NounPattern[] = []) {
+  const nextRow = { ...row, [field]: value } as BatchRow;
+
+  if (field === "patternId") {
+    return nextRow.patternId === "manual" ? nextRow : applyPattern(nextRow, patterns);
+  }
+
+  if (row.patternId !== "manual") {
+    if (field === "singular") return applyPattern(nextRow, patterns);
+    return nextRow;
+  }
+
   if (field === "singular" || field === "plural" || field === "gender") {
     const previous = suggestedNounArticles(row.gender, row.singular, row.plural);
-    const nextRow = { ...row, [field]: value } as BatchRow;
     const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural);
     const keepOrSuggest = (current: string, previousSuggestion: string, nextSuggestion: string) => !current || current === previousSuggestion ? nextSuggestion : current;
     return {
@@ -350,5 +382,7 @@ export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K,
       indefiniteArticle: nextRow.singular.trim() ? keepOrSuggest(row.indefiniteArticle, previous.indefiniteArticle, next.indefiniteArticle) : "",
     };
   }
-  return { ...row, [field]: value } as BatchRow;
+  return nextRow;
 }
+
+export { suggestedNounArticles };
