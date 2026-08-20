@@ -1,17 +1,16 @@
 import type { CardType, Flashcard } from "../cards/types";
 import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
-import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
+import { deriveNounPatternForms } from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
 import {
   cardSupportsStandardAdjectivePattern,
   expandElidedArticleTokens,
-  hasImplicitNounShape,
-  keywordMatches,
-  parseGender,
+  normalizeAnswer,
+  parseNounMarkers,
   parseNounShorthandAnswer,
-  parsePowerAnswerPrefix,
   whitespaceParts,
   type AnswerSyntaxMode,
+  type NounNumberMode,
 } from "../study/logic";
 import type { AnswerKeywords } from "./StudyOptions";
 
@@ -23,22 +22,13 @@ type ParsePiece = {
 export type AnswerSyntaxStatus = "empty" | "partial" | "complete" | "invalid";
 
 export type AnswerSyntaxAnalysis = {
-  type: CardType | null;
+  type: CardType;
   source: string;
   pieces: ParsePiece[];
   message: string;
   status: AnswerSyntaxStatus;
   missing: string[];
 };
-
-function typeFromToken(value: string, keywords: AnswerKeywords): CardType | null {
-  const token = value.trim().replace(/:$/, "");
-  if (keywordMatches(token, keywords.noun)) return "noun";
-  if (keywordMatches(token, keywords.verb)) return "verb";
-  if (keywordMatches(token, keywords.adjective)) return "adjective";
-  if (keywordMatches(token, keywords.adverb)) return "adverb";
-  return null;
-}
 
 function displayValue(value: string) {
   return value || "—";
@@ -51,225 +41,159 @@ function labeledPieces(values: string[], labels: string[]) {
   }));
 }
 
-function nounFieldLabels(card: Flashcard, numberMode: "singular" | "plural" | null) {
-  if (card.type !== "noun") {
-    if (numberMode === "singular") return ["Definite singular article", "Singular", "Indefinite article"];
-    if (numberMode === "plural") return ["Definite plural article", "Plural"];
-    return ["Definite singular article", "Singular", "Definite plural article", "Plural", "Indefinite article"];
-  }
-
-  const forms = resolvedNounForms(card, getActiveNounPatterns());
-  if (numberMode === "singular") {
-    return [
-      ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
-      ...(forms.singular ? ["Singular"] : []),
-      ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
-    ];
-  }
-  if (numberMode === "plural") {
-    return [
-      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
-      ...(forms.plural ? ["Plural"] : []),
-    ];
-  }
-  if (!forms.singular && forms.plural) {
-    return [
-      ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
-      "Plural",
-    ];
-  }
-  return [
-    ...(forms.definiteSingularArticle ? ["Definite singular article"] : []),
-    ...(forms.singular ? ["Singular"] : []),
-    ...(forms.definitePluralArticle ? ["Definite plural article"] : []),
-    ...(forms.plural ? ["Plural"] : []),
-    ...(forms.indefiniteArticle ? ["Indefinite article"] : []),
-  ];
-}
-
 function articleGender(value: string) {
-  const article = value.normalize("NFC").toLocaleLowerCase("it-IT").replace(/[’`]/g, "'");
+  const article = normalizeAnswer(value);
   if (["il", "lo", "i", "gli", "un", "uno"].includes(article)) return "masculine" as const;
   if (["la", "le", "una", "un'"].includes(article)) return "feminine" as const;
   return null;
 }
 
+function nounFullLabels(numberMode: NounNumberMode | null, values: string[]) {
+  if (numberMode === "singular") {
+    const first = normalizeAnswer(values[0] ?? "");
+    const hasArticleShape = !first || ["il", "lo", "la", "l'"].includes(first);
+    return hasArticleShape
+      ? ["Definite singular article", "Singular", "Indefinite article"]
+      : ["Singular"];
+  }
+  if (numberMode === "plural") {
+    const first = normalizeAnswer(values[0] ?? "");
+    const hasArticleShape = !first || ["i", "gli", "le"].includes(first);
+    return hasArticleShape
+      ? ["Definite plural article", "Plural"]
+      : ["Plural"];
+  }
+  return ["Definite singular article", "Singular", "Definite plural article", "Plural", "Indefinite article"];
+}
+
+function invalidNounArticle(values: string[], labels: string[]) {
+  const allowed: Record<string, string[]> = {
+    "Definite singular article": ["", "il", "lo", "la", "l'"],
+    "Definite plural article": ["", "i", "gli", "le"],
+    "Indefinite article": ["", "un", "uno", "una", "un'"],
+  };
+  for (let index = 0; index < Math.min(values.length, labels.length); index += 1) {
+    const possibilities = allowed[labels[index] ?? ""];
+    if (possibilities && !possibilities.includes(normalizeAnswer(values[index] ?? ""))) {
+      return labels[index] ?? "article";
+    }
+  }
+  return null;
+}
+
 function analyzed(
-  type: CardType | null,
-  source: string,
+  type: CardType,
   pieces: ParsePiece[],
   message: string,
   status: AnswerSyntaxStatus,
   missing: string[] = [],
 ): AnswerSyntaxAnalysis {
-  return { type, source, pieces, message, status, missing };
+  return { type, source: "prompted card", pieces, message, status, missing };
 }
 
-export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMode: AnswerSyntaxMode, compactType: CardType | null, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
+export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, _syntaxMode: AnswerSyntaxMode, _compactType: CardType | null, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
-  if (!trimmed) return analyzed(null, "", [], "Start typing to see how Parola interprets each part of the answer.", "empty");
+  const typePiece: ParsePiece = { label: "Part of speech", value: typeLabels[card.type] };
+  if (!trimmed) {
+    return analyzed(card.type, [typePiece], `This prompt expects a ${typeLabels[card.type].toLowerCase()} answer.`, "empty");
+  }
 
   const unclosedQuote = (trimmed.match(/"/g)?.length ?? 0) % 2 === 1;
-  const prefixed = parsePowerAnswerPrefix(trimmed, keywords);
-  let type = prefixed?.type ?? null;
-  let answer = prefixed?.answer ?? trimmed;
-  let source = prefixed ? "explicit type marker" : "";
-
-  if (!type) {
-    const bareType = typeFromToken(trimmed, keywords);
-    if (bareType) {
-      type = bareType;
-      answer = "";
-      source = "explicit type marker";
-    } else if (syntaxMode === "compact" && compactType) {
-      type = compactType;
-      source = "compact study mode";
-    } else if (hasImplicitNounShape(trimmed, keywords)) {
-      type = "noun";
-      source = "noun markers/articles";
-    }
-  }
-
-  if (!type) {
-    const parts = whitespaceParts(trimmed);
-    const gender = parseGender(parts[0] ?? "", keywords);
-    if (gender) {
-      return analyzed(
-        "noun",
-        "noun gender marker",
-        [{ label: "Gender marker", value: gender }],
-        "Noun syntax has started but is not complete.",
-        "partial",
-        ["Article or number marker", "Noun form"],
-      );
-    }
-    const status: AnswerSyntaxStatus = /\s/.test(trimmed) ? "invalid" : "partial";
-    return analyzed(
-      null,
-      "",
-      [{ label: status === "invalid" ? "Invalid start" : "Unrecognized start", value: parts[0] ?? trimmed }],
-      status === "invalid"
-        ? `This cannot be parsed as an answer. Start with ${keywords.noun}, ${keywords.verb}, ${keywords.adjective}, or ${keywords.adverb}, or use noun article/gender syntax.`
-        : `Parola does not yet recognize an answer type. Continue typing, or start with ${keywords.noun}, ${keywords.verb}, ${keywords.adjective}, or ${keywords.adverb}.`,
-      status,
-      status === "partial" ? ["Answer type"] : [],
-    );
-  }
-
-  if (!answer) {
-    return analyzed(type, source, [], `${typeLabels[type]} selected. Enter the fields after the marker.`, "partial", ["Answer fields"]);
-  }
-
-  let pieces: ParsePiece[] = [];
-  let message = `Parsed as ${typeLabels[type]} from ${source}.`;
+  let pieces: ParsePiece[] = [typePiece];
+  let message = `Parsing as ${typeLabels[card.type].toLowerCase()} because that is the prompted card type.`;
   let status: AnswerSyntaxStatus = "partial";
   let missing: string[] = [];
 
-  if (type === "noun") {
-    const rawParts = whitespaceParts(answer);
-    const shorthand = rawParts.length <= 3 ? parseNounShorthandAnswer(answer, keywords) : null;
+  if (card.type === "noun") {
+    const rawParts = whitespaceParts(trimmed);
+    const markerParse = parseNounMarkers(rawParts, keywords);
+    pieces.push(...markerParse.markers.map((marker) => ({
+      label: marker.kind === "gender" ? "Gender marker" : "Tantum marker",
+      value: marker.kind === "gender" ? marker.value : marker.value === "singular" ? "singular only" : "plural only",
+    })));
+
+    if (markerParse.invalid) {
+      return analyzed(card.type, pieces, "A gender or tantum marker was repeated or appeared in an invalid marker position.", "invalid");
+    }
+
+    const shorthand = !markerParse.numberMode && rawParts.length <= 3 ? parseNounShorthandAnswer(trimmed, keywords) : null;
     if (shorthand) {
-      const explicitGender = parseGender(rawParts[0] ?? "", keywords);
-      pieces = [
-        ...(explicitGender ? [{ label: "Gender marker", value: shorthand.gender }] : [{ label: "Gender from article", value: shorthand.gender }]),
+      const matchingPatterns = getActiveNounPatterns().filter((pattern) =>
+        pattern.syntax === "article-singular"
+        && pattern.gender === shorthand.gender
+        && Boolean(deriveNounPatternForms(pattern, shorthand.singular)),
+      );
+      pieces.push(
         { label: shorthand.articleKind === "indefinite" ? "Indefinite article" : "Definite article", value: shorthand.article },
         { label: "Singular", value: shorthand.singular },
-      ];
-      if (card.type === "noun") {
-        const patterns = getActiveNounPatterns();
-        const pattern = nounPatternForCard(card, patterns);
-        if (pattern?.syntax === "article-singular") {
-          status = "complete";
-          message = `${pattern.name} allows Article + singular shorthand; the omitted forms come from the assigned pattern.`;
-        } else {
-          const labels = nounFieldLabels(card, null);
-          missing = labels.slice(2);
-          status = "partial";
-          message = pattern
-            ? `${pattern.name} currently requires full forms. Continue with the remaining fields.`
-            : "This noun uses manual forms. The shorthand is recognizable, but continue with the remaining stored fields.";
-        }
-      } else {
+      );
+      if (matchingPatterns.length) {
         status = "complete";
+        message = `Valid Article + singular noun syntax under ${matchingPatterns.map((pattern) => pattern.name).join(" / ")}. It will be checked against the prompted noun when submitted.`;
+      } else {
+        status = "partial";
+        missing = ["Definite plural article", "Plural", "Indefinite article"];
+        message = "The shorthand is recognizable, but no matching noun pattern currently allows Article + singular syntax. Continue with the full declension.";
       }
     } else {
-      let index = 0;
-      const explicitGender = parseGender(rawParts[index] ?? "", keywords);
-      if (explicitGender) {
-        pieces.push({ label: "Gender marker", value: explicitGender });
-        index += 1;
-      }
-      let numberMode: "singular" | "plural" | null = null;
-      if (keywordMatches(rawParts[index] ?? "", keywords.singularOnly)) {
-        numberMode = "singular";
-        pieces.push({ label: "Number marker", value: "singular only" });
-        index += 1;
-      } else if (keywordMatches(rawParts[index] ?? "", keywords.pluralOnly)) {
-        numberMode = "plural";
-        pieces.push({ label: "Number marker", value: "plural only" });
-        index += 1;
-      }
-
-      if (card.type === "noun") {
-        const forms = resolvedNounForms(card, getActiveNounPatterns());
-        if (numberMode === "singular" && Boolean(forms.plural)) {
-          return analyzed(type, source, pieces, "This card has both singular and plural forms, so singular-only syntax is not valid for it.", "invalid");
-        }
-        if (numberMode === "plural" && Boolean(forms.singular)) {
-          return analyzed(type, source, pieces, "This card has a singular form, so plural-only syntax is not valid for it.", "invalid");
-        }
-      }
-
-      const values = expandElidedArticleTokens(rawParts.slice(index));
-      const labels = nounFieldLabels(card, numberMode);
+      const values = expandElidedArticleTokens(markerParse.rest);
+      const labels = nounFullLabels(markerParse.numberMode, values);
       pieces.push(...labeledPieces(values, labels));
 
-      if (explicitGender && values[0]) {
+      const badArticle = invalidNounArticle(values, labels);
+      if (badArticle) {
+        return analyzed(card.type, pieces, `${badArticle} contains a token that is not valid in that syntactic position.`, "invalid");
+      }
+
+      if (markerParse.gender && values[0]) {
         const firstArticleGender = articleGender(values[0]);
-        if (firstArticleGender && firstArticleGender !== explicitGender) {
-          return analyzed(type, source, pieces, `The ${values[0]} article conflicts with the ${explicitGender} gender marker.`, "invalid");
+        if (firstArticleGender && firstArticleGender !== markerParse.gender) {
+          return analyzed(card.type, pieces, `The ${values[0]} article conflicts with the ${markerParse.gender} gender marker.`, "invalid");
         }
       }
 
       if (values.length > labels.length) {
         status = "invalid";
-        message = `Too many noun fields were supplied; this syntax accepts ${labels.length} after the optional markers.`;
+        message = `Too many noun fields were supplied; this syntax accepts ${labels.length} after the optional gender/tantum markers.`;
       } else if (values.length === labels.length) {
         status = "complete";
+        message = "Noun syntax is complete and will be checked against the prompted noun.";
       } else {
         status = "partial";
         missing = labels.slice(values.length);
         message = "Noun syntax is valid so far but incomplete.";
       }
     }
-  } else if (type === "verb") {
+  } else if (card.type === "verb") {
     const labels = ["Infinitive", "io", "tu", "lui / lei", "noi", "voi", "loro", "Auxiliary", "Participle"];
-    const values = whitespaceParts(answer);
-    pieces = labeledPieces(values, labels);
+    const values = whitespaceParts(trimmed);
+    pieces.push(...labeledPieces(values, labels));
     if (values.length > labels.length) {
       status = "invalid";
       message = `Too many verb fields were supplied; expected ${labels.length}.`;
     } else if (values.length === labels.length) {
       status = "complete";
+      message = "Verb syntax is complete and will be checked against the prompted verb.";
     } else {
       status = "partial";
       missing = labels.slice(values.length);
       message = "Verb syntax is valid so far but incomplete.";
     }
-  } else if (type === "adjective") {
+  } else if (card.type === "adjective") {
     const labels = ["Masculine singular", "Feminine singular", "Masculine plural", "Feminine plural"];
-    const values = whitespaceParts(answer);
-    if (values.length === 1 && card.type === "adjective" && cardSupportsStandardAdjectivePattern(card)) {
-      pieces = [{ label: "Regular adjective base", value: displayValue(values[0] ?? "") }];
+    const values = whitespaceParts(trimmed);
+    if (values.length === 1 && cardSupportsStandardAdjectivePattern(card)) {
+      pieces.push({ label: "Regular adjective base", value: displayValue(values[0] ?? "") });
       status = "complete";
-      message = "Regular adjective shorthand is complete; Parola can infer the other regular forms before checking the answer.";
+      message = "Regular adjective shorthand is syntactically complete; Parola will check the inferred forms against this adjective.";
     } else {
-      pieces = labeledPieces(values, labels);
+      pieces.push(...labeledPieces(values, labels));
       if (values.length > labels.length) {
         status = "invalid";
         message = `Too many adjective fields were supplied; expected ${labels.length}.`;
       } else if (values.length === labels.length) {
         status = "complete";
+        message = "Adjective syntax is complete and will be checked against the prompted adjective.";
       } else {
         status = "partial";
         missing = labels.slice(values.length);
@@ -277,14 +201,15 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
       }
     }
   } else {
-    const values = whitespaceParts(answer);
-    pieces = labeledPieces(values, ["Invariant form"]);
+    const values = whitespaceParts(trimmed);
+    pieces.push(...labeledPieces(values, ["Invariant form"]));
     if (values.length > 1) {
       status = "invalid";
       message = "An adverb answer accepts one invariant form. Quote it if the stored form itself contains spaces.";
     } else {
       status = values.length === 1 ? "complete" : "partial";
       missing = values.length ? [] : ["Invariant form"];
+      message = status === "complete" ? "Adverb syntax is complete and will be checked against the prompted adverb." : message;
     }
   }
 
@@ -294,22 +219,16 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, syntaxMod
     message = "The quoted field is still open.";
   }
 
-  if (status === "complete" && type !== card.type) {
-    message = `${message} This card expects ${typeLabels[card.type]}, so the completed answer will not match this prompt.`;
-  }
-
-  return analyzed(type, source, pieces, message, status, missing);
+  return analyzed(card.type, pieces, message, status, missing);
 }
 
 export function AnswerParsePreview({ card, value, syntaxMode, compactType, keywords }: { card: Flashcard; value: string; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords }) {
   const preview = analyzeAnswerSyntax(card, value, syntaxMode, compactType, keywords);
   const heading = preview.status === "invalid"
-    ? "Invalid"
-    : preview.type
-      ? `${typeLabels[preview.type]} · ${preview.status === "complete" ? "complete" : "in progress"}`
-      : "Incomplete";
+    ? `${typeLabels[preview.type]} · invalid`
+    : `${typeLabels[preview.type]} · ${preview.status === "complete" ? "complete" : "in progress"}`;
   return (
-    <div className={`answer-parse-preview ${preview.type ? `parsed-${preview.type}` : "unparsed"} syntax-${preview.status}`}>
+    <div className={`answer-parse-preview parsed-${preview.type} syntax-${preview.status}`}>
       <div className="answer-parse-heading">
         <span>Parola reads this as</span>
         <strong>{heading}</strong>
