@@ -10,6 +10,7 @@ createRoot(document.getElementById("root")!).render(
     <div className="app-root">
       <Home />
       <aside className="noun-pattern-manager" aria-label="Noun pattern manager">
+        <div className="noun-pattern-manager-title">Declension rules</div>
         <NounPatternsPanel />
       </aside>
     </div>
