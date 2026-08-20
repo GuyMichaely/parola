@@ -54,10 +54,19 @@ export function StorageSettingsModal({
     const nextPersistLocal = normalizedEndpoint ? draftPersistLocal : true;
     setSaving(true);
     try {
+      if (!normalizedEndpoint && mode === "remote") {
+        const syncedStorage = currentStorage();
+        const cards = syncedStorage.syncNow ? await syncedStorage.syncNow() : await syncedStorage.listCards();
+        if (readSyncStatus().status === "offline" && !initialPersistLocal) {
+          throw new Error("The sync server is unavailable and no persistent local copy exists. Sync before removing the API endpoint.");
+        }
+        await createCardStorage("").replaceCards(cards);
+      }
+
       saveSyncPersistLocal(nextPersistLocal);
       saveSyncLoadPolicy(draftLoadPolicy);
       await onApply(normalizedEndpoint ? "remote" : "browser", normalizedEndpoint);
-      onClose();
+      window.location.reload();
     } catch (caught) {
       saveSyncPersistLocal(initialPersistLocal);
       saveSyncLoadPolicy(initialLoadPolicy);
