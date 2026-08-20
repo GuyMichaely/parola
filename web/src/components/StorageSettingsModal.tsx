@@ -118,7 +118,7 @@ export function StorageSettingsModal({
       setTransferMessage("Import canceled; the current inventory was not changed.");
       return;
     }
-    const saved = await replaceInventory(storage, current, imported);
+    const saved = await replaceInventory(storage, imported);
     setTransferMessage(`Imported ${saved.cards.length} ${saved.cards.length === 1 ? "card" : "cards"} with noun morphology. Reloading Parola…`);
     window.location.reload();
   }
