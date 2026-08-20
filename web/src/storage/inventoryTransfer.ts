@@ -1,14 +1,27 @@
 import type { CardType, Flashcard } from "../cards/types";
+import {
+  cloneNounPatterns,
+  normalizeNounPatterns,
+  type NounPattern,
+} from "../cards/nounPatterns";
 import { cloneCards, normalizeCard } from "./cardCodec";
 import type { CardStorage } from "./types";
 
 const validTypes = new Set<CardType>(["noun", "verb", "adjective", "adverb"]);
 
-export function serializeInventory(cards: Flashcard[]) {
-  return JSON.stringify({ cards: cloneCards(cards) }, null, 2);
+export type InventoryTransferState = {
+  cards: Flashcard[];
+  nounPatterns: NounPattern[];
+};
+
+export function serializeInventory(cards: Flashcard[], nounPatterns: NounPattern[]) {
+  return JSON.stringify({
+    cards: cloneCards(cards),
+    nounPatterns: cloneNounPatterns(nounPatterns),
+  }, null, 2);
 }
 
-export function parseInventory(text: string) {
+export function parseInventory(text: string): InventoryTransferState {
   let value: unknown;
   try {
     value = JSON.parse(text) as unknown;
@@ -17,13 +30,13 @@ export function parseInventory(text: string) {
   }
 
   const payload = value && typeof value === "object" && !Array.isArray(value)
-    ? value as { cards?: unknown }
+    ? value as { cards?: unknown; nounPatterns?: unknown }
     : null;
-  if (!payload || !Array.isArray(payload.cards)) {
-    throw new Error("The inventory JSON must contain a cards array.");
+  if (!payload || !Array.isArray(payload.cards) || !Array.isArray(payload.nounPatterns)) {
+    throw new Error("The inventory JSON must contain cards and nounPatterns arrays.");
   }
 
-  return payload.cards.map((rawCard, index) => {
+  const cards = payload.cards.map((rawCard, index) => {
     let card: Flashcard;
     try {
       card = normalizeCard(rawCard);
@@ -34,14 +47,30 @@ export function parseInventory(text: string) {
     if (!validTypes.has(card.type)) throw new Error(`Card ${index + 1} has an unsupported type: ${String(card.type)}.`);
     return card;
   });
+
+  let nounPatterns: NounPattern[];
+  try {
+    nounPatterns = normalizeNounPatterns(payload.nounPatterns);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid noun patterns.";
+    throw new Error(`Noun patterns are invalid: ${message}`);
+  }
+  return { cards, nounPatterns };
 }
 
-export async function replaceInventory(storage: CardStorage, currentCards: Flashcard[], importedCards: Flashcard[]) {
+export async function replaceInventory(
+  storage: CardStorage,
+  current: InventoryTransferState,
+  imported: InventoryTransferState,
+) {
   try {
-    return await storage.replaceCards(importedCards);
+    await storage.replaceNounPatterns(imported.nounPatterns);
+    const cards = await storage.replaceCards(imported.cards);
+    return { cards, nounPatterns: await storage.listNounPatterns() };
   } catch (error) {
     try {
-      await storage.replaceCards(currentCards);
+      await storage.replaceNounPatterns(current.nounPatterns);
+      await storage.replaceCards(current.cards);
     } catch {
       // Best-effort rollback; preserve the original error for the caller.
     }
