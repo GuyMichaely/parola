@@ -3,15 +3,13 @@ import { SyncStorage, setLocalSyncStatus, type SyncStorageOptions } from "./sync
 import { readSyncLoadPolicy, readSyncPersistLocal } from "./settings";
 
 export type { CardStorage } from "./types";
-export type { StorageMode, SyncLoadPolicy } from "./settings";
+export type { SyncLoadPolicy } from "./settings";
 export type { SyncStatusState } from "./sync";
 export {
   readStorageEndpoint,
-  readStorageMode,
   readSyncLoadPolicy,
   readSyncPersistLocal,
   saveStorageEndpoint,
-  saveStorageMode,
   saveSyncLoadPolicy,
   saveSyncPersistLocal,
 } from "./settings";
