@@ -19,6 +19,7 @@ export type AnswerSyntaxAnalysis = {
   pieces: ParsePiece[];
   message: string;
   status: AnswerSyntaxStatus;
+  checkable: boolean;
   missing: string[];
   candidateNames: string[];
   syntaxName: string | null;
@@ -54,6 +55,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
       pieces: [typePiece],
       message: `This prompt expects a ${typeLabels[card.type].toLowerCase()} answer.`,
       status: "empty",
+      checkable: false,
       missing: [],
       candidateNames: [],
       syntaxName: null,
@@ -65,28 +67,24 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
   if (card.type === "noun") {
     const attempts = analyzeNounInput(trimmed, morphology, keywords);
     const selected = chooseNounPreviewAttempt(attempts);
-    const candidates = attempts.flatMap((attempt) => attempt.status === "complete" ? attempt.candidates : []);
-    const candidateNames = Array.from(new Set(candidates.map((candidate) => candidate.declensionRuleName)));
+    const hasCompleteSyntax = attempts.some((attempt) => attempt.status === "complete");
 
     if (!selected) {
       return {
         pieces: [typePiece],
         message: "No noun syntax recognizes this input.",
         status: "invalid",
+        checkable: false,
         missing: [],
-        candidateNames,
+        candidateNames: [],
         syntaxName: null,
       };
     }
 
-    let status: AnswerSyntaxStatus = selected.status === "partial"
-      ? "partial"
-      : selected.candidates.length
-        ? "complete"
-        : "invalid";
-    let message = selected.reason;
+    let status: AnswerSyntaxStatus = selected.status === "partial" ? "partial" : "complete";
+    let message = selected.status === "complete" ? "Noun syntax is complete." : selected.reason;
     let missing = selected.missing;
-    if (unclosedQuote && status !== "invalid") {
+    if (unclosedQuote) {
       status = "partial";
       missing = [...missing, "Closing quote"];
       message = "The quoted field is still open.";
@@ -95,8 +93,9 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
       pieces: [typePiece, ...selected.pieces],
       message,
       status,
+      checkable: hasCompleteSyntax && !unclosedQuote,
       missing,
-      candidateNames,
+      candidateNames: [],
       syntaxName: selected.syntax.name,
     };
   }
@@ -105,10 +104,12 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const labels = ["Infinitive", "io", "tu", "lui / lei", "noi", "voi", "loro", "Auxiliary", "Participle"];
     const values = whitespaceParts(trimmed);
     const status: AnswerSyntaxStatus = values.length > labels.length ? "invalid" : values.length === labels.length ? "complete" : "partial";
+    const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
     return {
       pieces: [typePiece, ...labeledPieces(values, labels)],
       message: status === "invalid" ? `Too many verb fields were supplied; expected ${labels.length}.` : status === "complete" ? "Verb syntax is complete." : "Verb syntax is valid so far but incomplete.",
-      status: unclosedQuote && status !== "invalid" ? "partial" : status,
+      status: finalStatus,
+      checkable: finalStatus === "complete",
       missing: unclosedQuote ? [...labels.slice(values.length), "Closing quote"] : labels.slice(values.length),
       candidateNames: [],
       syntaxName: "Full verb",
@@ -120,20 +121,24 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const values = whitespaceParts(trimmed);
     const shorthand = values.length === 1 ? standardAdjectivePattern(values[0] ?? "") : null;
     if (shorthand) {
+      const status: AnswerSyntaxStatus = unclosedQuote ? "partial" : "complete";
       return {
         pieces: [typePiece, { label: "Regular adjective base", value: values[0] ?? "" }],
         message: "Regular adjective shorthand is syntactically complete.",
-        status: unclosedQuote ? "partial" : "complete",
+        status,
+        checkable: status === "complete",
         missing: unclosedQuote ? ["Closing quote"] : [],
         candidateNames: ["Regular adjective"],
         syntaxName: "Regular adjective shorthand",
       };
     }
     const status: AnswerSyntaxStatus = values.length > labels.length ? "invalid" : values.length === labels.length ? "complete" : "partial";
+    const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
     return {
       pieces: [typePiece, ...labeledPieces(values, labels)],
       message: status === "invalid" ? `Too many adjective fields were supplied; expected ${labels.length}.` : status === "complete" ? "Adjective syntax is complete." : "Adjective syntax is valid so far but incomplete.",
-      status: unclosedQuote && status !== "invalid" ? "partial" : status,
+      status: finalStatus,
+      checkable: finalStatus === "complete",
       missing: unclosedQuote ? [...labels.slice(values.length), "Closing quote"] : labels.slice(values.length),
       candidateNames: [],
       syntaxName: "Full adjective",
@@ -142,10 +147,12 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
 
   const values = whitespaceParts(trimmed);
   const status: AnswerSyntaxStatus = values.length > 1 ? "invalid" : values.length === 1 ? "complete" : "partial";
+  const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
   return {
     pieces: [typePiece, ...labeledPieces(values, ["Invariant form"])],
     message: status === "invalid" ? "An adverb answer accepts one invariant form. Quote a stored multi-word form." : status === "complete" ? "Adverb syntax is complete." : "Adverb syntax is incomplete.",
-    status: unclosedQuote && status !== "invalid" ? "partial" : status,
+    status: finalStatus,
+    checkable: finalStatus === "complete",
     missing: unclosedQuote ? ["Closing quote"] : [],
     candidateNames: [],
     syntaxName: "Invariant adverb",
@@ -171,7 +178,7 @@ export function AnswerParsePreview({ card, value, keywords, morphology }: { card
           <code>{piece.value}</code>
         </div>)}
       </div>}
-      {preview.candidateNames.length > 0 && <p className="answer-parse-message"><strong>Possible declensions:</strong> {preview.candidateNames.join(" · ")}</p>}
+      {preview.candidateNames.length > 0 && <p className="answer-parse-message"><strong>Pattern:</strong> {preview.candidateNames.join(" · ")}</p>}
       {preview.missing.length > 0 && <p className="answer-parse-message"><strong>Still needed:</strong> {preview.missing.join(" · ")}</p>}
     </div>
   );
