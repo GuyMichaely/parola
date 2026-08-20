@@ -28,11 +28,17 @@ When local and remote timestamps differ, the newer snapshot is authoritative. Lo
 
 See `docs/REMOTE_API.md` for the sync endpoint contract.
 
+## Noun morphology
+
+Noun cards store a base, their actual declension rule, gender, number behavior, and article behavior. Declension rules generate noun forms and recognize typed forms. Syntax rules describe accepted answer structures. Inference sets control which declensions each shorthand syntax may infer.
+
+See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the model and candidate-evaluation rules.
+
 ## Inventory transfer
 
 **Storage & sync** can export/download the inventory, copy it to the clipboard, import a JSON file, or replace the inventory from pasted JSON.
 
-The inventory JSON payload contains `cards` and `nounPatterns`; export-format/version/timestamp metadata is not added.
+The inventory JSON payload contains `cards` and `nounMorphology`; export-format/version/timestamp metadata is not added.
 
 ## Development
 
