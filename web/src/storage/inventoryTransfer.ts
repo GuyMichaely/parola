@@ -36,19 +36,12 @@ export function parseInventory(text: string) {
   });
 }
 
-async function clearInventory(storage: CardStorage, cards: Flashcard[]) {
-  for (const card of cards) await storage.deleteCard(card.id);
-}
-
 export async function replaceInventory(storage: CardStorage, currentCards: Flashcard[], importedCards: Flashcard[]) {
   try {
-    await clearInventory(storage, currentCards);
-    return importedCards.length ? await storage.createCards(importedCards) : [];
+    return await storage.replaceCards(importedCards);
   } catch (error) {
     try {
-      const remaining = await storage.listCards();
-      await clearInventory(storage, remaining);
-      if (currentCards.length) await storage.createCards(currentCards);
+      await storage.replaceCards(currentCards);
     } catch {
       // Best-effort rollback; preserve the original error for the caller.
     }
