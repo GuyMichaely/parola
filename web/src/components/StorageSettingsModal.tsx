@@ -57,20 +57,25 @@ export function StorageSettingsModal({
     }
   }
 
+  async function currentInventory() {
+    const [cards, nounPatterns] = await Promise.all([storage.listCards(), storage.listNounPatterns()]);
+    return { cards, nounPatterns };
+  }
+
   async function exportInventory() {
     setTransferError("");
     setTransferMessage("");
     setTransferBusy(true);
     try {
-      const cards = await storage.listCards();
-      const blob = new Blob([serializeInventory(cards)], { type: "application/json" });
+      const inventory = await currentInventory();
+      const blob = new Blob([serializeInventory(inventory.cards, inventory.nounPatterns)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `parola-inventory-${new Date().toISOString().slice(0, 10)}.json`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setTransferMessage(`Exported ${cards.length} ${cards.length === 1 ? "card" : "cards"}.`);
+      setTransferMessage(`Exported ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} and ${inventory.nounPatterns.length} noun patterns.`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be exported.");
     } finally {
@@ -84,9 +89,9 @@ export function StorageSettingsModal({
     setTransferBusy(true);
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser context.");
-      const cards = await storage.listCards();
-      await navigator.clipboard.writeText(serializeInventory(cards));
-      setTransferMessage(`Copied ${cards.length} ${cards.length === 1 ? "card" : "cards"} to the clipboard.`);
+      const inventory = await currentInventory();
+      await navigator.clipboard.writeText(serializeInventory(inventory.cards, inventory.nounPatterns));
+      setTransferMessage(`Copied ${inventory.cards.length} ${inventory.cards.length === 1 ? "card" : "cards"} and ${inventory.nounPatterns.length} noun patterns to the clipboard.`);
     } catch (caught) {
       setTransferError(caught instanceof Error ? caught.message : "Inventory could not be copied.");
     } finally {
@@ -94,17 +99,17 @@ export function StorageSettingsModal({
     }
   }
 
-  async function replaceWithImportedInventory(importedCards: ReturnType<typeof parseInventory>, sourceDescription: string) {
-    const currentCards = await storage.listCards();
+  async function replaceWithImportedInventory(imported: ReturnType<typeof parseInventory>, sourceDescription: string) {
+    const current = await currentInventory();
     const confirmed = window.confirm(
-      `Replace the current ${currentCards.length}-card inventory with the ${importedCards.length}-card inventory ${sourceDescription}?\n\nThis replaces the whole inventory and will sync remotely when sync is configured.`,
+      `Replace the current ${current.cards.length}-card inventory with the ${imported.cards.length}-card inventory ${sourceDescription}?\n\nThis replaces cards and noun-pattern definitions and will sync remotely when sync is configured.`,
     );
     if (!confirmed) {
       setTransferMessage("Import canceled; the current inventory was not changed.");
       return;
     }
-    const savedCards = await replaceInventory(storage, currentCards, importedCards);
-    setTransferMessage(`Imported ${savedCards.length} ${savedCards.length === 1 ? "card" : "cards"}. Reloading Parola…`);
+    const saved = await replaceInventory(storage, current, imported);
+    setTransferMessage(`Imported ${saved.cards.length} ${saved.cards.length === 1 ? "card" : "cards"} and ${saved.nounPatterns.length} noun patterns. Reloading Parola…`);
     window.location.reload();
   }
 
@@ -213,7 +218,7 @@ export function StorageSettingsModal({
       <section className="inventory-transfer-panel" aria-label="Inventory import and export">
         <div>
           <strong>Inventory backup & restore</strong>
-          <p>Export or copy the current inventory, or replace it from Parola inventory JSON.</p>
+          <p>Export or copy the current cards and noun-pattern definitions, or replace them from Parola inventory JSON.</p>
         </div>
         <div className="inventory-transfer-actions">
           <button type="button" className="neutral-button" onClick={() => void exportInventory()} disabled={saving || transferBusy}>Export inventory</button>
@@ -229,7 +234,7 @@ export function StorageSettingsModal({
           <textarea
             value={importText}
             onChange={(event) => setImportText(event.target.value)}
-            placeholder={'{\n  "cards": [...]\n}'}
+            placeholder={'{\n  "cards": [...],\n  "nounPatterns": [...]\n}'}
             rows={8}
             disabled={saving || transferBusy}
             spellCheck={false}
