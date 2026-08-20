@@ -125,7 +125,7 @@ export default function Home() {
     return selectedInventoryTags.length === 0 || selectedInventoryTags.some((tag) => cardTagKeys.includes(tag));
   }), [cards, selectedInventoryTags]);
   const filteredCards = useMemo(() => tagMatchedCards.filter((item) => {
-    const haystack = `${item.english} ${item.italian} ${item.details.singular ?? ""} ${item.setName ?? ""} ${item.tags.join(" ")}`.toLowerCase();
+    const haystack = `${item.english} ${item.italian} ${item.details.base ?? ""} ${item.setName ?? ""} ${item.tags.join(" ")}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   }), [query, tagMatchedCards]);
 
@@ -420,7 +420,10 @@ export default function Home() {
 
     if (!normalizedEndpoint && storageEndpoint) {
       const latestCards = storage.syncNow ? await storage.syncNow() : await storage.listCards();
-      await createCardStorage("").replaceCards(latestCards);
+      const latestNounMorphology = await storage.listNounMorphology();
+      const localStorage = createCardStorage("");
+      await localStorage.replaceNounMorphology(latestNounMorphology);
+      await localStorage.replaceCards(latestCards);
       setCards(latestCards);
     }
 
