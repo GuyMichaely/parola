@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
 import { typeLabels } from "../cardTypes";
 import { answerKeyword, type AnswerKeywords } from "./StudyOptions";
-import { AnswerParsePreview } from "./AnswerParsePreview";
+import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import {
   inferArticle,
   verifyPowerAnswer,
@@ -97,9 +97,11 @@ export function EnglishAnswer({ card, showType = false }: { card: Flashcard; sho
 
 export function ItalianVerificationForm({ card, syntaxMode, compactType, keywords, onResult }: { card: Flashcard; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
   const [answer, setAnswer] = useState("");
+  const syntax = analyzeAnswerSyntax(card, answer, syntaxMode, compactType, keywords);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (syntax.status !== "complete") return;
     onResult(verifyPowerAnswer(card, answer, syntaxMode, keywords), answer);
   }
 
@@ -122,7 +124,7 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>
-          <p><strong>Noun:</strong> omit <code>{keywords.noun}</code> when an article or gender/number markers identify the noun format. Full: <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Plural-only: <code>i vestiti</code>. Articleless singular-only: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>. An ambiguous article also needs gender: <code>{keywords.feminine} {keywords.singularOnly} l’Aquila</code>.</p>
+          <p><strong>Noun:</strong> omit <code>{keywords.noun}</code> when an article or gender/number markers identify the noun format. Full: <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Regular noun shorthand such as <code>il libro</code> is accepted only when Parola can infer every omitted stored form from its supported regular pattern. Plural-only: <code>i vestiti</code>. Articleless singular-only: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>. An ambiguous article also needs gender: <code>{keywords.feminine} {keywords.singularOnly} l’Aquila</code>.</p>
           <p><strong>Verb:</strong> <code>{keywords.verb} infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
           <p><strong>Adjective:</strong> regular shorthand <code>{keywords.adjective} bello</code>, or full <code>{keywords.adjective} bello bella belli belle</code>.</p>
           <p><strong>Adverb:</strong> invariant form <code>{keywords.adverb} molto</code>.</p>
@@ -130,7 +132,7 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
           {syntaxMode === "compact" && compactType && <p>In {compactLabel}, omit the <code>{answerKeyword(compactType, keywords)}</code> prefix.</p>}
         </div>
       </details>
-      <button className="primary-button check-answer-button" type="submit">Check answer</button>
+      <button className="primary-button check-answer-button" type="submit" disabled={syntax.status !== "complete"}>Check answer</button>
     </form>
   );
 }
