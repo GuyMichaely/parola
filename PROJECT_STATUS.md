@@ -46,6 +46,12 @@ Two sync preferences are user-configurable:
 
 The header exposes sync state such as checking, syncing, synced, sync available, or not synced.
 
+## Inventory categorization
+
+Cards have optional sets and ordinary tags. There is no separate deck model.
+
+The previous deck implementation was only a hidden tag namespace (`__deck__:`) with special UI treatment, so that distinction has been removed. Mistake-group creation now adds an ordinary tag. Existing strings that happen to use the old prefix are treated as ordinary visible tags rather than receiving compatibility behavior.
+
 ## Extension capture model
 
 Capture is intentionally user-driven. There is no automatic Duolingo DOM detection or browser automation.
@@ -85,7 +91,19 @@ The target is one clean canonical model, not permanent support for historical re
 
 ## Current web-app UX
 
-The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI includes a realtime parsing preview that explains how Parola is interpreting the current input: inferred/explicit part of speech, gender/number markers, and positional grammatical fields.
+The web app supports typed English → Italian verification using configurable compact keywords/markers. The typed-answer UI includes a realtime parsing preview that explains how Parola is interpreting the current input.
+
+Typed-answer syntax has three useful states:
+
+- a syntactically plausible partial answer remains visible as an in-progress parse and shows which fields are still required;
+- a syntactically invalid answer is explicitly marked invalid;
+- only syntactically complete answers can be submitted for correctness checking.
+
+Regular noun shorthand such as article + singular noun is intentionally accepted only when Parola can infer every omitted stored form using its supported regular-noun pattern. Otherwise the preview shows the shorthand as incomplete and lists the remaining noun fields needed for the full form.
+
+Card creation blocks duplicates with the same part of speech, English prompt, and canonical Italian field, using normalized case/Unicode comparison. Duplicate cards within the same new batch are blocked as well.
+
+Study rating hotkeys follow the left-to-right button order: **1 = Wrong**, **2 = Right**, while Enter remains a Right shortcut.
 
 The Storage & sync dialog also provides manual inventory backup/restore:
 
@@ -93,7 +111,7 @@ The Storage & sync dialog also provides manual inventory backup/restore:
 - copy the same inventory JSON to the clipboard;
 - import a JSON file as a full inventory replacement;
 - paste inventory JSON into a text box and import it;
-- cards carry their sets, decks/tags, and grammatical details in the export.
+- cards carry their sets, tags, and grammatical details in the export.
 
 The canonical inventory transfer JSON is simply an object containing `cards`; it does not contain `format`, `version`, or `exportedAt`. Sync timestamps are internal synchronization metadata and are not part of the manual inventory export.
 
