@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const port = Number(process.env.PORT || 8080);
 const dataPath = process.env.PAROLA_DATA_PATH || "/home/data/cards.json";
+const metadataPath = `${dataPath}.meta.json`;
 const allowedOrigin = process.env.PAROLA_ALLOWED_ORIGIN || "https://guymichaely.com";
 const validTypes = new Set(["noun", "verb", "adjective", "adverb"]);
 const maxBodyBytes = 1024 * 1024;
@@ -86,22 +87,73 @@ async function readCards() {
   }
 }
 
-async function writeCards(cards) {
+async function readUpdatedAt() {
+  try {
+    const parsed = JSON.parse(await readFile(metadataPath, "utf8"));
+    const updatedAt = typeof parsed?.updatedAt === "string" ? parsed.updatedAt : "";
+    if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) throw new Error("Invalid sync metadata.");
+    return updatedAt;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    try {
+      const info = await stat(dataPath);
+      return info.mtime.toISOString();
+    } catch (statError) {
+      if (statError?.code === "ENOENT") return null;
+      throw statError;
+    }
+  }
+}
+
+async function readState() {
+  const [cards, updatedAt] = await Promise.all([readCards(), readUpdatedAt()]);
+  return { cards, updatedAt };
+}
+
+async function writeAtomic(path, contents) {
   await ensureDataDirectory();
-  const tempPath = `${dataPath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(cards, null, 2)}\n`, "utf8");
-  await rename(tempPath, dataPath);
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, contents, "utf8");
+  await rename(tempPath, path);
+}
+
+async function writeState(cards, updatedAt) {
+  await writeAtomic(dataPath, `${JSON.stringify(cards, null, 2)}\n`);
+  await writeAtomic(metadataPath, `${JSON.stringify({ updatedAt }, null, 2)}\n`);
+}
+
+function queueWrite(operation) {
+  const next = writeQueue.then(operation);
+  writeQueue = next.catch(() => {});
+  return next;
 }
 
 function mutateCards(operation) {
-  const next = writeQueue.then(async () => {
+  return queueWrite(async () => {
     const cards = await readCards();
     const result = await operation(cards);
-    await writeCards(cards);
+    await writeState(cards, new Date().toISOString());
     return result;
   });
-  writeQueue = next.catch(() => {});
-  return next;
+}
+
+function replaceStateIfNewer(cards, updatedAt) {
+  return queueWrite(async () => {
+    const current = await readState();
+    const incomingTime = Date.parse(updatedAt);
+    const currentTime = current.updatedAt ? Date.parse(current.updatedAt) : Number.NEGATIVE_INFINITY;
+
+    if (incomingTime < currentTime) return { conflict: true, state: current };
+    if (incomingTime === currentTime) {
+      return JSON.stringify(cards) === JSON.stringify(current.cards)
+        ? { conflict: false, state: current }
+        : { conflict: true, state: current };
+    }
+
+    const state = { cards, updatedAt };
+    await writeState(cards, updatedAt);
+    return { conflict: false, state };
+  });
 }
 
 async function readJsonBody(req) {
@@ -136,6 +188,30 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (url.pathname === "/state") {
+      if (req.method === "GET") {
+        return sendJson(res, 200, await readState(), cors);
+      }
+
+      if (req.method === "PUT") {
+        const body = await readJsonBody(req);
+        if (!body || !Array.isArray(body.cards)) {
+          return sendJson(res, 400, { error: "PUT /state requires a cards array." }, cors);
+        }
+        if (typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt))) {
+          return sendJson(res, 400, { error: "PUT /state requires a valid updatedAt timestamp." }, cors);
+        }
+        const cards = body.cards.map((card) => normalizeCard(card, { requireId: true }));
+        const result = await replaceStateIfNewer(cards, body.updatedAt);
+        if (result.conflict) {
+          return sendJson(res, 409, { error: "Remote inventory is newer.", state: result.state }, cors);
+        }
+        return sendJson(res, 200, result.state, cors);
+      }
+
+      return sendJson(res, 405, { error: "Method not allowed." }, { ...cors, allow: "GET, PUT, OPTIONS" });
+    }
+
     if (url.pathname !== "/cards") {
       return sendJson(res, 404, { error: "Not found." }, cors);
     }
@@ -148,12 +224,7 @@ const server = createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const incoming = Array.isArray(body) ? body : body?.cards;
       if (!Array.isArray(incoming) || !incoming.length) {
-        return sendJson(
-          res,
-          400,
-          { error: "POST body must contain a non-empty cards array." },
-          cors,
-        );
+        return sendJson(res, 400, { error: "POST body must contain a non-empty cards array." }, cors);
       }
 
       const created = await mutateCards((cards) => {
@@ -198,12 +269,7 @@ const server = createServer(async (req, res) => {
       return res.end();
     }
 
-    return sendJson(
-      res,
-      405,
-      { error: "Method not allowed." },
-      { ...cors, allow: "GET, POST, PUT, DELETE, OPTIONS" },
-    );
+    return sendJson(res, 405, { error: "Method not allowed." }, { ...cors, allow: "GET, POST, PUT, DELETE, OPTIONS" });
   } catch (error) {
     console.error(error);
     const message =
