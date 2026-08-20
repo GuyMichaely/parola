@@ -22,7 +22,6 @@ export type AnswerSyntaxStatus = "empty" | "partial" | "complete" | "invalid";
 
 export type AnswerSyntaxAnalysis = {
   type: CardType;
-  source: string;
   pieces: ParsePiece[];
   message: string;
   status: AnswerSyntaxStatus;
@@ -87,7 +86,7 @@ function analyzed(
   status: AnswerSyntaxStatus,
   missing: string[] = [],
 ): AnswerSyntaxAnalysis {
-  return { type, source: "prompted card", pieces, message, status, missing };
+  return { type, pieces, message, status, missing };
 }
 
 export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords): AnswerSyntaxAnalysis {
