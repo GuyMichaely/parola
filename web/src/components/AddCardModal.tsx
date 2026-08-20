@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
+import type { NounMorphology } from "../cards/nounMorphology";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
   adjectiveCard,
@@ -37,12 +38,14 @@ import {
 
 export function BatchNouns({
   knownSets,
+  morphology,
   saving,
   error,
   onSave,
   onCancel,
 }: {
   knownSets: string[];
+  morphology: NounMorphology;
   saving: boolean;
   error: string;
   onSave: (cards: Flashcard[]) => Promise<void>;
@@ -93,22 +96,26 @@ export function BatchNouns({
       return;
     }
     setLocalError("");
-    await onSave(used.map((row, index) => nounCard({
-      ...row,
-      id: Date.now() + index,
-      english: row.english.trim(),
-      singular: row.singular.trim(),
-      plural: row.plural.trim(),
-      setName,
-      tags,
-    })));
+    try {
+      await onSave(used.map((row, index) => nounCard({
+        ...row,
+        id: Date.now() + index,
+        english: row.english.trim(),
+        singular: row.singular.trim(),
+        plural: row.plural.trim(),
+        setName,
+        tags,
+      }, morphology)));
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : "The noun rows do not match the configured morphology.");
+    }
   }
 
   return (
     <form onSubmit={submit}>
       <SetField knownSets={knownSets} value={draft.setName} onChange={(setName) => setDraft((currentDraft) => ({ ...currentDraft, setName }))} />
       <TagsField value={draft.tags} onChange={(tags) => setDraft((currentDraft) => ({ ...currentDraft, tags }))} />
-      <p className="batch-help">One noun per row. Articles are suggested from gender and spelling—including lo / gli / uno forms—and remain editable. Choose None when a stored form takes no article. Progress saves automatically on this device.</p>
+      <p className="batch-help">One noun per row. Articles are suggested from gender and spelling, including lo / gli / uno forms, and remain editable. Choose None when a stored form takes no article. Progress saves automatically on this device.</p>
       <div className="batch-table-wrap">
         <table className="batch-table">
           <thead><tr><th>English</th><th>Gender</th><th>Singular</th><th>Plural</th><th>Def. sg.</th><th>Def. pl.</th><th>Indef.</th><th><span className="sr-only">Actions</span></th></tr></thead>
@@ -348,10 +355,12 @@ export function BatchAdverbs({ knownSets, saving, error, onSave, onCancel }: { k
 
 export function AddCardModal({
   knownSets,
+  morphology,
   onClose,
   onBatch,
 }: {
   knownSets: string[];
+  morphology: NounMorphology;
   onClose: () => void;
   onBatch: (cards: Flashcard[]) => Promise<void>;
 }) {
@@ -390,7 +399,7 @@ export function AddCardModal({
           ))}
         </div>
 
-        {type === "noun" && <BatchNouns knownSets={knownSets} saving={saving} error={error} onSave={saveBatch} onCancel={onClose} />}
+        {type === "noun" && <BatchNouns knownSets={knownSets} morphology={morphology} saving={saving} error={error} onSave={saveBatch} onCancel={onClose} />}
         {type === "verb" && <BatchVerbs knownSets={knownSets} saving={saving} error={error} onSave={saveBatch} onCancel={onClose} />}
         {type === "adjective" && <BatchAdjectives knownSets={knownSets} saving={saving} error={error} onSave={saveBatch} onCancel={onClose} />}
         {type === "adverb" && <BatchAdverbs knownSets={knownSets} saving={saving} error={error} onSave={saveBatch} onCancel={onClose} />}
