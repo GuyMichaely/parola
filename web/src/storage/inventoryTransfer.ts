@@ -5,14 +5,11 @@ import {
   type NounMorphology,
 } from "../cards/nounMorphology";
 import { cloneCards, normalizeCard } from "./cardCodec";
-import type { CardStorage } from "./types";
+import type { CardStorage, InventoryState } from "./types";
 
 const validTypes = new Set<CardType>(["noun", "verb", "adjective", "adverb"]);
 
-export type InventoryTransferState = {
-  cards: Flashcard[];
-  nounMorphology: NounMorphology;
-};
+export type InventoryTransferState = InventoryState;
 
 export function serializeInventory(cards: Flashcard[], nounMorphology: NounMorphology) {
   return JSON.stringify({
@@ -60,20 +57,8 @@ export function parseInventory(text: string): InventoryTransferState {
 
 export async function replaceInventory(
   storage: CardStorage,
-  current: InventoryTransferState,
+  _current: InventoryTransferState,
   imported: InventoryTransferState,
 ) {
-  try {
-    await storage.replaceNounMorphology(imported.nounMorphology);
-    const cards = await storage.replaceCards(imported.cards);
-    return { cards, nounMorphology: await storage.listNounMorphology() };
-  } catch (error) {
-    try {
-      await storage.replaceNounMorphology(current.nounMorphology);
-      await storage.replaceCards(current.cards);
-    } catch {
-      // Best-effort rollback; preserve the original error for the caller.
-    }
-    throw error;
-  }
+  return storage.replaceInventory(imported);
 }
