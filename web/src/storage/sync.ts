@@ -1,4 +1,10 @@
 import type { Flashcard } from "../cards/types";
+import {
+  cloneNounPatterns,
+  defaultNounPatterns,
+  normalizeNounPatterns,
+  type NounPattern,
+} from "../cards/nounPatterns";
 import { assertNoDuplicateCards, cloneCards } from "./cardCodec";
 import {
   clearLocalSnapshot,
@@ -46,8 +52,9 @@ function setSyncStatus(state: SyncStatusState) {
   for (const listener of syncListeners) listener(state);
 }
 
-function cardsEqual(left: InventorySnapshot | RemoteSnapshot, right: InventorySnapshot | RemoteSnapshot) {
-  return JSON.stringify(left.cards) === JSON.stringify(right.cards);
+function snapshotsEqual(left: InventorySnapshot | RemoteSnapshot, right: InventorySnapshot | RemoteSnapshot) {
+  return JSON.stringify(left.cards) === JSON.stringify(right.cards)
+    && JSON.stringify(left.nounPatterns) === JSON.stringify(right.nounPatterns);
 }
 
 function timestamp(value: string | null) {
@@ -99,7 +106,11 @@ export class SyncStorage implements CardStorage {
 
   private acceptSavedState(saved: RemoteSnapshot) {
     this.latestRemoteUpdatedAt = saved.updatedAt;
-    this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
+    this.snapshot = {
+      cards: cloneCards(saved.cards),
+      nounPatterns: cloneNounPatterns(saved.nounPatterns),
+      updatedAt: saved.updatedAt,
+    };
     this.persistSnapshot();
     setSyncStatus({ status: "synced", message: "Synced" });
   }
@@ -114,6 +125,7 @@ export class SyncStorage implements CardStorage {
     try {
       const saved = await this.remote.writeState({
         cards: cloneCards(this.snapshot.cards),
+        nounPatterns: cloneNounPatterns(this.snapshot.nounPatterns),
         updatedAt: this.snapshot.updatedAt,
       });
       this.acceptSavedState(saved);
@@ -127,12 +139,14 @@ export class SyncStorage implements CardStorage {
 
         this.snapshot = {
           cards: cloneCards(this.snapshot.cards),
+          nounPatterns: cloneNounPatterns(this.snapshot.nounPatterns),
           updatedAt: nextTimestamp(this.snapshot.updatedAt, error.state.updatedAt),
         };
         this.persistSnapshot();
         try {
           const saved = await this.remote.writeState({
             cards: cloneCards(this.snapshot.cards),
+            nounPatterns: cloneNounPatterns(this.snapshot.nounPatterns),
             updatedAt: this.snapshot.updatedAt,
           });
           this.acceptSavedState(saved);
@@ -153,9 +167,10 @@ export class SyncStorage implements CardStorage {
   private async reconcile(local: InventorySnapshot, remote: RemoteSnapshot, force: boolean) {
     this.latestRemoteUpdatedAt = remote.updatedAt;
 
-    if (cardsEqual(local, remote)) {
+    if (snapshotsEqual(local, remote)) {
       this.snapshot = {
         cards: cloneCards(local.cards),
+        nounPatterns: cloneNounPatterns(local.nounPatterns),
         updatedAt: newerSide(local, remote) === "remote" ? remote.updatedAt : local.updatedAt,
       };
       this.persistSnapshot();
@@ -165,7 +180,11 @@ export class SyncStorage implements CardStorage {
 
     const side = newerSide(local, remote);
     if (!force && this.loadPolicy === "ask" && local.cards.length) {
-      this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
+      this.snapshot = {
+        cards: cloneCards(local.cards),
+        nounPatterns: cloneNounPatterns(local.nounPatterns),
+        updatedAt: local.updatedAt,
+      };
       this.persistSnapshot();
       setSyncStatus({ status: "pending", message: "Sync available" });
       return;
@@ -178,6 +197,7 @@ export class SyncStorage implements CardStorage {
 
     this.snapshot = {
       cards: cloneCards(local.cards),
+      nounPatterns: cloneNounPatterns(local.nounPatterns),
       updatedAt: local.updatedAt ?? nextTimestamp(remote.updatedAt),
     };
     this.persistSnapshot();
@@ -187,8 +207,14 @@ export class SyncStorage implements CardStorage {
   private async initialize() {
     if (this.initialization) return this.initialization;
     this.initialization = (async () => {
-      const local = this.persistLocal ? readLocalSnapshot() : { cards: [], updatedAt: null };
-      this.snapshot = { cards: cloneCards(local.cards), updatedAt: local.updatedAt };
+      const local = this.persistLocal
+        ? readLocalSnapshot()
+        : { cards: [], nounPatterns: cloneNounPatterns(defaultNounPatterns), updatedAt: null };
+      this.snapshot = {
+        cards: cloneCards(local.cards),
+        nounPatterns: cloneNounPatterns(local.nounPatterns),
+        updatedAt: local.updatedAt,
+      };
       setSyncStatus({ status: "checking", message: "Checking sync…" });
       try {
         const remote = await this.remote.readState();
@@ -201,11 +227,16 @@ export class SyncStorage implements CardStorage {
     return this.initialization;
   }
 
-  private async mutate(operation: (cards: Flashcard[]) => Flashcard[]) {
+  private async mutateCards(operation: (cards: Flashcard[]) => Flashcard[]) {
     await this.initialize();
-    const current = this.snapshot ?? { cards: [], updatedAt: null };
+    const current = this.snapshot ?? {
+      cards: [],
+      nounPatterns: cloneNounPatterns(defaultNounPatterns),
+      updatedAt: null,
+    };
     this.snapshot = {
       cards: cloneCards(operation(cloneCards(current.cards))),
+      nounPatterns: cloneNounPatterns(current.nounPatterns),
       updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
     };
     this.persistSnapshot();
@@ -217,7 +248,11 @@ export class SyncStorage implements CardStorage {
     setSyncStatus({ status: "checking", message: "Checking sync…" });
     try {
       const remote = await this.remote.readState();
-      const local = this.snapshot ?? { cards: [], updatedAt: null };
+      const local = this.snapshot ?? {
+        cards: [],
+        nounPatterns: cloneNounPatterns(defaultNounPatterns),
+        updatedAt: null,
+      };
       await this.reconcile(local, remote, true);
     } catch {
       setSyncStatus({ status: "offline", message: "Not synced" });
@@ -236,7 +271,7 @@ export class SyncStorage implements CardStorage {
     assertNoDuplicateCards(existing, cards);
     let nextId = existing.reduce((max, card) => Math.max(max, card.id), 0) + 1;
     const inserted = cloneCards(cards).map((card) => ({ ...card, id: nextId++ }));
-    await this.mutate((current) => [...inserted, ...current]);
+    await this.mutateCards((current) => [...inserted, ...current]);
     return cloneCards(inserted);
   }
 
@@ -245,7 +280,7 @@ export class SyncStorage implements CardStorage {
     if (!(this.snapshot?.cards ?? []).some((item) => item.id === card.id)) {
       throw new Error("Card not found in local inventory.");
     }
-    await this.mutate((cards) => cards.map((item) => item.id === card.id ? cloneCards([card])[0] : item));
+    await this.mutateCards((cards) => cards.map((item) => item.id === card.id ? cloneCards([card])[0] : item));
     return cloneCards([card])[0];
   }
 
@@ -254,12 +289,35 @@ export class SyncStorage implements CardStorage {
     if (!(this.snapshot?.cards ?? []).some((item) => item.id === id)) {
       throw new Error("Card not found in local inventory.");
     }
-    await this.mutate((cards) => cards.filter((card) => card.id !== id));
+    await this.mutateCards((cards) => cards.filter((card) => card.id !== id));
   }
 
   async replaceCards(cards: Flashcard[]) {
     const replacement = cloneCards(cards);
-    await this.mutate(() => replacement);
+    await this.mutateCards(() => replacement);
     return cloneCards(replacement);
+  }
+
+  async listNounPatterns() {
+    await this.initialize();
+    return cloneNounPatterns(this.snapshot?.nounPatterns ?? defaultNounPatterns);
+  }
+
+  async replaceNounPatterns(patterns: NounPattern[]) {
+    await this.initialize();
+    const replacement = normalizeNounPatterns(patterns);
+    const current = this.snapshot ?? {
+      cards: [],
+      nounPatterns: cloneNounPatterns(defaultNounPatterns),
+      updatedAt: null,
+    };
+    this.snapshot = {
+      cards: cloneCards(current.cards),
+      nounPatterns: cloneNounPatterns(replacement),
+      updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
+    };
+    this.persistSnapshot();
+    await this.pushLocal();
+    return cloneNounPatterns(replacement);
   }
 }
