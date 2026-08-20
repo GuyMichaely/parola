@@ -1,12 +1,25 @@
 import { BrowserStorage } from "./browser";
-import { RemoteStorage } from "./remote";
+import { SyncStorage, readSyncStatus, setLocalSyncStatus, subscribeSyncStatus, type SyncStorageOptions, type SyncStatusState } from "./sync";
 
 export type { CardStorage } from "./types";
-export type { StorageMode } from "./settings";
-export { readStorageEndpoint, readStorageMode, saveStorageEndpoint, saveStorageMode } from "./settings";
+export type { SyncLoadPolicy } from "./settings";
+export type { SyncStatusState } from "./sync";
+export {
+  readStorageEndpoint,
+  readSyncLoadPolicy,
+  readSyncPersistLocal,
+  saveStorageEndpoint,
+  saveSyncLoadPolicy,
+  saveSyncPersistLocal,
+} from "./settings";
+export { readSyncStatus, subscribeSyncStatus } from "./sync";
 export { parseInventory, replaceInventory, serializeInventory } from "./inventoryTransfer";
 
-export function createCardStorage(endpoint: string) {
+export function createCardStorage(endpoint: string, options?: SyncStorageOptions) {
   const normalizedEndpoint = endpoint.trim();
-  return normalizedEndpoint ? new RemoteStorage(normalizedEndpoint) : new BrowserStorage();
+  if (!normalizedEndpoint) {
+    setLocalSyncStatus();
+    return new BrowserStorage();
+  }
+  return new SyncStorage(normalizedEndpoint, options ?? { persistLocal: true, loadPolicy: "automatic" });
 }
