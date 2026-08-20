@@ -1,4 +1,5 @@
 import type { CardType } from "../cards/types";
+import type { NounPattern } from "../cards/nounPatterns";
 import {
   type AdjectiveBatchRow,
   type AdverbBatchRow,
@@ -55,17 +56,33 @@ export function TagsField({
   );
 }
 
-export function NounRowCells({ row, index, onChange, onRemove, autoFocus = false }: { row: BatchRow; index: number; onChange: <K extends keyof BatchRow>(field: K, value: BatchRow[K]) => void; onRemove?: () => void; autoFocus?: boolean }) {
+export function NounRowCells({
+  row,
+  index,
+  nounPatterns = [],
+  onChange,
+  onRemove,
+  autoFocus = false,
+}: {
+  row: BatchRow;
+  index: number;
+  nounPatterns?: NounPattern[];
+  onChange: <K extends keyof BatchRow>(field: K, value: BatchRow[K]) => void;
+  onRemove?: () => void;
+  autoFocus?: boolean;
+}) {
+  const patterned = row.patternId !== "manual";
   const singularDisabled = !row.singular.trim();
   const pluralDisabled = !row.plural.trim();
   return <>
     <td><input aria-label={`Row ${index + 1} English`} value={row.english} onChange={(e) => onChange("english", e.target.value)} placeholder="the book" autoFocus={autoFocus} /></td>
-    <td><select aria-label={`Row ${index + 1} gender`} value={row.gender} onChange={(e) => onChange("gender", e.target.value as BatchRow["gender"])}><option value="masculine">M</option><option value="feminine">F</option></select></td>
-    <td><input aria-label={`Row ${index + 1} singular`} value={row.singular} onChange={(e) => onChange("singular", e.target.value)} placeholder="libro" /></td>
-    <td><input aria-label={`Row ${index + 1} plural`} value={row.plural} onChange={(e) => onChange("plural", e.target.value)} placeholder="libri" /></td>
-    <td><select aria-label={`Row ${index + 1} definite singular article`} value={row.definiteSingularArticle} onChange={(e) => onChange("definiteSingularArticle", e.target.value)} disabled={singularDisabled}><option value="">None</option><option>il</option><option>lo</option><option>la</option><option>l’</option></select></td>
-    <td><select aria-label={`Row ${index + 1} definite plural article`} value={row.definitePluralArticle} onChange={(e) => onChange("definitePluralArticle", e.target.value)} disabled={pluralDisabled}><option value="">None</option><option>i</option><option>gli</option><option>le</option></select></td>
-    <td><select aria-label={`Row ${index + 1} indefinite article`} value={row.indefiniteArticle} onChange={(e) => onChange("indefiniteArticle", e.target.value)} disabled={singularDisabled}><option value="">None</option><option>un</option><option>uno</option><option>una</option><option>un’</option></select></td>
+    <td><select aria-label={`Row ${index + 1} noun pattern`} value={row.patternId} onChange={(e) => onChange("patternId", e.target.value)}><option value="manual">Manual forms</option>{nounPatterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></td>
+    <td><select aria-label={`Row ${index + 1} gender`} value={row.gender} onChange={(e) => onChange("gender", e.target.value as BatchRow["gender"])} disabled={patterned}><option value="masculine">M</option><option value="feminine">F</option></select></td>
+    <td><input aria-label={`Row ${index + 1} singular base`} value={row.singular} onChange={(e) => onChange("singular", e.target.value)} placeholder="libro" /></td>
+    <td><input aria-label={`Row ${index + 1} plural`} value={row.plural} onChange={(e) => onChange("plural", e.target.value)} placeholder="libri" disabled={patterned} /></td>
+    <td><select aria-label={`Row ${index + 1} definite singular article`} value={row.definiteSingularArticle} onChange={(e) => onChange("definiteSingularArticle", e.target.value)} disabled={patterned || singularDisabled}><option value="">None</option><option>il</option><option>lo</option><option>la</option><option>l’</option></select></td>
+    <td><select aria-label={`Row ${index + 1} definite plural article`} value={row.definitePluralArticle} onChange={(e) => onChange("definitePluralArticle", e.target.value)} disabled={patterned || pluralDisabled}><option value="">None</option><option>i</option><option>gli</option><option>le</option></select></td>
+    <td><select aria-label={`Row ${index + 1} indefinite article`} value={row.indefiniteArticle} onChange={(e) => onChange("indefiniteArticle", e.target.value)} disabled={patterned || singularDisabled}><option value="">None</option><option>un</option><option>uno</option><option>una</option><option>un’</option></select></td>
     {onRemove && <td><button type="button" className="row-remove" tabIndex={-1} onClick={onRemove} aria-label={`Remove row ${index + 1}`}>×</button></td>}
   </>;
 }
