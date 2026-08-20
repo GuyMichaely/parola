@@ -107,11 +107,13 @@ If the answer contains contradictory facts, such as an explicit masculine marker
 
 ## Live preview
 
-The live preview is structural. It shows which answer syntax is being recognized, the fields already consumed, and any fields still needed. It does not display noun declension candidates or indicate which candidate would match the prompted card.
+The live preview shows which answer syntax is being recognized, the fields already consumed, and any fields still needed. When the typed input is sufficient to produce morphology candidates, it may also show the possible declension rules inferred from the learner's input and the configured inference set.
 
-This prevents the preview from revealing the morphology being tested. The candidate set still exists internally and is used after submission to decide whether a structurally complete answer is correct or wrong.
+Showing those candidates does not reveal the answer by itself. Candidate generation does not consult the prompted card's canonical `ruleId` or base. The preview must not indicate which candidate, if any, matches the prompted card before submission.
 
-A preview and submission can therefore differ in one important way: the preview may say that the noun syntax is complete even when the allowed morphology rules cannot interpret the supplied noun form. Submission then records that answer as wrong rather than rejecting it as invalid syntax.
+For example, `lo specchio` may visibly produce both a broad `o-i` interpretation and a more specific `chio-chi` interpretation when both are allowed. The preview may list both. It must not mark `chio-chi` as the correct one merely because the prompted card uses that rule.
+
+A structurally complete noun answer remains checkable even when no allowed declension rule produces a candidate. Submission records that answer as wrong rather than rejecting it as invalid syntax.
 
 ## Example: specchio and cetriolo
 
