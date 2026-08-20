@@ -1,32 +1,30 @@
 import { type FormEvent, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
+import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
+import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
 import { answerKeyword, type AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import {
-  inferArticle,
   verifyPowerAnswer,
   type AnswerSyntaxMode,
 } from "../study/logic";
 
 export function NounAnswer({ card }: { card: Flashcard }) {
-  const d = card.details;
-  const singular = d.singular === undefined ? card.italian : d.singular;
-  const plural = d.plural ?? "";
-  const definiteSingularArticle = d.definiteSingularArticle || inferArticle(d.definiteSingular, singular, "");
-  const definitePluralArticle = d.definitePluralArticle || inferArticle(d.definitePlural, plural, "");
-  const indefiniteArticle = d.indefiniteArticle || inferArticle(d.indefinite, singular, "");
-  const hasArticles = Boolean(definiteSingularArticle || definitePluralArticle || indefiniteArticle);
+  const patterns = getActiveNounPatterns();
+  const forms = resolvedNounForms(card, patterns);
+  const pattern = nounPatternForCard(card, patterns);
+  const hasArticles = Boolean(forms.definiteSingularArticle || forms.definitePluralArticle || forms.indefiniteArticle);
   return (
     <div className="answer-content">
-      <span className="answer-label">Italian · {d.gender}</span>
-      <h2>{singular || plural || card.italian}</h2>
+      <span className="answer-label">Italian · {forms.gender}{pattern ? ` · ${pattern.name}` : ""}</span>
+      <h2>{forms.singular || forms.plural || card.italian}</h2>
       {hasArticles && <table className="noun-forms-table">
         <thead><tr><th>Form</th><th>Article</th><th>Word</th></tr></thead>
         <tbody>
-          {singular && definiteSingularArticle && <tr><td>Definite singular</td><td>{definiteSingularArticle}</td><td>{singular}</td></tr>}
-          {plural && definitePluralArticle && <tr><td>Definite plural</td><td>{definitePluralArticle}</td><td>{plural}</td></tr>}
-          {singular && indefiniteArticle && <tr><td>Indefinite</td><td>{indefiniteArticle}</td><td>{singular}</td></tr>}
+          {forms.singular && forms.definiteSingularArticle && <tr><td>Definite singular</td><td>{forms.definiteSingularArticle}</td><td>{forms.singular}</td></tr>}
+          {forms.plural && forms.definitePluralArticle && <tr><td>Definite plural</td><td>{forms.definitePluralArticle}</td><td>{forms.plural}</td></tr>}
+          {forms.singular && forms.indefiniteArticle && <tr><td>Indefinite</td><td>{forms.indefiniteArticle}</td><td>{forms.singular}</td></tr>}
         </tbody>
       </table>}
       {!hasArticles && <p className="noun-article-note">No stored articles</p>}
@@ -78,10 +76,11 @@ export function CardAnswer({ card }: { card: Flashcard }) {
 }
 
 export function ItalianPrompt({ card }: { card: Flashcard }) {
+  const nounForm = card.type === "noun" ? resolvedNounForms(card, getActiveNounPatterns()).singular : "";
   return (
     <div className="question-content">
       <span className="answer-label">Italian</span>
-      <h2>{card.type === "noun" ? card.details.singular || card.italian : card.italian}</h2>
+      <h2>{card.type === "noun" ? nounForm || card.italian : card.italian}</h2>
     </div>
   );
 }
@@ -124,7 +123,7 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>
-          <p><strong>Noun:</strong> omit <code>{keywords.noun}</code> when an article or gender/number markers identify the noun format. Full: <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Regular noun shorthand such as <code>il libro</code> is accepted only when Parola can infer every omitted stored form from its supported regular pattern. Plural-only: <code>i vestiti</code>. Articleless singular-only: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>. An ambiguous article also needs gender: <code>{keywords.feminine} {keywords.singularOnly} l’Aquila</code>.</p>
+          <p><strong>Noun:</strong> omit <code>{keywords.noun}</code> when an article or gender/number markers identify the noun format. Full: <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. A noun pattern may opt into <strong>Article + singular</strong> shorthand; patterns left on <strong>Full forms required</strong> still require the whole declension. Plural-only: <code>i vestiti</code>. Articleless singular-only: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>. An ambiguous article also needs gender: <code>{keywords.feminine} {keywords.singularOnly} l’Aquila</code>.</p>
           <p><strong>Verb:</strong> <code>{keywords.verb} infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
           <p><strong>Adjective:</strong> regular shorthand <code>{keywords.adjective} bello</code>, or full <code>{keywords.adjective} bello bella belli belle</code>.</p>
           <p><strong>Adverb:</strong> invariant form <code>{keywords.adverb} molto</code>.</p>
