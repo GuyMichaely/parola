@@ -1,37 +1,54 @@
 import type { Flashcard } from "../cards/types";
+import {
+  cloneNounPatterns,
+  defaultNounPatterns,
+  normalizeNounPatterns,
+  type NounPattern,
+} from "../cards/nounPatterns";
 import { assertNoDuplicateCards, cloneCards, normalizeCard } from "./cardCodec";
 import type { CardStorage } from "./types";
 
 const cardsKey = "parola:cards";
+const nounPatternsKey = "parola:noun-patterns";
 const updatedAtKey = "parola:cards-updated-at";
 
 export interface InventorySnapshot {
   cards: Flashcard[];
+  nounPatterns: NounPattern[];
   updatedAt: string | null;
 }
 
 export function readLocalSnapshot(): InventorySnapshot {
-  const stored = window.localStorage.getItem(cardsKey);
+  const storedCards = window.localStorage.getItem(cardsKey);
+  const storedPatterns = window.localStorage.getItem(nounPatternsKey);
   const updatedAt = window.localStorage.getItem(updatedAtKey)?.trim() || null;
-  if (!stored) return { cards: [], updatedAt };
-  const parsed = JSON.parse(stored) as unknown;
-  if (!Array.isArray(parsed)) throw new Error("Local card storage is invalid.");
-  return { cards: parsed.map(normalizeCard), updatedAt };
+  const parsedCards = storedCards ? JSON.parse(storedCards) as unknown : [];
+  if (!Array.isArray(parsedCards)) throw new Error("Local card storage is invalid.");
+  const nounPatterns = storedPatterns
+    ? normalizeNounPatterns(JSON.parse(storedPatterns) as unknown)
+    : cloneNounPatterns(defaultNounPatterns);
+  return { cards: parsedCards.map(normalizeCard), nounPatterns, updatedAt };
 }
 
 export function writeLocalSnapshot(snapshot: InventorySnapshot) {
   window.localStorage.setItem(cardsKey, JSON.stringify(snapshot.cards));
+  window.localStorage.setItem(nounPatternsKey, JSON.stringify(snapshot.nounPatterns));
   if (snapshot.updatedAt) window.localStorage.setItem(updatedAtKey, snapshot.updatedAt);
   else window.localStorage.removeItem(updatedAtKey);
 }
 
 export function clearLocalSnapshot() {
   window.localStorage.removeItem(cardsKey);
+  window.localStorage.removeItem(nounPatternsKey);
   window.localStorage.removeItem(updatedAtKey);
 }
 
-function timestamped(cards: Flashcard[]): InventorySnapshot {
-  return { cards: cloneCards(cards), updatedAt: new Date().toISOString() };
+function timestamped(cards: Flashcard[], nounPatterns: NounPattern[]): InventorySnapshot {
+  return {
+    cards: cloneCards(cards),
+    nounPatterns: cloneNounPatterns(nounPatterns),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export class BrowserStorage implements CardStorage {
@@ -42,34 +59,47 @@ export class BrowserStorage implements CardStorage {
   }
 
   async createCards(cards: Flashcard[]) {
-    const existing = readLocalSnapshot().cards;
+    const snapshot = readLocalSnapshot();
+    const existing = snapshot.cards;
     assertNoDuplicateCards(existing, cards);
     let nextId = existing.reduce((max, card) => Math.max(max, card.id), 0) + 1;
     const inserted = cards.map((card) => ({ ...card, id: nextId++ }));
-    writeLocalSnapshot(timestamped([...inserted, ...existing]));
+    writeLocalSnapshot(timestamped([...inserted, ...existing], snapshot.nounPatterns));
     return cloneCards(inserted);
   }
 
   async updateCard(card: Flashcard) {
-    const existing = readLocalSnapshot().cards;
-    const index = existing.findIndex((item) => item.id === card.id);
+    const snapshot = readLocalSnapshot();
+    const index = snapshot.cards.findIndex((item) => item.id === card.id);
     if (index < 0) throw new Error("Card not found in local storage.");
-    const updated = [...existing];
+    const updated = [...snapshot.cards];
     updated[index] = cloneCards([card])[0];
-    writeLocalSnapshot(timestamped(updated));
+    writeLocalSnapshot(timestamped(updated, snapshot.nounPatterns));
     return cloneCards([card])[0];
   }
 
   async deleteCard(id: number) {
-    const existing = readLocalSnapshot().cards;
-    const updated = existing.filter((card) => card.id !== id);
-    if (updated.length === existing.length) throw new Error("Card not found in local storage.");
-    writeLocalSnapshot(timestamped(updated));
+    const snapshot = readLocalSnapshot();
+    const updated = snapshot.cards.filter((card) => card.id !== id);
+    if (updated.length === snapshot.cards.length) throw new Error("Card not found in local storage.");
+    writeLocalSnapshot(timestamped(updated, snapshot.nounPatterns));
   }
 
   async replaceCards(cards: Flashcard[]) {
+    const snapshot = readLocalSnapshot();
     const replacement = cloneCards(cards);
-    writeLocalSnapshot(timestamped(replacement));
+    writeLocalSnapshot(timestamped(replacement, snapshot.nounPatterns));
     return cloneCards(replacement);
+  }
+
+  async listNounPatterns() {
+    return cloneNounPatterns(readLocalSnapshot().nounPatterns);
+  }
+
+  async replaceNounPatterns(patterns: NounPattern[]) {
+    const snapshot = readLocalSnapshot();
+    const replacement = normalizeNounPatterns(patterns);
+    writeLocalSnapshot(timestamped(snapshot.cards, replacement));
+    return cloneNounPatterns(replacement);
   }
 }
