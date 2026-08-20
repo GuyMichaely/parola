@@ -153,12 +153,10 @@ export function NounMorphologyPanel() {
       await storage.replaceNounMorphology(normalized);
       await storage.replaceCards(updatedCards);
       setActiveNounMorphology(normalized);
-      setMorphology(cloneNounMorphology(normalized));
-      setCards(updatedCards);
-      setMessage("Saved noun morphology and assignments.");
+      setMessage("Saved noun morphology and assignments. Reloading Parola…");
+      window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Noun morphology could not be saved.");
-    } finally {
       setSaving(false);
     }
   }
