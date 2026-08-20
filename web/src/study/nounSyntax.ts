@@ -155,6 +155,15 @@ function candidateGenders(explicitGender: NounGender | null, fields: NounSyntaxF
   return ["masculine", "feminine"];
 }
 
+function ruleSpecificity(ruleId: string, syntax: NounSyntaxRule, morphology: NounMorphology) {
+  const rule = morphology.declensionRules.find((item) => item.id === ruleId);
+  if (!rule) return 0;
+  return Math.max(0, ...syntax.fields.flatMap((field) => {
+    if (field.kind !== "noun") return [];
+    return [rule.forms[field.number]?.suffix.length ?? 0];
+  }));
+}
+
 function buildCandidates(
   syntax: NounSyntaxRule,
   morphology: NounMorphology,
@@ -206,7 +215,14 @@ function buildCandidates(
       });
     }
   }
-  return result;
+
+  return result.sort((left, right) => {
+    const specificity = ruleSpecificity(right.declensionRuleId, syntax, morphology) - ruleSpecificity(left.declensionRuleId, syntax, morphology);
+    if (specificity) return specificity;
+    const byRule = left.declensionRuleId.localeCompare(right.declensionRuleId);
+    if (byRule) return byRule;
+    return left.definition.gender.localeCompare(right.definition.gender);
+  });
 }
 
 export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morphology: NounMorphology, keywords: AnswerKeywords): NounSyntaxAttempt {
