@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { CardType } from "../cards/types";
 
 export type PromptLanguage = "english" | "italian";
 export type PromptMode = PromptLanguage | "both";
@@ -94,9 +93,6 @@ export function StudyOptions({
   onOneDirectionPerWord,
   englishFirstWhenBoth,
   onEnglishFirstWhenBoth,
-  homogeneousType: _homogeneousType,
-  compactAnswers: _compactAnswers,
-  onCompactAnswers: _onCompactAnswers,
   answerKeywords,
   onAnswerKeywords,
 }: {
@@ -108,9 +104,6 @@ export function StudyOptions({
   onOneDirectionPerWord: () => void;
   englishFirstWhenBoth: boolean;
   onEnglishFirstWhenBoth: () => void;
-  homogeneousType: CardType | null;
-  compactAnswers: boolean;
-  onCompactAnswers: () => void;
   answerKeywords: AnswerKeywords;
   onAnswerKeywords: (keywords: AnswerKeywords) => void;
 }) {
