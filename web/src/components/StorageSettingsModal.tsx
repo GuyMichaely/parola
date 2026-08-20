@@ -42,6 +42,16 @@ export function StorageSettingsModal({
 
   useEffect(() => subscribeSyncStatus(setSyncStatus), []);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || transferBusy) return;
+      event.preventDefault();
+      onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, transferBusy]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
