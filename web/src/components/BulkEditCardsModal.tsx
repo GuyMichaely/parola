@@ -6,11 +6,9 @@ import {
   adjectiveRowFromCard,
   adverbCard,
   adverbRowFromCard,
-  deckTagPrefix,
   nounCard,
   nounFormsError,
   nounRowFromCard,
-  parseTags,
   type AdjectiveBatchRow,
   type AdverbBatchRow,
   type BatchRow,
@@ -18,7 +16,6 @@ import {
   updateNounRow,
   verbCard,
   verbRowFromCard,
-  visibleTags,
 } from "../cards/editorModel";
 import {
   AdjectiveRowCells,
@@ -74,7 +71,7 @@ export function BulkEditCardsModal({ cards, onClose, onSave }: { cards: Flashcar
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
     <section className="modal batch-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-edit-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="modal-header"><div><h2 id="bulk-edit-title">Edit cards</h2><p className="modal-subtitle">{cards.length} cards match the selected tags. Sets, decks, and tags are preserved.</p></div><button className="icon-button" onClick={onClose} aria-label="Close">×</button></header>
+      <header className="modal-header"><div><h2 id="bulk-edit-title">Edit cards</h2><p className="modal-subtitle">{cards.length} cards match the selected tags. Sets and tags are preserved.</p></div><button className="icon-button" onClick={onClose} aria-label="Close">×</button></header>
       <form onSubmit={submit}>
         <div className="mode-tabs" aria-label="Card type">
           {cardTypes.map((item) => <button type="button" key={item} className={type === item ? "active" : ""} disabled={counts[item] === 0} onClick={() => { setType(item); setError(""); }}>{typeLabels[item]}s <span className="tab-count">{counts[item]}</span></button>)}
