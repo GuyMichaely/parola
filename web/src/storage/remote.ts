@@ -1,7 +1,4 @@
-import { setActiveNounMorphology } from "../cards/nounMorphologyRuntime";
 import {
-  cloneNounMorphology,
-  defaultNounMorphology,
   normalizeNounMorphology,
   type NounMorphology,
 } from "../cards/nounMorphology";
@@ -31,10 +28,8 @@ function stateUrl(endpoint: string) {
 
 function parseSnapshot(value: unknown): RemoteSnapshot {
   const payload = value as { cards?: unknown; nounMorphology?: unknown; updatedAt?: unknown };
-  const nounMorphology = payload?.nounMorphology
-    ? normalizeNounMorphology(payload.nounMorphology)
-    : cloneNounMorphology(defaultNounMorphology);
-  setActiveNounMorphology(nounMorphology);
+  if (!payload?.nounMorphology) throw new Error("Remote state does not contain nounMorphology.");
+  const nounMorphology = normalizeNounMorphology(payload.nounMorphology);
   return {
     cards: parseCardsResponse(payload),
     nounMorphology,
