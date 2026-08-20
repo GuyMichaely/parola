@@ -1,9 +1,9 @@
 import type { CardType, Flashcard } from "../cards/types";
 import {
-  cloneNounPatterns,
-  normalizeNounPatterns,
-  type NounPattern,
-} from "../cards/nounPatterns";
+  cloneNounMorphology,
+  normalizeNounMorphology,
+  type NounMorphology,
+} from "../cards/nounMorphology";
 import { cloneCards, normalizeCard } from "./cardCodec";
 import type { CardStorage } from "./types";
 
@@ -11,13 +11,13 @@ const validTypes = new Set<CardType>(["noun", "verb", "adjective", "adverb"]);
 
 export type InventoryTransferState = {
   cards: Flashcard[];
-  nounPatterns: NounPattern[];
+  nounMorphology: NounMorphology;
 };
 
-export function serializeInventory(cards: Flashcard[], nounPatterns: NounPattern[]) {
+export function serializeInventory(cards: Flashcard[], nounMorphology: NounMorphology) {
   return JSON.stringify({
     cards: cloneCards(cards),
-    nounPatterns: cloneNounPatterns(nounPatterns),
+    nounMorphology: cloneNounMorphology(nounMorphology),
   }, null, 2);
 }
 
@@ -30,10 +30,10 @@ export function parseInventory(text: string): InventoryTransferState {
   }
 
   const payload = value && typeof value === "object" && !Array.isArray(value)
-    ? value as { cards?: unknown; nounPatterns?: unknown }
+    ? value as { cards?: unknown; nounMorphology?: unknown }
     : null;
-  if (!payload || !Array.isArray(payload.cards) || !Array.isArray(payload.nounPatterns)) {
-    throw new Error("The inventory JSON must contain cards and nounPatterns arrays.");
+  if (!payload || !Array.isArray(payload.cards) || !payload.nounMorphology) {
+    throw new Error("The inventory JSON must contain cards and nounMorphology.");
   }
 
   const cards = payload.cards.map((rawCard, index) => {
@@ -48,14 +48,14 @@ export function parseInventory(text: string): InventoryTransferState {
     return card;
   });
 
-  let nounPatterns: NounPattern[];
+  let nounMorphology: NounMorphology;
   try {
-    nounPatterns = normalizeNounPatterns(payload.nounPatterns);
+    nounMorphology = normalizeNounMorphology(payload.nounMorphology);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid noun patterns.";
-    throw new Error(`Noun patterns are invalid: ${message}`);
+    const message = error instanceof Error ? error.message : "Invalid noun morphology.";
+    throw new Error(`Noun morphology is invalid: ${message}`);
   }
-  return { cards, nounPatterns };
+  return { cards, nounMorphology };
 }
 
 export async function replaceInventory(
@@ -64,12 +64,12 @@ export async function replaceInventory(
   imported: InventoryTransferState,
 ) {
   try {
-    await storage.replaceNounPatterns(imported.nounPatterns);
+    await storage.replaceNounMorphology(imported.nounMorphology);
     const cards = await storage.replaceCards(imported.cards);
-    return { cards, nounPatterns: await storage.listNounPatterns() };
+    return { cards, nounMorphology: await storage.listNounMorphology() };
   } catch (error) {
     try {
-      await storage.replaceNounPatterns(current.nounPatterns);
+      await storage.replaceNounMorphology(current.nounMorphology);
       await storage.replaceCards(current.cards);
     } catch {
       // Best-effort rollback; preserve the original error for the caller.
