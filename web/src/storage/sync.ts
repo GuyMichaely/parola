@@ -97,11 +97,15 @@ export class SyncStorage implements CardStorage {
     else clearLocalSnapshot();
   }
 
-  private adoptRemote(remote: RemoteSnapshot) {
-    this.latestRemoteUpdatedAt = remote.updatedAt;
-    this.snapshot = { cards: cloneCards(remote.cards), updatedAt: remote.updatedAt };
+  private acceptSavedState(saved: RemoteSnapshot) {
+    this.latestRemoteUpdatedAt = saved.updatedAt;
+    this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
     this.persistSnapshot();
     setSyncStatus({ status: "synced", message: "Synced" });
+  }
+
+  private adoptRemote(remote: RemoteSnapshot) {
+    this.acceptSavedState(remote);
   }
 
   private async pushLocal() {
@@ -112,15 +116,34 @@ export class SyncStorage implements CardStorage {
         cards: cloneCards(this.snapshot.cards),
         updatedAt: this.snapshot.updatedAt,
       });
-      this.latestRemoteUpdatedAt = saved.updatedAt;
-      this.snapshot = { cards: cloneCards(saved.cards), updatedAt: saved.updatedAt };
-      this.persistSnapshot();
-      setSyncStatus({ status: "synced", message: "Synced" });
+      this.acceptSavedState(saved);
     } catch (error) {
       if (error instanceof RemoteConflictError) {
         this.latestRemoteUpdatedAt = error.state.updatedAt;
-        if (this.loadPolicy === "automatic") this.adoptRemote(error.state);
-        else setSyncStatus({ status: "pending", message: "Sync available" });
+        if (this.loadPolicy === "ask") {
+          setSyncStatus({ status: "pending", message: "Sync available" });
+          return;
+        }
+
+        this.snapshot = {
+          cards: cloneCards(this.snapshot.cards),
+          updatedAt: nextTimestamp(this.snapshot.updatedAt, error.state.updatedAt),
+        };
+        this.persistSnapshot();
+        try {
+          const saved = await this.remote.writeState({
+            cards: cloneCards(this.snapshot.cards),
+            updatedAt: this.snapshot.updatedAt,
+          });
+          this.acceptSavedState(saved);
+        } catch (retryError) {
+          if (retryError instanceof RemoteConflictError) {
+            this.latestRemoteUpdatedAt = retryError.state.updatedAt;
+            setSyncStatus({ status: "pending", message: "Sync changed again" });
+          } else {
+            setSyncStatus({ status: "offline", message: "Not synced" });
+          }
+        }
         return;
       }
       setSyncStatus({ status: "offline", message: "Not synced" });
