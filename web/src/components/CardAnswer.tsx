@@ -1,14 +1,11 @@
 import { type FormEvent, useState } from "react";
-import type { CardType, Flashcard } from "../cards/types";
+import type { Flashcard } from "../cards/types";
 import { getActiveNounPatterns } from "../cards/nounPatternRuntime";
 import { nounPatternForCard, resolvedNounForms } from "../cards/nounPatterns";
 import { typeLabels } from "../cardTypes";
 import type { AnswerKeywords } from "./StudyOptions";
 import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
-import {
-  verifyPowerAnswer,
-  type AnswerSyntaxMode,
-} from "../study/logic";
+import { verifyPowerAnswer } from "../study/logic";
 
 export function NounAnswer({ card }: { card: Flashcard }) {
   const patterns = getActiveNounPatterns();
@@ -94,10 +91,10 @@ export function EnglishAnswer({ card, showType = false }: { card: Flashcard; sho
   );
 }
 
-export function ItalianVerificationForm({ card, syntaxMode, compactType, keywords, onResult }: { card: Flashcard; syntaxMode: AnswerSyntaxMode; compactType: CardType | null; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
+export function ItalianVerificationForm({ card, keywords, onResult }: { card: Flashcard; keywords: AnswerKeywords; onResult: (correct: boolean, answer: string) => void }) {
   const [answer, setAnswer] = useState("");
   const [syntaxRejected, setSyntaxRejected] = useState(false);
-  const syntax = analyzeAnswerSyntax(card, answer, syntaxMode, compactType, keywords);
+  const syntax = analyzeAnswerSyntax(card, answer, keywords);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -106,7 +103,7 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
       return;
     }
     setSyntaxRejected(false);
-    onResult(verifyPowerAnswer(card, answer, syntaxMode, keywords), answer);
+    onResult(verifyPowerAnswer(card, answer, keywords), answer);
   }
 
   const placeholder = card.type === "noun"
@@ -121,7 +118,7 @@ export function ItalianVerificationForm({ card, syntaxMode, compactType, keyword
         <span className="answer-label">Type the Italian · {typeLabels[card.type]}</span>
       </div>
       <label className="power-answer-field"><span>Answer</span><input name="powerAnswer" value={answer} onChange={(event) => { setAnswer(event.target.value); setSyntaxRejected(false); }} required aria-invalid={syntaxRejected || syntax.status === "invalid"} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={placeholder} /></label>
-      <AnswerParsePreview card={card} value={answer} syntaxMode={syntaxMode} compactType={compactType} keywords={keywords} />
+      <AnswerParsePreview card={card} value={answer} keywords={keywords} />
       {syntaxRejected && <p className="syntax-submit-error" role="alert">The answer cannot be checked until its syntax is complete and valid.</p>}
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
