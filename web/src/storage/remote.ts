@@ -9,7 +9,7 @@ export class RemoteConflictError extends Error {
   readonly state: RemoteSnapshot;
 
   constructor(state: RemoteSnapshot) {
-    super("Remote inventory changed since the last sync.");
+    super("Remote inventory is newer than the local inventory.");
     this.state = state;
   }
 }
@@ -66,10 +66,10 @@ export class RemoteSyncClient {
     return parseSnapshot(await this.request());
   }
 
-  async writeState(cards: RemoteSnapshot["cards"], baseUpdatedAt: string | null) {
+  async writeState(state: RemoteSnapshot) {
     return parseSnapshot(await this.request({
       method: "PUT",
-      body: JSON.stringify({ cards, baseUpdatedAt }),
+      body: JSON.stringify(state),
     }));
   }
 }
