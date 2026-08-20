@@ -286,8 +286,11 @@ export function normalizeNounRow(row: BatchRow): BatchRow {
 export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K, value: BatchRow[K]) {
   const nextRow = { ...row, [field]: value } as BatchRow;
   if (field === "singular" || field === "plural" || field === "gender") {
-    const previous = suggestedNounArticles(row.gender, row.singular, row.plural, row.definiteSingularArticle || row.definitePluralArticle || row.indefiniteArticle ? "automatic" : "none");
-    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, nextRow.definiteSingularArticle || nextRow.definitePluralArticle || nextRow.indefiniteArticle ? "automatic" : "none");
+    const rowHasForms = Boolean(row.singular.trim() || row.plural.trim());
+    const rowHasArticles = Boolean(row.definiteSingularArticle || row.definitePluralArticle || row.indefiniteArticle);
+    const articleMode = !rowHasForms || rowHasArticles ? "automatic" : "none";
+    const previous = suggestedNounArticles(row.gender, row.singular, row.plural, articleMode);
+    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, articleMode);
     const keepOrSuggest = (current: string, previousSuggestion: string, nextSuggestion: string) => !current || current === previousSuggestion ? nextSuggestion : current;
     return {
       ...nextRow,
