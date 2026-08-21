@@ -29,28 +29,39 @@ function canonicalCard(overrides) {
   };
 }
 
-test("extension imports accept a current canonical noun card unchanged", () => {
-  const input = canonicalCard({
+function canonicalNoun(overrides = {}) {
+  return {
+    id: 0,
     type: "noun",
     english: "mirror",
-    italian: "specchio",
+    setName: null,
+    tags: [],
     details: {
       rule: "-chio → -chi",
       base: "spec",
       gender: "masculine",
       articleProfile: nounArticleProfiles.all,
     },
-  });
+    ...overrides,
+  };
+}
 
+test("extension imports accept a current canonical noun card unchanged", () => {
+  const input = canonicalNoun();
   const [card] = extensionCandidatesToCards([input], defaultNounMorphology);
   assert.deepEqual(card, input);
 });
 
+test("extension imports reject a stored Italian field on nouns", () => {
+  const retired = canonicalNoun({ italian: "specchio" });
+  assert.throws(
+    () => extensionCandidatesToCards([retired], defaultNounMorphology),
+    /must not store a derived italian field/i,
+  );
+});
+
 test("extension imports reject the retired noun forms/details shape", () => {
-  const legacy = canonicalCard({
-    type: "noun",
-    english: "mirror",
-    italian: "specchio",
+  const legacy = canonicalNoun({
     details: {
       gender: "masculine",
       singular: "specchio",
@@ -68,10 +79,7 @@ test("extension imports reject the retired noun forms/details shape", () => {
 });
 
 test("extension imports reject the retired articleMode noun schema", () => {
-  const retired = canonicalCard({
-    type: "noun",
-    english: "mirror",
-    italian: "specchio",
+  const retired = canonicalNoun({
     details: {
       rule: "-chio → -chi",
       base: "spec",
@@ -86,14 +94,12 @@ test("extension imports reject the retired articleMode noun schema", () => {
   );
 });
 
-test("extension imports reject canonical nouns that disagree with active morphology", () => {
-  const invalid = canonicalCard({
-    type: "noun",
-    english: "mirror",
-    italian: "specchio",
+test("extension imports reject noun article profiles unsupported by their declension", () => {
+  const invalid = canonicalNoun({
+    english: "clothes",
     details: {
-      rule: "-chio → -chi",
-      base: "wrong",
+      rule: "Plural form is the base",
+      base: "vestiti",
       gender: "masculine",
       articleProfile: nounArticleProfiles.all,
     },
@@ -101,7 +107,7 @@ test("extension imports reject canonical nouns that disagree with active morphol
 
   assert.throws(
     () => extensionCandidatesToCards([invalid], defaultNounMorphology),
-    /canonical morphology produces/i,
+    /requires a noun form/i,
   );
 });
 
