@@ -154,8 +154,9 @@ const cards = input.cards.map((card) => {
   if (!ruleName) throw new Error(`Noun card ${card.id ?? card.english} references an unknown retired declension rule.`);
   const rule = rulesByName.get(ruleName);
   if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown rule ${ruleName}.`);
+  const { italian: _derivedItalian, ...cardWithoutItalian } = card;
   return {
-    ...card,
+    ...cardWithoutItalian,
     details: {
       rule: ruleName,
       base: String(details.base ?? ""),
@@ -180,4 +181,5 @@ const output = {
 
 await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, "utf8");
 console.log(`Wrote migrated inventory to ${outputPath}.`);
+console.log("Noun Italian surface forms are derived from rule + base and are not stored on noun cards.");
 console.log("Automatic no-article shorthand syntaxes were removed because article-taking shorthand now requires an article.");
