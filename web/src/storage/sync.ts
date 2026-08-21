@@ -286,16 +286,16 @@ export class SyncStorage implements CardStorage {
   }
 
   async replaceInventory(state: InventoryState) {
-    await this.initialize();
     const replacement = assertInventoryState({
       cards: cloneCards(state.cards),
       nounMorphology: normalizeNounMorphology(state.nounMorphology),
     });
-    const current = this.snapshot ?? emptySnapshot();
+    const currentUpdatedAt = this.snapshot?.updatedAt ?? null;
     this.snapshot = {
       ...cloneInventoryState(replacement),
-      updatedAt: nextTimestamp(current.updatedAt, this.latestRemoteUpdatedAt),
+      updatedAt: nextTimestamp(currentUpdatedAt, this.latestRemoteUpdatedAt),
     };
+    this.initialization = Promise.resolve();
     this.persistSnapshot();
     await this.pushLocal();
     return cloneInventoryState(replacement);
