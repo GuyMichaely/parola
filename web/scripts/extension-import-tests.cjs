@@ -12,12 +12,42 @@ const {
 } = require(path.join(testDist, "cards", "nounMorphology.js"));
 const {
   extensionCandidatesToCards,
-  normalizeExtensionImportCandidate,
   parseExtensionImportRequest,
 } = require(path.join(testDist, "extensionImport.js"));
 
-test("extension noun candidates are canonicalized through current noun morphology", () => {
-  const [card] = extensionCandidatesToCards([{
+function canonicalCard(overrides) {
+  return {
+    id: 0,
+    type: "adverb",
+    english: "very",
+    italian: "molto",
+    setName: null,
+    tags: [],
+    details: {},
+    ...overrides,
+  };
+}
+
+test("extension imports accept a current canonical noun card unchanged", () => {
+  const input = canonicalCard({
+    type: "noun",
+    english: "mirror",
+    italian: "specchio",
+    details: {
+      ruleId: "chio-chi",
+      base: "spec",
+      gender: "masculine",
+      numberMode: "both",
+      articleMode: "automatic",
+    },
+  });
+
+  const [card] = extensionCandidatesToCards([input], defaultNounMorphology);
+  assert.deepEqual(card, input);
+});
+
+test("extension imports reject the retired noun forms/details shape", () => {
+  const legacy = canonicalCard({
     type: "noun",
     english: "mirror",
     italian: "specchio",
@@ -29,81 +59,49 @@ test("extension noun candidates are canonicalized through current noun morpholog
       definitePluralArticle: "gli",
       indefiniteArticle: "uno",
     },
-  }], defaultNounMorphology);
-
-  assert.equal(card.type, "noun");
-  assert.equal(card.italian, "specchio");
-  assert.deepEqual(card.details, {
-    ruleId: "chio-chi",
-    base: "spec",
-    gender: "masculine",
-    numberMode: "both",
-    articleMode: "automatic",
   });
+
+  assert.throws(
+    () => extensionCandidatesToCards([legacy], defaultNounMorphology),
+    /current base\/rule noun schema/i,
+  );
 });
 
-test("extension plural-only noun candidates can resolve to plural-base", () => {
-  const [card] = extensionCandidatesToCards([{
+test("extension imports reject canonical nouns that disagree with active morphology", () => {
+  const invalid = canonicalCard({
     type: "noun",
-    english: "clothes",
-    italian: "vestiti",
+    english: "mirror",
+    italian: "specchio",
     details: {
+      ruleId: "chio-chi",
+      base: "wrong",
       gender: "masculine",
-      singular: "",
-      plural: "vestiti",
-      definiteSingularArticle: "",
-      definitePluralArticle: "",
-      indefiniteArticle: "",
+      numberMode: "both",
+      articleMode: "automatic",
     },
-  }], defaultNounMorphology);
-
-  assert.deepEqual(card.details, {
-    ruleId: "plural-base",
-    base: "vestiti",
-    gender: "masculine",
-    numberMode: "plural",
-    articleMode: "none",
   });
+
+  assert.throws(
+    () => extensionCandidatesToCards([invalid], defaultNounMorphology),
+    /canonical morphology produces/i,
+  );
 });
 
-test("extension candidates for other parts of speech use the current card model", () => {
-  const cards = extensionCandidatesToCards([
-    { type: "adverb", english: "very", italian: "molto", details: { form: "molto" } },
-    {
-      type: "verb",
-      english: "to speak",
-      italian: "parlare",
-      details: {
-        infinitive: "parlare",
-        io: "parlo",
-        tu: "parli",
-        luiLei: "parla",
-        noi: "parliamo",
-        voi: "parlate",
-        loro: "parlano",
-        auxiliary: "avere",
-        participle: "parlato",
-      },
-    },
-  ], defaultNounMorphology);
-
-  assert.equal(cards[0].type, "adverb");
-  assert.equal(cards[0].italian, "molto");
-  assert.equal(cards[1].type, "verb");
-  assert.equal(cards[1].details.participle, "parlato");
+test("extension imports reject unknown card types", () => {
+  const invalid = canonicalCard({ type: "pronoun", english: "it", italian: "esso" });
+  assert.throws(
+    () => extensionCandidatesToCards([invalid], defaultNounMorphology),
+    /incomplete or invalid card/i,
+  );
 });
 
-test("extension import request parsing accepts only the current bridge protocol", () => {
+test("extension import request parsing accepts only the bridge envelope", () => {
   const request = parseExtensionImportRequest({
     source: "parola-capture-extension",
     type: "parola-extension-import",
     requestId: "request-1",
-    candidates: [{ type: "adverb", english: "very", italian: "molto", details: {} }],
+    candidates: [canonicalCard({})],
   });
   assert.equal(request?.requestId, "request-1");
   assert.equal(parseExtensionImportRequest({ source: "something-else", type: "parola-extension-import" }), null);
-});
-
-test("invalid candidate types are rejected", () => {
-  assert.throws(() => normalizeExtensionImportCandidate({ type: "pronoun", english: "it", italian: "esso" }), /invalid part of speech/i);
 });
