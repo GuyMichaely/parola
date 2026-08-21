@@ -93,7 +93,6 @@ function nounPreview(row: NounInventoryRow, morphology: NounMorphology) {
     id: Number(row.id),
     type: "noun",
     english: row.english,
-    italian: "",
     setName: null,
     tags: [],
     details: {
@@ -227,7 +226,6 @@ export function InventoryCardsEditor({
           ...common,
           type: "noun",
           english: row.english.trim(),
-          italian: "",
           details: {
             rule: row.rule,
             base: row.base.normalize("NFC"),
@@ -235,8 +233,8 @@ export function InventoryCardsEditor({
             articleProfile: row.articleProfile,
           },
         };
-        const forms = resolvedNounForms(candidate, morphology);
-        return { ...candidate, italian: forms.singular || forms.plural };
+        resolvedNounForms(candidate, morphology);
+        return candidate;
       });
     } catch (caught) {
       setType("noun");
