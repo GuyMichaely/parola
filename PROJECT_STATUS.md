@@ -16,75 +16,41 @@ Do not design around backwards compatibility.
 
 Treat each release as if it were a fresh 1.0. Keep one canonical data model. When a useful schema change would otherwise lose real user data, provide a one-time migration script or instructions outside the application. Do not commit permanent compatibility readers, dual schemas, or migration branches merely to preserve old representations.
 
-## Current architecture
+## Current Parola architecture
 
-Parola has three independently deployable parts:
+Parola web is a static React/Vite application served at `https://guymichaely.com/parola/`. It is local-first and may optionally synchronize the same complete inventory snapshot with the Node API deployed separately to Azure.
 
-- `web/`, a React/Vite flashcard frontend served at `https://guymichaely.com/parola/`;
-- `extension/`, a Chrome extension for manually capturing and staging Italian words and contexts;
-- `api/`, an optional synchronization API deployed separately to Azure.
-
-The web app is local-first. A configured API endpoint acts as a synchronization peer rather than replacing local state.
+Cards and noun morphology form one logical inventory. Browser persistence stores one `parola:inventory` JSON value containing cards, noun morphology, and an internal `updatedAt` timestamp. Remote synchronization uses the same complete snapshot and last-write-wins timestamp semantics.
 
 ## Inventory synchronization
 
-Local and remote state are copies of one complete inventory snapshot.
-
-- Snapshots have an internal `updatedAt` timestamp.
-- The later snapshot wins. There is no per-card merge.
-- Local mutations receive a newer timestamp and push automatically when sync is configured.
+- Local and remote are copies of one complete inventory snapshot.
+- The later `updatedAt` wins; there is no per-card merge.
+- Local mutations push automatically while sync is configured.
 - The server rejects stale snapshot writes.
-- On load, the user can choose automatic reconciliation or ask-first behavior.
-- Persistent browser storage can be disabled while remote sync remains active for the session.
-- Browser persistence stores the complete state in one `parola:inventory` JSON value.
-- API persistence stores the complete state in one JSON file. Cards, morphology, and the sync timestamp are not persisted as separately coordinated files.
+- Startup can reconcile automatically or wait for explicit **Sync now**.
+- Browser persistence can be disabled while remote sync remains active for the session.
+- Manual inventory export/import contains `cards` and `nounMorphology`, without sync transport metadata.
 
-The canonical synchronization state is:
+Deterministic tests cover newer-remote reconciliation, newer-local push, ask-first behavior, non-persistent local mode, and offline fallback. A real browser↔Azure smoke test remains an environment-level verification task rather than missing synchronization logic.
 
-```json
-{
-  "cards": [],
-  "nounMorphology": {
-    "declensionRules": [],
-    "inferenceSets": [],
-    "syntaxRules": []
-  },
-  "updatedAt": "..."
-}
-```
+## Inventory and editing
 
-Manual inventory export contains `cards` and `nounMorphology`. It does not include sync timestamps or export metadata.
+Cards have optional sets and ordinary tags. There is no deck model. The Inventory grid and normal single-card editor are the canonical editing interfaces.
 
-## Inventory categorization and editing
+Current card creation/editing supports nouns, verbs, adjectives, and adverbs. Duplicate card creation is rejected. Bulk edits and mass tag changes commit through complete inventory replacement so cards and noun morphology remain consistent.
 
-Cards have optional sets and ordinary tags. There is no deck model. Strings with the old `__deck__:` prefix receive no special behavior.
+## Typed study
 
-The Inventory grid is normal page content rather than a vertically scrolling box. The inline grid and normal single-card editor are the canonical editing interfaces.
+The prompted card determines the expected part of speech; the learner does not type part-of-speech prefixes.
 
-## Typed English to Italian verification
+Study supports English, Italian, or both prompt directions; optional typed Italian verification; one direction per word; English-first ordering when both directions are studied; scope filtering by part of speech, set, or tag; mistake review; and creation of mistake tags.
 
-The prompted card determines the expected part of speech. The learner does not type noun, verb, adjective, or adverb prefixes.
+Noun typed verification uses configurable gender/tantum keywords and a candidate-based syntax parser. Syntax validity is separate from answer correctness. The live parse preview shows structural interpretation without revealing which candidate matches the prompted card before submission.
 
-The live parser shows part of speech as an ordinary parsed field. The only configurable answer keywords are noun gender and tantum markers:
-
-- masculine;
-- feminine;
-- singular-only;
-- plural-only.
-
-Gender and tantum markers may appear in either order.
-
-Typed input can be partial, syntactically complete, or invalid. Syntax validity is separate from answer correctness.
-
-For noun answers, Parola evaluates candidate interpretations. If at least one candidate matches the prompted noun definition, the answer is correct. Otherwise, if at least one syntax is structurally complete, the answer is wrong even when no permitted declension rule produces a candidate. If no syntax is structurally complete, the syntax is invalid or incomplete.
-
-The live preview may show possible declension candidates, but it does not reveal which candidate matches the prompted card before submission. Candidate names shown in the preview belong to the syntax the preview is currently displaying. If one interpretation is structurally complete but produces no candidate while another syntax is still a viable partial parse, the live preview favors the viable partial parse.
-
-After submission, a wrong noun answer may show the syntax, declension rule, base, and gender Parola inferred from the submitted input.
+Verb, adjective, and adverb typed verification use their current canonical stored forms. Regular adjective shorthand is supported where the stored adjective actually matches the standard pattern.
 
 ## Noun morphology
-
-Noun morphology, answer syntax, and learning policy are separate concepts.
 
 A canonical noun card stores:
 
@@ -96,7 +62,7 @@ A canonical noun card stores:
 
 It does not store derived singular, plural, or article strings.
 
-A declension rule defines how its supported surface forms relate to the stored base. Rules may support both numbers or only one. Generation and recognition use the same reversible suffix definition.
+Declension rules generate and recognize surface forms. Syntax rules describe accepted answer structures. Inference sets control which declensions each shorthand syntax may infer. Several syntaxes may share one inference set.
 
 Examples:
 
@@ -105,82 +71,45 @@ cetriolo: rule o-i, base cetriol, both numbers
 specchio: rule chio-chi, base spec, both numbers
 Venezia: rule singular-base, base Venezia, singular only
 vestiti meaning clothes: rule plural-base, base vestiti, plural only
-vestito meaning dress: rule o-i, base vestit, both numbers
 ```
 
-`dress` and `clothes` are separate cards. The `clothes` card has no derived singular `vestito`.
-
-Syntax rules describe typed-answer structure. They do not contain noun-specific morphology. Each syntax references an inference set. An inference set lists the declension rules that syntax may infer.
-
-This is the learner-control mechanism for shorthand. The default `Article + singular` and `Gender + singular` syntaxes share the `learned-shorthand` inference set. `chio-chi` can initially be absent from that set, making `lo specchio` or `m specchio` complete but wrong interpretations through another allowed rule. Adding `chio-chi` later makes the same input capable of producing the correct candidate without changing the `specchio` card.
-
-The Inventory view exposes a noun morphology panel. Declension rules, inference sets, syntax definitions, and noun assignments are editable data. Morphological recognition remains owned by declension rules rather than syntax-specific parser code.
+The Inventory view exposes editable declension rules, inference sets, syntax definitions, and noun assignments. The `specchio` learning-policy case is implemented: a rule may exist for the noun while being absent from shorthand inference until the learner chooses to add it.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
+## External card import contract
+
+Parola does not contain a compatibility adapter for retired card formats.
+
+The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must already contain current `ruleId`, `base`, `gender`, `numberMode`, and `articleMode` fields, and they must agree with the active noun morphology. Retired noun `singular`/`plural`/article-detail payloads are rejected rather than converted.
+
+After validation, imported cards use the same `addBatch` and `CardStorage` persistence path as ordinary card creation.
+
 ## Automated validation
 
-The web package has deterministic tests against the real parser, preview, synchronization, and extension-import conversion modules. The noun cases cover ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
+`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Coverage includes ordinary shorthand, staged `specchio` inference, gender shorthand, elided and ambiguous articles, contradictory evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate ordering, preview candidate scoping, synchronization decisions, and rejection of retired/invalid import shapes.
 
-The synchronization cases cover newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. These tests exercise the single-snapshot synchronization logic with in-memory browser storage and a fake HTTP peer; they do not replace a smoke test against the deployed browser/API environment.
+`.github/workflows/validate.yml` runs the tests, the production web build, API syntax, and repository-wide static checks on relevant pull requests and pushes to `main`.
 
-Extension-import tests verify that reviewed candidate forms are converted through the current Parola card model and noun morphology, including `specchio` and an explicitly plural-only `vestiti` candidate. The PR workflow also performs static syntax/manifest validation for the extension itself. There is still no automated browser/E2E extension harness.
+## Deployment
 
-`.github/workflows/validate.yml` runs the tests, the production web build, API syntax, and extension static checks on relevant pull requests and pushes to `main`. The Pages deployment also runs the web test suite before building the production site.
+- `.github/workflows/deploy-pages.yml` tests, builds, and deploys only the web app to GitHub Pages.
+- `.github/workflows/deploy-api.yml` independently deploys the optional synchronization API to Azure.
+- Extension release infrastructure is separate from Pages.
+
+The former Pages extension compatibility feed/package path has been removed. A real installed extension on `0.2.4` successfully updated to `0.2.5` through the independent Releases feed, confirming that bridge was no longer required.
 
 ## Inventory migration state
 
-The current noun schema intentionally breaks the previous `nounPatterns` representation. The application contains no compatibility reader for the old schema.
+The current noun schema intentionally breaks the previous `nounPatterns` representation. The application contains no compatibility reader for the old schema. Any one-time migration of old real inventory belongs outside the application.
 
-One-time migration tooling is kept outside the repository. Before using existing inventory with the current application, migrate the old export to the `nounMorphology` schema and install or import the migrated state.
+## Parola-only remaining work
 
-## Extension capture model
+There is no known unimplemented core feature from the current Parola architecture/issue set. The previously tracked main-app items—duplicate prevention, deck removal, realtime parse visualization, configurable noun morphology/inference, and the `specchio` shorthand-learning behavior—are implemented.
 
-Capture is user-driven. There is no automatic Duolingo DOM detection or automated browser interaction.
+The remaining work is primarily hardening and validation:
 
-Supported capture paths:
-
-- type a single Italian word into the extension popup;
-- type a sentence with the target surrounded by `*asterisks*`;
-- highlight text on a page and use the extension context-menu action.
-
-Captured words are staged for review before import.
-
-The current staged record still combines capture evidence (`word`, contexts, sources) with editable candidate fields (`english`, `cardType`, grammatical `details`). The next model change should separate those concepts so a captured surface form such as `mangio` remains immutable evidence while the canonical candidate can independently become `mangiare`.
-
-## Extension import boundary
-
-The extension no longer writes Parola inventory localStorage or calls the synchronization API directly.
-
-Approved review items are sent to the loaded Parola page as import candidates. The web app validates and converts them using its current card model and active noun morphology, then saves them through the same `CardStorage` path used by ordinary card creation. The extension removes staged items only after Parola acknowledges a successful save.
-
-This keeps persistence mode, inventory validation, and noun morphology ownership in the web app. It also means the extension transport shape is not a second persisted Parola card schema.
-
-## Extension testing policy
-
-Do not maintain automated browser or end-to-end tests for the extension.
-
-Use static source checks, manifest validation, signing/package checks, manual testing with the real signed extension, and exported debug logs. Web-side candidate conversion can be tested deterministically without launching the extension.
-
-## Extension deployment
-
-The independent deployment model is already implemented:
-
-- web through GitHub Pages;
-- extension through `.github/workflows/release-extension.yml` and GitHub Releases;
-- API through `.github/workflows/deploy-api.yml`.
-
-The extension source moved to the GitHub Releases update feed in `0.2.3`, and `0.2.4` was the explicit feed-cutover release. Current source is `0.2.5`, which contains the repaired Parola import boundary. The Pages workflow still publishes `/parola/extension/updates.xml` and its CRX as a compatibility bridge for clients installed on the old Pages feed. Keep that bridge until the installed extension is confirmed to have updated onto the independent feed; confirming `0.2.5` also verifies the current import build is installed.
-
-## Product roadmap
-
-The core pipeline is `capture -> enrichment -> validation -> review -> persistence`.
-
-Manual capture, review, and the current Parola-owned persistence handoff exist. The next larger extension architecture step is separating captured surface forms and contexts from canonical card candidates, then adding user-initiated enrichment through a provider/API abstraction.
-
-## Immediate next steps
-
-1. Keep the automated suite green and manually exercise `cetriolo`, staged `specchio` inference, gender shorthand, elided articles, singularia tantum, and pluralia tantum in the actual study UI.
-2. Run a live browser↔Azure sync smoke test against the deployed environment. The synchronization decision logic itself is covered deterministically, including automatic/ask-first reconciliation and offline/non-persistent behavior.
-3. Confirm the installed Parola Capture client reaches `0.2.5`, then manually import at least an ordinary noun and a nonstandard/plural-only noun through the signed extension. Once the client is known to be using the independent release feed, remove the temporary Pages extension compatibility feed/package path.
-4. Separate immutable capture evidence from editable canonical-card candidates in extension staging, then add user-initiated enrichment behind a provider/API abstraction.
+1. Run a live browser↔Azure synchronization smoke test to verify deployed endpoint configuration, CORS/networking, and persistence behavior.
+2. Manually exercise the noun-study edge cases in the actual UI: `cetriolo`, staged `specchio`, gender shorthand, elided articles, singularia tantum, and pluralia tantum.
+3. Expand automated coverage beyond the current noun-heavy suite if desired—especially verb/adjective/adverb typed verification, card CRUD/inventory transfer, and morphology-editor interactions. This is test coverage, not missing user-facing functionality.
+4. Continue normal UX/product iteration only when a new Parola requirement is identified. Extension capture/enrichment work is explicitly deferred and is not part of the current Parola-only implementation queue.
