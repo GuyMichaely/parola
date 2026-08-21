@@ -13,6 +13,12 @@ function objectValue(value, label) {
   return value;
 }
 
+function nonEmptyString(value, label) {
+  const result = String(value ?? "").trim();
+  if (!result) throw new Error(`${label} must be a non-empty string.`);
+  return result;
+}
+
 function ruleNumberMode(rule) {
   const singular = Boolean(rule?.forms?.singular);
   const plural = Boolean(rule?.forms?.plural);
@@ -53,7 +59,7 @@ function migrateField(field) {
   throw new Error("Unsupported syntax field in retired morphology.");
 }
 
-function migrateSyntax(raw) {
+function migrateSyntax(raw, inferenceSetIdToName) {
   const syntax = objectValue(raw, "Syntax rule");
   const markers = Array.isArray(syntax.markers) ? syntax.markers.map(migrateMarker) : [];
   const fields = Array.isArray(syntax.fields) ? syntax.fields.map(migrateField) : [];
@@ -81,12 +87,17 @@ function migrateSyntax(raw) {
     throw new Error(`Syntax ${syntax.name} has unsupported retired articleMode ${syntax.articleMode}.`);
   }
 
+  const inferenceSet = syntax.inferenceSet
+    ? nonEmptyString(syntax.inferenceSet, `Syntax ${syntax.name} inferenceSet`)
+    : inferenceSetIdToName.get(String(syntax.inferenceSetId));
+  if (!inferenceSet) throw new Error(`Syntax ${syntax.name} references an unknown inference set.`);
+
   return {
-    name: String(syntax.name),
+    name: nonEmptyString(syntax.name, "Syntax name"),
     markers,
     markerOrder: "any",
     fields,
-    inferenceSet: String(syntax.inferenceSet),
+    inferenceSet,
   };
 }
 
@@ -97,19 +108,49 @@ if (!Array.isArray(morphology.declensionRules) || !Array.isArray(morphology.infe
   throw new Error("nounMorphology must contain declensionRules, inferenceSets, and syntaxRules arrays.");
 }
 
-const rules = new Map(morphology.declensionRules.map((rule) => [String(rule.name), rule]));
+const ruleIdToName = new Map();
+const declensionRules = morphology.declensionRules.map((raw) => {
+  const rule = objectValue(raw, "Declension rule");
+  const name = nonEmptyString(rule.name, "Declension rule name");
+  if (rule.id !== undefined) ruleIdToName.set(String(rule.id), name);
+  return { name, forms: rule.forms };
+});
+const rulesByName = new Map(declensionRules.map((rule) => [rule.name, rule]));
+
+const inferenceSetIdToName = new Map();
+const inferenceSets = morphology.inferenceSets.map((raw) => {
+  const set = objectValue(raw, "Inference set");
+  const name = nonEmptyString(set.name, "Inference set name");
+  if (set.id !== undefined) inferenceSetIdToName.set(String(set.id), name);
+  const retiredIds = Array.isArray(set.declensionRuleIds) ? set.declensionRuleIds : null;
+  const currentNames = Array.isArray(set.declensionRules) ? set.declensionRules : null;
+  if (!retiredIds && !currentNames) throw new Error(`Inference set ${name} has no declension-rule references.`);
+  const declensionRuleNames = currentNames
+    ? currentNames.map((ruleName) => nonEmptyString(ruleName, `Inference set ${name} rule name`))
+    : retiredIds.map((ruleId) => {
+      const ruleName = ruleIdToName.get(String(ruleId));
+      if (!ruleName) throw new Error(`Inference set ${name} references unknown retired rule id ${ruleId}.`);
+      return ruleName;
+    });
+  return { name, declensionRules: declensionRuleNames };
+});
+
 const cards = input.cards.map((card) => {
   if (card?.type !== "noun") return card;
   const details = objectValue(card.details, `Noun card ${card.id ?? card.english} details`);
   if (Object.prototype.hasOwnProperty.call(details, "articleProfile")) {
-    throw new Error(`Noun card ${card.id ?? card.english} already has articleProfile; this script expects the immediately retired articleMode schema.`);
+    throw new Error(`Noun card ${card.id ?? card.english} already has articleProfile; this script expects a retired articleMode schema.`);
   }
-  const rule = rules.get(String(details.rule));
-  if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown rule ${details.rule}.`);
+  const ruleName = details.rule
+    ? nonEmptyString(details.rule, `Noun card ${card.id ?? card.english} rule`)
+    : ruleIdToName.get(String(details.ruleId));
+  if (!ruleName) throw new Error(`Noun card ${card.id ?? card.english} references an unknown retired declension rule.`);
+  const rule = rulesByName.get(ruleName);
+  if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown rule ${ruleName}.`);
   return {
     ...card,
     details: {
-      rule: String(details.rule),
+      rule: ruleName,
       base: String(details.base ?? ""),
       gender: String(details.gender),
       articleProfile: profileForOldNoun(details, rule),
@@ -117,13 +158,15 @@ const cards = input.cards.map((card) => {
   };
 });
 
-const syntaxRules = morphology.syntaxRules.map(migrateSyntax).filter(Boolean);
+const syntaxRules = morphology.syntaxRules
+  .map((syntax) => migrateSyntax(syntax, inferenceSetIdToName))
+  .filter(Boolean);
 const output = {
   ...input,
   cards,
   nounMorphology: {
-    declensionRules: morphology.declensionRules,
-    inferenceSets: morphology.inferenceSets,
+    declensionRules,
+    inferenceSets,
     syntaxRules,
   },
 };
