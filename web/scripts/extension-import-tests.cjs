@@ -1,8 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const testDist = path.join(__dirname, "..", ".test-dist");
+fs.mkdirSync(testDist, { recursive: true });
+fs.writeFileSync(path.join(testDist, "package.json"), '{"type":"commonjs"}\n');
+
 const {
   defaultNounMorphology,
 } = require(path.join(testDist, "cards", "nounMorphology.js"));
