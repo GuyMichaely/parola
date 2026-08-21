@@ -9,13 +9,13 @@ A noun card stores four facts:
 - `rule`, the name of its declension rule;
 - `base`, the string transformed by that rule;
 - `gender`;
-- `articleProfile`, one of `111`, `100`, `010`, or `000`.
+- `articleProfile`, an object containing the noun's three article capabilities.
 
-The three article-profile bits mean, in order:
+The article capabilities are:
 
-1. takes a definite singular article;
-2. takes a definite plural article;
-3. takes an indefinite singular article.
+- `definiteSingular`;
+- `definitePlural`;
+- `indefiniteSingular`.
 
 For example:
 
@@ -28,7 +28,11 @@ For example:
     "rule": "-chio → -chi",
     "base": "spec",
     "gender": "masculine",
-    "articleProfile": "111"
+    "articleProfile": {
+      "definiteSingular": true,
+      "definitePlural": true,
+      "indefiniteSingular": true
+    }
   }
 }
 ```
@@ -67,26 +71,28 @@ Rule names are unique and serve as references. Renaming a rule in the morphology
 
 Declension number availability and article availability are separate facts.
 
-A noun can have singular and plural forms while having article profile `100`. That means its plural form exists, but the noun definition says the definite plural and indefinite singular article constructions are not accepted for that card's sense.
+A noun can have singular and plural forms while enabling only `definiteSingular`. Its plural form still exists, but the noun definition says definite plural and indefinite singular article constructions are not accepted for that card's sense.
 
 Parola therefore does not derive `articleProfile` from the declension rule and does not derive number availability from `articleProfile`.
 
-The only structural compatibility checks are that an enabled article capability has the noun form it needs. For example, `010` requires a plural form and `100` requires a singular form.
+The only structural compatibility checks are that an enabled article capability has the noun form it needs. `definitePlural` requires a plural form. `definiteSingular` and `indefiniteSingular` require a singular form.
 
 ## Article profiles
 
-The four canonical profiles are:
+The profile is naturally represented as the product of three Boolean capabilities. Parola restricts that product to four canonical combinations:
 
-| Profile | Definite singular | Definite plural | Indefinite singular |
+| Definite singular | Definite plural | Indefinite singular | Meaning |
 | --- | --- | --- | --- |
-| `111` | yes | yes | yes |
-| `100` | yes | no | no |
-| `010` | no | yes | no |
-| `000` | no | no | no |
+| yes | yes | yes | all three article constructions |
+| yes | no | no | definite singular only |
+| no | yes | no | definite plural only |
+| no | no | no | no articles |
+
+The other four Boolean combinations are rejected by the current schema.
 
 Parola calculates the actual Italian article spelling from gender and the noun form. The profile controls which of those article constructions are available.
 
-For example, a masculine `specchio` card with profile `111` yields `lo specchio`, `gli specchi`, and `uno specchio`. A `000` card yields no article forms.
+For example, a masculine `specchio` card with all three capabilities yields `lo specchio`, `gli specchi`, and `uno specchio`. A card with all three capabilities disabled yields no article forms.
 
 The profile describes the noun sense being taught. It is not a claim that no marked or context-dependent Italian construction can ever use the word differently.
 
@@ -132,16 +138,16 @@ Examples:
 
 ```text
 <definite singular article> <singular noun>
-    requires the target's first article-profile bit to be 1
+    requires articleProfile.definiteSingular
 
 <definite plural article> <plural noun>
-    requires the target's second bit to be 1
+    requires articleProfile.definitePlural
 
 <indefinite singular article> <singular noun>
-    requires the target's third bit to be 1
+    requires articleProfile.indefiniteSingular
 ```
 
-This deliberately does not require an exact profile match. `il libro` can match a `111` noun or a `100` noun. `i libri` can match `111` or `010`. An indefinite singular answer can match only `111` under the current four-profile model.
+This deliberately does not require exact profile equality. `il libro` can match a noun with all three capabilities or one with only definite singular enabled. `i libri` can match all-three or definite-plural-only. An indefinite singular answer can match only the all-three profile under the current four-profile model.
 
 The article spelling itself is also checked against the inferred noun form and gender.
 
@@ -149,7 +155,7 @@ If the typed article does not identify gender, the syntax must obtain gender fro
 
 ### Articleless syntax
 
-A syntax with no article field asserts article profile `000`.
+A syntax with no article field asserts that all three article capabilities are false.
 
 The canonical articleless syntaxes require both an explicit gender marker and a singular-only or plural-only marker, for example:
 
@@ -199,14 +205,14 @@ The card is:
 rule: -chio → -chi
 base: spec
 gender: masculine
-articleProfile: 111
+articleProfile: definiteSingular=true, definitePlural=true, indefiniteSingular=true
 ```
 
 `Learned shorthand` initially does not contain `-chio → -chi`.
 
 For `lo specchio`, the definite-singular syntax is structurally complete. Other allowed rules can recognize the surface string, but they infer different definitions. For example, `-o → -i` removes only the final `o` and produces base `specchi`. `Singular form is the base` produces base `specchio`. Neither candidate matches the card's `rule: -chio → -chi`, `base: spec` definition, so the answer is wrong.
 
-After `-chio → -chi` is added to `Learned shorthand`, the same input can infer base `spec` under the correct rule. The article says masculine and requires the definite-singular article capability, both of which match the card, so the answer becomes correct.
+After `-chio → -chi` is added to `Learned shorthand`, the same input can infer base `spec` under the correct rule. The article says masculine and requires the definite-singular capability, both of which match the card, so the answer becomes correct.
 
 `m specchio` is not an article-taking shorthand in the current default syntax set. Article-taking nouns must supply an article.
 
@@ -218,7 +224,7 @@ A Venice card can be represented as:
 rule: Singular form is the base
 base: Venezia
 gender: feminine
-articleProfile: 000
+articleProfile: definiteSingular=false, definitePlural=false, indefiniteSingular=false
 ```
 
 The default articleless singular syntax accepts:
@@ -227,7 +233,7 @@ The default articleless singular syntax accepts:
 f s Venezia
 ```
 
-`f Venezia` is incomplete for that policy because it does not explicitly state singular-only behavior. `la Venezia` is a complete article-bearing syntax, but it is wrong for the `000` card because its definite-singular article capability is disabled.
+`f Venezia` is incomplete for that policy because it does not explicitly state singular-only behavior. `la Venezia` is a complete article-bearing syntax, but it is wrong for the articleless card because its definite-singular capability is disabled.
 
 ## Names as references
 
