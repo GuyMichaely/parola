@@ -48,6 +48,10 @@ function details(value: unknown) {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, text(item)]));
 }
 
+function hasDetail(candidate: ExtensionImportCandidate, key: string) {
+  return Object.prototype.hasOwnProperty.call(candidate.details, key);
+}
+
 function requireDetails(candidate: ExtensionImportCandidate, keys: string[]) {
   const missing = keys.find((key) => !candidate.details[key]);
   if (missing) throw new Error(`${candidate.italian} is missing required ${candidate.type} information.`);
@@ -89,7 +93,7 @@ export function extensionCandidatesToCards(values: unknown[], morphology: NounMo
       return nounCard({
         ...common,
         gender,
-        singular: d.singular || candidate.italian,
+        singular: hasDetail(candidate, "singular") ? d.singular : candidate.italian,
         plural: d.plural || "",
         definiteSingularArticle: d.definiteSingularArticle || "",
         definitePluralArticle: d.definitePluralArticle || "",
