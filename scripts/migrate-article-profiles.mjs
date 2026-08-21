@@ -8,6 +8,13 @@ if (!inputPath || !outputPath) {
   process.exit(1);
 }
 
+const articleProfiles = {
+  all: { definiteSingular: true, definitePlural: true, indefiniteSingular: true },
+  definiteSingularOnly: { definiteSingular: true, definitePlural: false, indefiniteSingular: false },
+  definitePluralOnly: { definiteSingular: false, definitePlural: true, indefiniteSingular: false },
+  none: { definiteSingular: false, definitePlural: false, indefiniteSingular: false },
+};
+
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value;
@@ -29,12 +36,12 @@ function ruleNumberMode(rule) {
 }
 
 function profileForOldNoun(details, rule) {
-  if (details.articleMode === "none") return "000";
+  if (details.articleMode === "none") return articleProfiles.none;
   if (details.articleMode !== "automatic") throw new Error(`Unsupported retired articleMode: ${details.articleMode}.`);
   const numberMode = ruleNumberMode(rule);
-  if (numberMode === "both") return "111";
-  if (numberMode === "singular") return "100";
-  return "010";
+  if (numberMode === "both") return articleProfiles.all;
+  if (numberMode === "singular") return articleProfiles.definiteSingularOnly;
+  return articleProfiles.definitePluralOnly;
 }
 
 function migrateMarker(marker) {
