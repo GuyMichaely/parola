@@ -9,6 +9,7 @@ fs.writeFileSync(path.join(testDist, "package.json"), '{"type":"commonjs"}\n');
 
 const {
   defaultNounMorphology,
+  nounArticleProfiles,
 } = require(path.join(testDist, "cards", "nounMorphology.js"));
 const {
   extensionCandidatesToCards,
@@ -37,7 +38,7 @@ test("extension imports accept a current canonical noun card unchanged", () => {
       rule: "-chio → -chi",
       base: "spec",
       gender: "masculine",
-      articleProfile: "111",
+      articleProfile: nounArticleProfiles.all,
     },
   });
 
@@ -62,7 +63,7 @@ test("extension imports reject the retired noun forms/details shape", () => {
 
   assert.throws(
     () => extensionCandidatesToCards([legacy], defaultNounMorphology),
-    /current rule\/base\/gender\/article-profile schema/i,
+    /must contain exactly.*articleProfile.*base.*gender.*rule/i,
   );
 });
 
@@ -81,7 +82,7 @@ test("extension imports reject the retired articleMode noun schema", () => {
 
   assert.throws(
     () => extensionCandidatesToCards([retired], defaultNounMorphology),
-    /current rule\/base\/gender\/article-profile schema/i,
+    /must contain exactly.*articleProfile.*base.*gender.*rule/i,
   );
 });
 
@@ -94,7 +95,7 @@ test("extension imports reject canonical nouns that disagree with active morphol
       rule: "-chio → -chi",
       base: "wrong",
       gender: "masculine",
-      articleProfile: "111",
+      articleProfile: nounArticleProfiles.all,
     },
   });
 
