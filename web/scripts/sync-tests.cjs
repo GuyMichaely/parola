@@ -178,3 +178,42 @@ test("an unavailable remote leaves the local snapshot usable", async () => {
   assert.equal(inventory.cards[0]?.english, "here");
   assert.equal(readSyncStatus().status, "offline");
 });
+
+test("explicit replacement does not require the previous local snapshot to match the current schema", async () => {
+  const localStorage = installBrowser();
+  localStorage.setItem("parola:inventory", JSON.stringify({
+    cards: [{
+      id: 59,
+      type: "noun",
+      english: "shirt",
+      italian: "camicia",
+      setName: null,
+      tags: [],
+      details: {
+        rule: "-a → -e",
+        base: "camici",
+        gender: "feminine",
+        articleProfile: { definiteSingular: true, definitePlural: true, indefiniteSingular: true },
+      },
+    }],
+    nounMorphology: cloneNounMorphology(defaultNounMorphology),
+    updatedAt: "2026-08-20T14:00:00.000Z",
+  }));
+  assert.throws(() => readLocalSnapshot(), /must not store a derived italian field/i);
+
+  const remote = inventorySnapshot([adverbCard(2, "lì", "there")], "2026-08-20T13:00:00.000Z");
+  const server = installRemote(remote);
+  const storage = new SyncStorage("https://sync.example.test", { persistLocal: true, loadPolicy: "automatic" });
+  const replacement = {
+    cards: [adverbCard(3, "qui", "here")],
+    nounMorphology: cloneNounMorphology(defaultNounMorphology),
+  };
+
+  const saved = await storage.replaceInventory(replacement);
+
+  assert.equal(saved.cards[0]?.english, "here");
+  assert.equal(readLocalSnapshot().cards[0]?.english, "here");
+  assert.equal(server.snapshot().cards[0]?.english, "here");
+  assert.equal(server.writes(), 1);
+  assert.equal(readSyncStatus().status, "synced");
+});
