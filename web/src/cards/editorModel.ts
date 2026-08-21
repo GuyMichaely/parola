@@ -1,6 +1,7 @@
 import type { CardType, Flashcard } from "./types";
 import { cardTypes } from "../cardTypes";
 import {
+  articleProfileFromArticlePresence,
   inferNounDefinitionFromForms,
   resolvedNounForms,
   suggestedNounArticles,
@@ -159,6 +160,7 @@ export function nounFormsError(input: Pick<BatchRow, "singular" | "plural" | "de
   if (!singular && !plural) return "Enter at least a singular or plural form.";
   if (!singular && (definiteSingular || indefinite)) return "Singular articles require a singular noun form.";
   if (!plural && definitePlural) return "A definite plural article requires a plural noun form.";
+  if (!articleProfileFromArticlePresence(input)) return "Article availability must be one of 111, 100, 010, or 000.";
   return "";
 }
 
@@ -195,7 +197,7 @@ export function nounCard(input: {
     indefiniteArticle: input.indefiniteArticle,
   }, morphology);
   if (!definition) {
-    throw new Error(`No configured declension rule can represent ${input.singular || input.plural}. Define the morphology rule first.`);
+    throw new Error(`No configured declension rule and supported article profile can represent ${input.singular || input.plural}. Define the morphology rule or fix the article fields first.`);
   }
   return {
     id: input.id,
@@ -208,7 +210,7 @@ export function nounCard(input: {
       rule: definition.rule,
       base: definition.base,
       gender: definition.gender,
-      articleMode: definition.articleMode,
+      articleProfile: definition.articleProfile,
     },
   };
 }
@@ -287,9 +289,10 @@ export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K,
   if (field === "singular" || field === "plural" || field === "gender") {
     const rowHasForms = Boolean(row.singular.trim() || row.plural.trim());
     const rowHasArticles = Boolean(row.definiteSingularArticle || row.definitePluralArticle || row.indefiniteArticle);
-    const articleMode = !rowHasForms || rowHasArticles ? "automatic" : "none";
-    const previous = suggestedNounArticles(row.gender, row.singular, row.plural, articleMode);
-    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, articleMode);
+    const storedProfile = articleProfileFromArticlePresence(row);
+    const suggestionProfile = !rowHasForms && !rowHasArticles ? "111" : storedProfile ?? "111";
+    const previous = suggestedNounArticles(row.gender, row.singular, row.plural, suggestionProfile);
+    const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, suggestionProfile);
     const keepOrSuggest = (current: string, previousSuggestion: string, nextSuggestion: string) => !current || current === previousSuggestion ? nextSuggestion : current;
     return {
       ...nextRow,
