@@ -1,6 +1,5 @@
 import type { Flashcard } from "../cards/types";
 import type { NounMorphology } from "../cards/nounMorphology";
-import { typeLabels } from "../cardTypes";
 import {
   standardAdjectivePattern,
   whitespaceParts,
@@ -38,11 +37,10 @@ function labeledPieces(values: string[], labels: string[]) {
 
 export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords: AnswerKeywords, morphology: NounMorphology): AnswerSyntaxAnalysis {
   const trimmed = rawValue.normalize("NFC").trim();
-  const typePiece = { label: "Part of speech", value: typeLabels[card.type] };
   if (!trimmed) {
     return {
-      pieces: [typePiece],
-      message: `This prompt expects a ${typeLabels[card.type].toLowerCase()} answer.`,
+      pieces: [],
+      message: "Start typing an answer to see how Parola parses it.",
       status: "empty",
       checkable: false,
       missing: [],
@@ -63,7 +61,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
 
     if (!selected) {
       return {
-        pieces: [typePiece],
+        pieces: [],
         message: "No noun syntax recognizes this input.",
         status: "invalid",
         checkable: false,
@@ -82,7 +80,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
       message = "The quoted field is still open.";
     }
     return {
-      pieces: [typePiece, ...selected.pieces],
+      pieces: selected.pieces,
       message,
       status,
       checkable: hasCompleteSyntax && !unclosedQuote,
@@ -98,7 +96,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const status: AnswerSyntaxStatus = values.length > labels.length ? "invalid" : values.length === labels.length ? "complete" : "partial";
     const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
     return {
-      pieces: [typePiece, ...labeledPieces(values, labels)],
+      pieces: labeledPieces(values, labels),
       message: status === "invalid" ? `Too many verb fields were supplied; expected ${labels.length}.` : status === "complete" ? "Verb syntax is complete." : "Verb syntax is valid so far but incomplete.",
       status: finalStatus,
       checkable: finalStatus === "complete",
@@ -115,7 +113,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     if (shorthand) {
       const status: AnswerSyntaxStatus = unclosedQuote ? "partial" : "complete";
       return {
-        pieces: [typePiece, { label: "Regular adjective base", value: values[0] ?? "" }],
+        pieces: [{ label: "Regular adjective base", value: values[0] ?? "" }],
         message: "Regular adjective shorthand is syntactically complete.",
         status,
         checkable: status === "complete",
@@ -127,7 +125,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const status: AnswerSyntaxStatus = values.length > labels.length ? "invalid" : values.length === labels.length ? "complete" : "partial";
     const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
     return {
-      pieces: [typePiece, ...labeledPieces(values, labels)],
+      pieces: labeledPieces(values, labels),
       message: status === "invalid" ? `Too many adjective fields were supplied; expected ${labels.length}.` : status === "complete" ? "Adjective syntax is complete." : "Adjective syntax is valid so far but incomplete.",
       status: finalStatus,
       checkable: finalStatus === "complete",
@@ -141,7 +139,7 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
   const status: AnswerSyntaxStatus = values.length > 1 ? "invalid" : values.length === 1 ? "complete" : "partial";
   const finalStatus = unclosedQuote && status !== "invalid" ? "partial" : status;
   return {
-    pieces: [typePiece, ...labeledPieces(values, ["Invariant form"])],
+    pieces: labeledPieces(values, ["Invariant form"]),
     message: status === "invalid" ? "An adverb answer accepts one invariant form. Quote a stored multi-word form." : status === "complete" ? "Adverb syntax is complete." : "Adverb syntax is incomplete.",
     status: finalStatus,
     checkable: finalStatus === "complete",
@@ -154,8 +152,8 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
 export function AnswerParsePreview({ card, value, keywords, morphology }: { card: Flashcard; value: string; keywords: AnswerKeywords; morphology: NounMorphology }) {
   const preview = analyzeAnswerSyntax(card, value, keywords, morphology);
   const heading = preview.status === "invalid"
-    ? `${typeLabels[card.type]} · invalid`
-    : `${typeLabels[card.type]} · ${preview.status === "complete" ? "complete" : "in progress"}`;
+    ? "Invalid"
+    : preview.status === "complete" ? "Complete" : "In progress";
   return (
     <div className={`answer-parse-preview parsed-${card.type} syntax-${preview.status}`}>
       <div className="answer-parse-heading">
