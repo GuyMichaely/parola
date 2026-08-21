@@ -66,3 +66,58 @@ jobs:
           node --check popup.js
           node --check review.js
           node -e 'const manifest = JSON.parse(require("fs").readFileSync("manifest.json", "utf8")); if (!manifest.version) throw new Error("manifest version is required")'
+
+  browser-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build web app
+        working-directory: web
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: web
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+
+      - name: Start production preview
+        working-directory: web
+        run: |
+          mkdir -p test-results
+          npm run preview -- --host 127.0.0.1 --port 4173 > test-results/vite-preview.log 2>&1 &
+          echo $! > test-results/vite-preview.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat test-results/vite-preview.log
+          exit 1
+
+      - name: Run browser end-to-end test
+        working-directory: web
+        run: node scripts/browser-e2e.mjs
+
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parola-browser-e2e-failure
+          path: web/test-results/
+          if-no-files-found: ignore
