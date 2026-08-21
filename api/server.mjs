@@ -151,7 +151,14 @@ function normalizeIdentityText(value) {
 }
 
 function cardDuplicateKey(card) {
-  return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${normalizeIdentityText(card.italian)}`;
+  const italianIdentity = card.type === "noun"
+    ? `${normalizeIdentityText(card.details.rule)}\u0000${normalizeIdentityText(card.details.base)}`
+    : normalizeIdentityText(card.italian);
+  return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${italianIdentity}`;
+}
+
+function cardIdentityLabel(card) {
+  return card.type === "noun" ? `${card.details.rule} / base ${card.details.base || "∅"}` : card.italian;
 }
 
 function objectValue(value, label) {
@@ -201,11 +208,13 @@ function normalizeCard(value, { requireId = false } = {}) {
   const type = String(value.type || "");
   if (!validTypes.has(type)) throw new Error("Invalid card type.");
   const english = String(value.english || "").trim();
-  const italian = String(value.italian || "").trim();
-  if (!english || !italian) throw new Error("Card needs English and Italian text.");
+  if (!english) throw new Error("Card needs English text.");
   const rawDetails = value.details && typeof value.details === "object" && !Array.isArray(value.details) ? value.details : {};
   let details;
+  let italian;
+
   if (type === "noun") {
+    if (Object.prototype.hasOwnProperty.call(value, "italian")) throw new Error("Noun cards must not store a derived italian field.");
     assertExactKeys(rawDetails, "Noun card details", ["articleProfile", "base", "gender", "rule"]);
     const rule = String(rawDetails.rule ?? "").trim();
     const gender = rawDetails.gender;
@@ -219,13 +228,16 @@ function normalizeCard(value, { requireId = false } = {}) {
       articleProfile: normalizeNounArticleProfile(rawDetails.articleProfile),
     };
   } else {
+    italian = String(value.italian || "").trim();
+    if (!italian) throw new Error(`${type} card needs Italian text.`);
     details = Object.fromEntries(Object.entries(rawDetails).map(([key, item]) => [key, String(item)]));
   }
+
   return {
     ...(requireId ? { id } : {}),
     type,
     english,
-    italian,
+    ...(type === "noun" ? {} : { italian }),
     setName: typeof value.setName === "string" && value.setName.trim() ? value.setName.trim() : null,
     tags: Array.isArray(value.tags) ? [...new Set(value.tags.map(String).map((tag) => tag.trim()).filter(Boolean))] : [],
     details,
@@ -251,12 +263,6 @@ function assertUniqueNames(values, label) {
     if (names.has(value.name)) throw new Error(`Duplicate ${label} name: ${value.name}.`);
     names.add(value.name);
   }
-}
-
-function generateNounForm(rule, base, number) {
-  const transform = rule.forms[number];
-  if (!transform) return null;
-  return `${String(base).normalize("NFC")}${transform.suffix}`;
 }
 
 function articleProfileCompatibleWithRule(profile, rule) {
@@ -369,7 +375,7 @@ function validateState(cards, nounMorphology) {
   const duplicateKeys = new Set();
   for (const card of cards) {
     const duplicateKey = cardDuplicateKey(card);
-    if (duplicateKeys.has(duplicateKey)) throw new Error(`Duplicate ${card.type} card for “${card.italian}” / “${card.english}”.`);
+    if (duplicateKeys.has(duplicateKey)) throw new Error(`Duplicate ${card.type} card for “${cardIdentityLabel(card)}” / “${card.english}”.`);
     duplicateKeys.add(duplicateKey);
   }
 
@@ -380,11 +386,6 @@ function validateState(cards, nounMorphology) {
     if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.rule}.`);
     if (!articleProfileCompatibleWithRule(card.details.articleProfile, rule)) {
       throw new Error(`Noun card ${card.id ?? card.english} has an article profile that requires a noun form its declension does not provide.`);
-    }
-    const primaryNumber = rule.forms.singular ? "singular" : "plural";
-    const primaryForm = generateNounForm(rule, card.details.base, primaryNumber);
-    if (!primaryForm || normalizeIdentityText(card.italian) !== normalizeIdentityText(primaryForm)) {
-      throw new Error(`Noun card ${card.id ?? card.english} has Italian form ${card.italian}, but its canonical morphology produces ${primaryForm ?? "no primary form"}.`);
     }
   }
 }
@@ -518,7 +519,7 @@ const server = createServer(async (req, res) => {
         const keys = new Set(cards.map(cardDuplicateKey));
         for (const card of normalized) {
           const key = cardDuplicateKey(card);
-          if (keys.has(key)) throw new Error(`A ${card.type} card for “${card.italian}” / “${card.english}” already exists.`);
+          if (keys.has(key)) throw new Error(`A ${card.type} card for “${cardIdentityLabel(card)}” / “${card.english}” already exists.`);
           keys.add(key);
         }
         let nextId = cards.reduce((max, card) => Math.max(max, card.id), 0) + 1;
