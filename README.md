@@ -20,7 +20,7 @@ The public repository is the canonical source for both the web app and extension
 
 The frontend always has a local working inventory. Configuring an API endpoint adds timestamp-based synchronization with a remote copy so the same inventory can be kept in sync across machines.
 
-Parola's external card-import boundary accepts only the current canonical `Flashcard` schema. Imported noun cards must already contain current `ruleId`, `base`, `gender`, `numberMode`, and `articleMode` data that agrees with the active noun morphology. Parola does not translate retired card schemas at this boundary.
+Parola's external card-import boundary accepts only the current canonical `Flashcard` schema. Imported noun cards must already contain current `rule`, `base`, `gender`, and `articleMode` data that agrees with active noun morphology. The rule is referenced by its unique name, and noun number availability is derived from that rule's supported forms. Parola does not translate retired card schemas at this boundary.
 
 ## Project checkpoint
 
