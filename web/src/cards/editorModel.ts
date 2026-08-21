@@ -210,7 +210,6 @@ export function nounCard(input: {
     id: input.id,
     type: "noun",
     english: input.english,
-    italian: input.singular || input.plural,
     setName: input.setName,
     tags: input.tags,
     details: {
