@@ -33,16 +33,16 @@ export function normalizeCard(value: unknown): Flashcard {
     : {};
   if (card.type === "noun") {
     const nounKeys = Object.keys(details).sort();
-    const expectedKeys = ["articleMode", "base", "gender", "rule"];
+    const expectedKeys = ["articleProfile", "base", "gender", "rule"];
     if (
       nounKeys.length !== expectedKeys.length
       || nounKeys.some((key, index) => key !== expectedKeys[index])
       || !details.rule
       || details.base === undefined
       || !["masculine", "feminine"].includes(details.gender)
-      || !["automatic", "none"].includes(details.articleMode)
+      || !["111", "100", "010", "000"].includes(details.articleProfile)
     ) {
-      throw new Error(`Noun card ${card.id} does not use the current rule/base/gender/article schema.`);
+      throw new Error(`Noun card ${card.id} does not use the current rule/base/gender/article-profile schema.`);
     }
   }
   return {
