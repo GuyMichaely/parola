@@ -59,13 +59,17 @@ src/
 
 `Flashcard` is a discriminated union keyed by `type`, so `card.type === "noun"` narrows `card.details` to the noun detail schema at compile time. External JSON remains untrusted until `cardCodec` validates and normalizes it.
 
+The shared card base does not require `italian`. Noun cards omit that property because their surface forms are derived. Verb, adjective, and adverb cards still store their canonical `italian` value.
+
 `App.tsx` owns cross-cutting application state, including the current card collection and active noun morphology. Morphology is passed explicitly to study and editor code rather than stored in a second runtime singleton.
 
-English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix. Noun gender and tantum markers remain configurable answer tokens.
+English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix. The English prompt displays the part of speech directly. The parser preview does not repeat it.
 
 ## Noun morphology and syntax
 
 A noun card stores its lexical definition as `rule`, `base`, `gender`, and `articleProfile`. `articleProfile` contains three named Boolean capabilities: `definiteSingular`, `definitePlural`, and `indefiniteSingular`. The schema accepts only four combinations: all three, definite singular only, definite plural only, or none.
+
+Noun singular and plural strings are generated from the active declension rule and base. They are not persisted on the card, including as a top-level `italian` copy.
 
 A declension rule has a unique `name` plus supported `forms`. Its name is its reference. If both singular and plural form entries exist, the rule is a two-number rule. If only one exists, the rule is singular-only or plural-only. Number availability is therefore derived from the rule rather than duplicated on every noun card.
 
@@ -79,7 +83,7 @@ A syntax rule stores markers, ordered fields, and an inference-set reference. It
 
 Article constraints are derived from article fields at runtime. A definite singular field requires `articleProfile.definiteSingular`, a definite plural field requires `articleProfile.definitePlural`, and an indefinite singular field requires `articleProfile.indefiniteSingular`. A syntax with no article field requires the no-article profile and must require explicit gender plus a singular-only or plural-only marker.
 
-A noun field requires an inferred declension to support that surface number. A tantum marker additionally restricts inference to a declension whose number availability is exactly singular-only or plural-only. This lets article-bearing singular shorthand match both two-number and singular-only nouns without pretending that the syntax itself asserts one exact number class.
+A noun field requires an inferred declension to support that surface number. A tantum marker additionally restricts inference to a declension whose number availability is exactly singular-only or plural-only.
 
 The noun parser evaluates every syntax against the typed input. A structurally complete syntax can produce zero, one, or several morphology candidates. Candidate generation does not consult the prompted card. Verification compares generated candidates with the card only after parsing.
 
@@ -91,11 +95,11 @@ This gives three outcomes:
 - otherwise, any structurally complete syntax means wrong, even if it produced no morphology candidate;
 - no structurally complete syntax means invalid or incomplete.
 
-Article spelling contributes grammatical evidence. Unambiguous articles can establish gender. `l'` is gender-ambiguous, so the default syntax requires an explicit gender marker in that case. Contradictory explicit gender and article evidence makes that syntax inapplicable.
+Article spelling contributes grammatical evidence. Unambiguous articles establish gender. The parser preview displays that evidence immediately. For example, `lo` produces `Gender from article: masculine`. `l'` is gender-ambiguous, so the default syntax requires an explicit gender marker in that case.
 
-The `specchio` learning policy remains inference-set driven. `-chio → -chi` is assigned to the card but excluded from `Learned shorthand` by default. `lo specchio` is therefore wrong until the rule is added to that inference set. Other permitted rules infer different rule/base candidates, such as `-o → -i` with base `specchi`.
+Masculine candidates whose generated definite singular article is `lo` are excluded from non-full shorthand syntaxes. For a normal two-number, all-articles noun, the full syntax is shaped like `lo specchio gli specchi uno`. This restriction is derived from generated article spelling and is not stored on the noun or declension rule.
 
-The live preview is structural. It shows the selected syntax, consumed fields, and missing fields. When that selected syntax produces morphology candidates, the preview may show their input-derived declension names. It does not indicate which candidate matches the prompted card.
+The live preview is structural. It shows the selected syntax, consumed fields, inferred article gender, and missing fields. When that selected syntax produces morphology candidates, the preview may show their input-derived declension names. It does not indicate which candidate matches the prompted card.
 
 See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -105,7 +109,7 @@ Cards and noun morphology form one logical `InventoryState`. `App` loads them wi
 
 Local snapshots contain `cards`, `nounMorphology`, and an internal `updatedAt`. Remote synchronized snapshots contain the same three values. `nounMorphology` contains declension rules, inference sets, and syntax rules.
 
-Inventory validation checks relationships between cards and morphology. Every noun must reference an existing rule, enabled article capabilities must have the necessary noun forms, and its stored primary `italian` form must match the primary form generated from its canonical rule/base definition.
+Inventory validation checks relationships between cards and morphology. Every noun must reference an existing rule, and enabled article capabilities must have the necessary noun forms. There is no stored noun surface form to cross-check because morphology is the source of truth.
 
 Bulk inventory edits and mass tag changes are committed as one inventory replacement instead of parallel card writes. Single-card creation, editing, and deletion continue to use narrower card operations that preserve active morphology in the same snapshot.
 
@@ -125,9 +129,9 @@ Noun-to-declension assignment is not duplicated in this panel. It lives in the I
 
 The import bridge is intentionally thin. It accepts an envelope containing cards that already obey Parola's current canonical `Flashcard` schema.
 
-Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must contain exactly the current `rule`, `base`, `gender`, and structured `articleProfile` details. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail representations are rejected rather than translated.
+Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must contain exactly the current `rule`, `base`, `gender`, and structured `articleProfile` details and must omit top-level `italian`. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, stored noun Italian, and stored article-detail representations are rejected rather than translated.
 
-Imported noun cards are checked against active `NounMorphology` before persistence. A syntactically current noun whose rule/base does not generate its stored primary Italian form, or whose enabled article capability lacks the required noun form, is rejected. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
+Imported noun cards are checked against active `NounMorphology` before persistence. Their referenced rule must exist and every enabled article capability must have the required noun form. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
 
 This boundary is not a migration layer.
 
@@ -135,7 +139,7 @@ This boundary is not a migration layer.
 
 `npm test` compiles parser, preview, synchronization, and import-validation modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules. Test files run serially so their shared temporary CommonJS package marker cannot race.
 
-The noun suite covers rule-derived number behavior, staged `specchio` inference, article capability matching, profile/declension independence, ambiguous article gender, contradictory evidence, articleless nouns, zero-candidate complete syntax, candidate specificity ordering, strict morphology schema validation, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. Import tests verify that current canonical cards are accepted while retired noun shapes, unknown card types, and noun/morphology mismatches are rejected.
+The noun suite covers rule-derived number behavior, `lo`-class full-declension policy, article-derived gender, article capability matching, profile/declension independence, ambiguous article gender, contradictory evidence, articleless nouns, zero-candidate complete syntax, candidate specificity ordering, strict morphology schema validation, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. Import tests verify that current canonical cards are accepted while retired noun shapes, stored noun Italian, unknown card types, and noun/morphology mismatches are rejected.
 
 These synchronization tests verify decision logic without mutating a deployed inventory. A live browser-to-API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
 
@@ -143,7 +147,7 @@ These synchronization tests verify decision logic without mutating a deployed in
 
 ## API
 
-The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the same structured noun article-profile schema and name-reference morphology structure as the web app. It also verifies article-profile/rule compatibility and that each noun's stored primary `italian` value agrees with its referenced rule and base.
+The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the same structured noun schema and name-reference morphology structure as the web app. Noun cards omit `italian`; the API validates rule references and article-profile/rule compatibility instead of storing or checking a redundant noun surface form.
 
 ## Deployment
 
