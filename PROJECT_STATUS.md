@@ -1,6 +1,6 @@
 # Parola project status
 
-_Last updated: 2026-08-20_
+_Last updated: 2026-08-21_
 
 This is the durable checkpoint for the current Parola architecture, project decisions, and next steps.
 
@@ -14,7 +14,7 @@ Current conversation decisions and current code take precedence over old issue w
 
 Do not design around backwards compatibility.
 
-Treat each release as if it were a fresh 1.0. Keep one canonical data model. When a useful schema change would otherwise lose real user data, provide a one-time migration script or instructions outside the application. Do not commit permanent compatibility readers, dual schemas, or migration branches merely to preserve old representations.
+Treat each release as if it were a fresh 1.0. Keep one canonical data model. When a useful schema change would otherwise lose real user data, provide a one-time migration script or instructions outside the application. Do not commit permanent compatibility readers or dual schemas merely to preserve old representations.
 
 ## Current Parola architecture
 
@@ -32,7 +32,7 @@ Cards and noun morphology form one logical inventory. Browser persistence stores
 - Browser persistence can be disabled while remote sync remains active for the session.
 - Manual inventory export/import contains `cards` and `nounMorphology`, without sync transport metadata.
 
-Deterministic tests cover newer-remote reconciliation, newer-local push, ask-first behavior, non-persistent local mode, and offline fallback. A real browser↔Azure smoke test remains an environment-level verification task rather than missing synchronization logic.
+Deterministic tests cover newer-remote reconciliation, newer-local push, ask-first behavior, non-persistent local mode, and offline fallback. A real browser-to-Azure smoke test remains an environment-level verification task rather than missing synchronization logic.
 
 ## Inventory and editing
 
@@ -40,40 +40,55 @@ Cards have optional sets and ordinary tags. There is no deck model. The Inventor
 
 Current card creation/editing supports nouns, verbs, adjectives, and adverbs. Duplicate card creation is rejected. Bulk edits and mass tag changes commit through complete inventory replacement so cards and noun morphology remain consistent.
 
+Noun definitions live in the Inventory noun grid. The separate noun-assignment table has been removed. The noun grid shows English, gender, base, declension, article behavior, derived singular/plural forms, set, and tags. Number is not an editable noun-card column because it is derived from the selected declension rule.
+
 ## Typed study
 
 The prompted card determines the expected part of speech; the learner does not type part-of-speech prefixes.
 
 Study supports English, Italian, or both prompt directions; optional typed Italian verification; one direction per word; English-first ordering when both directions are studied; scope filtering by part of speech, set, or tag; mistake review; and creation of mistake tags.
 
-Noun typed verification uses configurable gender/tantum keywords and a candidate-based syntax parser. Syntax validity is separate from answer correctness. The live parse preview shows structural interpretation without revealing which candidate matches the prompted card before submission.
+Noun typed verification uses configurable gender/tantum keywords and a candidate-based syntax parser. Default markers are `m`, `f`, `s`, and `p`. Syntax validity is separate from answer correctness. The live parse preview shows structural interpretation without revealing which candidate matches the prompted card before submission.
 
-Verb, adjective, and adverb typed verification use their current canonical stored forms. Regular adjective shorthand is supported where the stored adjective actually matches the standard pattern.
+Verb, adjective, and adverb typed verification use their current canonical stored forms. Regular adjective shorthand is supported where the stored adjective matches the standard pattern.
 
 ## Noun morphology
 
 A canonical noun card stores:
 
-- `ruleId`;
+- `rule`, the unique name of its declension rule;
 - `base`;
 - `gender`;
-- `numberMode`, one of `both`, `singular`, or `plural`;
 - `articleMode`, currently `automatic` or `none`.
 
-It does not store derived singular, plural, or article strings.
+It does not store derived singular/plural strings, article strings, or a separate `numberMode`.
 
-Declension rules generate and recognize surface forms. Syntax rules describe accepted answer structures. Inference sets control which declensions each shorthand syntax may infer. Several syntaxes may share one inference set.
+Declension rules use their unique names as references. Their `forms` entries define number availability:
+
+```text
+singular + plural -> both numbers
+singular only     -> singular-only
+plural only       -> plural-only
+```
+
+Inference sets also use unique names as references. Their `declensionRules` arrays contain declension-rule names. Syntax rules reference an inference set by name. Syntax-rule names are unique and are used directly for parser identity/diagnostics.
+
+The morphology editor cascades renames. A rule rename updates inference-set references in the draft and noun-card references on save. An inference-set rename updates syntax references in the draft. Duplicate names are rejected.
+
+Syntax `numberMode` remains because it is parser policy rather than noun-card data. It decides whether a syntax may try two-number, singular-only, or plural-only declension rules.
+
+Syntax `articleMode` currently has two effects: it controls expected article generation for article fields, and it is copied to produced candidates for equality against the target noun. Whether no-article-field syntaxes should constrain target article behavior is still a design question under discussion.
 
 Examples:
 
 ```text
-cetriolo: rule o-i, base cetriol, both numbers
-specchio: rule chio-chi, base spec, both numbers
-Venezia: rule singular-base, base Venezia, singular only
-vestiti meaning clothes: rule plural-base, base vestiti, plural only
+cetriolo: rule -o → -i, base cetriol
+specchio: rule -chio → -chi, base spec
+Venezia: rule Singular form is the base, base Venezia
+vestiti meaning clothes: rule Plural form is the base, base vestiti
 ```
 
-The Inventory view exposes editable declension rules, inference sets, syntax definitions, and noun assignments. The `specchio` learning-policy case is implemented: a rule may exist for the noun while being absent from shorthand inference until the learner chooses to add it.
+The `specchio` learning-policy case is implemented: a rule may exist for the noun while being absent from shorthand inference until the learner adds it to the relevant inference set.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -81,15 +96,17 @@ See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 Parola does not contain a compatibility adapter for retired card formats.
 
-The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must already contain current `ruleId`, `base`, `gender`, `numberMode`, and `articleMode` fields, and they must agree with the active noun morphology. Retired noun `singular`/`plural`/article-detail payloads are rejected rather than converted.
+The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and `articleMode` details and must agree with active noun morphology. Retired `ruleId`, `numberMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
 
 After validation, imported cards use the same `addBatch` and `CardStorage` persistence path as ordinary card creation.
 
 ## Automated validation
 
-`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Coverage includes ordinary shorthand, staged `specchio` inference, gender shorthand, elided and ambiguous articles, contradictory evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate ordering, preview candidate scoping, synchronization decisions, and rejection of retired/invalid import shapes.
+`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Coverage includes rule-derived number behavior, ordinary shorthand, staged `specchio` inference, gender shorthand, elided and ambiguous articles, contradictory evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate ordering, preview candidate scoping, synchronization decisions, and rejection of retired/invalid import shapes.
 
-`.github/workflows/validate.yml` runs the tests, the production web build, API syntax, and repository-wide static checks on relevant pull requests and pushes to `main`.
+Test files run serially because they share one temporary CommonJS output directory.
+
+`.github/workflows/validate.yml` runs tests, the production web build, API syntax, and repository static checks on relevant pull requests and pushes to `main`.
 
 ## Deployment
 
@@ -97,19 +114,18 @@ After validation, imported cards use the same `addBatch` and `CardStorage` persi
 - `.github/workflows/deploy-api.yml` independently deploys the optional synchronization API to Azure.
 - Extension release infrastructure is separate from Pages.
 
-The former Pages extension compatibility feed/package path has been removed. A real installed extension on `0.2.4` successfully updated to `0.2.5` through the independent Releases feed, confirming that bridge was no longer required.
+The former Pages extension compatibility feed/package path has been removed.
 
 ## Inventory migration state
 
-The current noun schema intentionally breaks the previous `nounPatterns` representation. The application contains no compatibility reader for the old schema. Any one-time migration of old real inventory belongs outside the application.
+The current noun schema is intentionally canonical and does not read previous noun representations. Any one-time conversion of real old inventory belongs outside application runtime.
 
 ## Parola-only remaining work
 
-There is no known unimplemented core feature from the current Parola architecture/issue set. The previously tracked main-app items—duplicate prevention, deck removal, realtime parse visualization, configurable noun morphology/inference, and the `specchio` shorthand-learning behavior—are implemented.
+There is no known unimplemented core feature from the current Parola architecture/issue set. Remaining work is primarily validation and product iteration:
 
-The remaining work is primarily hardening and validation:
-
-1. Run a live browser↔Azure synchronization smoke test to verify deployed endpoint configuration, CORS/networking, and persistence behavior.
-2. Manually exercise the noun-study edge cases in the actual UI: `cetriolo`, staged `specchio`, gender shorthand, elided articles, singularia tantum, and pluralia tantum.
-3. Expand automated coverage beyond the current noun-heavy suite if desired—especially verb/adjective/adverb typed verification, card CRUD/inventory transfer, and morphology-editor interactions. This is test coverage, not missing user-facing functionality.
-4. Continue normal UX/product iteration only when a new Parola requirement is identified. Extension capture/enrichment work is explicitly deferred and is not part of the current Parola-only implementation queue.
+1. Run a live browser-to-Azure synchronization smoke test.
+2. Manually exercise noun-study edge cases in the actual UI.
+3. Expand automated coverage beyond the current noun-heavy suite if useful.
+4. Resolve whether syntax-level `articleMode` should constrain candidate equality when the syntax contains no article field.
+5. Continue normal UX/product iteration as new requirements are identified.
