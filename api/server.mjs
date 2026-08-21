@@ -1,12 +1,10 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const port = Number(process.env.PORT || 8080);
-const dataPath = process.env.PAROLA_DATA_PATH || "/home/data/cards.json";
-const morphologyPath = `${dataPath}.noun-morphology.json`;
-const metadataPath = `${dataPath}.meta.json`;
+const dataPath = process.env.PAROLA_DATA_PATH || "/home/data/inventory.json";
 const allowedOrigin = process.env.PAROLA_ALLOWED_ORIGIN || "https://guymichaely.com";
 const validTypes = new Set(["noun", "verb", "adjective", "adverb"]);
 const maxBodyBytes = 1024 * 1024;
@@ -35,6 +33,16 @@ const defaultNounMorphology = {
       markers: [{ kind: "gender", required: false }],
       markerOrder: "any",
       fields: [{ kind: "article", definiteness: "definite", number: "singular" }, { kind: "noun", number: "singular" }],
+      numberMode: "both",
+      articleMode: "automatic",
+      inferenceSetId: "learned-shorthand",
+    },
+    {
+      id: "gender-singular",
+      name: "Gender + singular",
+      markers: [{ kind: "gender", required: true }],
+      markerOrder: "any",
+      fields: [{ kind: "noun", number: "singular" }],
       numberMode: "both",
       articleMode: "automatic",
       inferenceSetId: "learned-shorthand",
@@ -224,27 +232,44 @@ function normalizeNounMorphology(value) {
       const marker = objectValue(rawMarker, "Syntax marker");
       if (marker.kind === "gender") return { kind: "gender", required: Boolean(marker.required) };
       if (marker.kind === "tantum" && (marker.value === "singular" || marker.value === "plural")) return { kind: "tantum", required: Boolean(marker.required), value: marker.value };
-      throw new Error("Invalid noun syntax marker.");
+      throw new Error("Syntax marker must be a gender marker or a singular/plural tantum marker.");
     });
+    if (markers.filter((marker) => marker.kind === "gender").length > 1) throw new Error("A syntax rule can contain at most one gender marker.");
+    if (markers.filter((marker) => marker.kind === "tantum").length > 1) throw new Error("A syntax rule can contain at most one tantum marker.");
+
     const fields = syntax.fields.map((rawField) => {
       const field = objectValue(rawField, "Syntax field");
       if (field.kind === "noun" && (field.number === "singular" || field.number === "plural")) return { kind: "noun", number: field.number };
       if (field.kind === "article" && (field.number === "singular" || field.number === "plural") && (field.definiteness === "definite" || field.definiteness === "indefinite")) {
+        if (field.definiteness === "indefinite" && field.number !== "singular") throw new Error("Indefinite article fields must be singular.");
         return { kind: "article", number: field.number, definiteness: field.definiteness };
       }
-      throw new Error("Invalid noun syntax field.");
+      throw new Error("Syntax field must be a noun form or article field.");
     });
-    if (!["both", "singular", "plural"].includes(syntax.numberMode) || !["automatic", "none"].includes(syntax.articleMode)) throw new Error("Invalid noun syntax mode.");
+    if (!fields.some((field) => field.kind === "noun")) throw new Error("A syntax rule must contain at least one noun field.");
+
+    const numberMode = ["both", "singular", "plural"].includes(syntax.numberMode) ? syntax.numberMode : null;
+    const articleMode = ["automatic", "none"].includes(syntax.articleMode) ? syntax.articleMode : null;
     const inferenceSetId = nonEmptyString(syntax.inferenceSetId, "Syntax inferenceSetId");
-    if (!inferenceSetIds.has(inferenceSetId)) throw new Error(`Syntax references unknown inference set: ${inferenceSetId}.`);
+    if (!numberMode || !articleMode || !inferenceSetIds.has(inferenceSetId)) throw new Error("Syntax rule has invalid number, article, or inference-set configuration.");
+    if (articleMode === "none" && fields.some((field) => field.kind === "article")) throw new Error("A no-article syntax cannot contain article fields.");
+
+    const tantum = markers.find((marker) => marker.kind === "tantum");
+    if (tantum && (numberMode === "both" || tantum.value !== numberMode)) {
+      throw new Error(`Noun syntax ${syntax.name || syntax.id || "rule"} has a ${tantum.value}-only marker that conflicts with its ${numberMode} number mode.`);
+    }
+    if (numberMode !== "both" && fields.some((field) => field.number !== numberMode)) {
+      throw new Error(`Noun syntax ${syntax.name || syntax.id || "rule"} contains a field that conflicts with its ${numberMode} number mode.`);
+    }
+
     return {
       id: nonEmptyString(syntax.id, "Syntax id"),
       name: nonEmptyString(syntax.name, "Syntax name"),
       markers,
       markerOrder: "any",
       fields,
-      numberMode: syntax.numberMode,
-      articleMode: syntax.articleMode,
+      numberMode,
+      articleMode,
       inferenceSetId,
     };
   });
@@ -256,7 +281,14 @@ function normalizeNounMorphology(value) {
   return { declensionRules, inferenceSets, syntaxRules };
 }
 
-function validateNounAssignments(cards, nounMorphology) {
+function validateState(cards, nounMorphology) {
+  const duplicateKeys = new Set();
+  for (const card of cards) {
+    const duplicateKey = cardDuplicateKey(card);
+    if (duplicateKeys.has(duplicateKey)) throw new Error(`Duplicate ${card.type} card for “${card.italian}” / “${card.english}”.`);
+    duplicateKeys.add(duplicateKey);
+  }
+
   const rules = new Map(nounMorphology.declensionRules.map((rule) => [rule.id, rule]));
   for (const card of cards) {
     if (card.type !== "noun") continue;
@@ -273,53 +305,37 @@ function validateNounAssignments(cards, nounMorphology) {
   }
 }
 
+function emptyState() {
+  return {
+    cards: [],
+    nounMorphology: structuredClone(defaultNounMorphology),
+    updatedAt: null,
+  };
+}
+
 async function ensureDataDirectory() {
   await mkdir(dirname(dataPath), { recursive: true });
 }
 
-async function readCards() {
+async function readState() {
   await ensureDataDirectory();
   try {
-    const parsed = JSON.parse(await readFile(dataPath, "utf8"));
-    if (!Array.isArray(parsed)) throw new Error("Card store is not an array.");
-    return parsed.map((card) => normalizeCard(card, { requireId: true }));
+    const parsed = objectValue(JSON.parse(await readFile(dataPath, "utf8")), "Inventory state");
+    if (!Array.isArray(parsed.cards)) throw new Error("Inventory state needs a cards array.");
+    if (!parsed.nounMorphology) throw new Error("Inventory state needs nounMorphology.");
+    const cards = parsed.cards.map((card) => normalizeCard(card, { requireId: true }));
+    const nounMorphology = normalizeNounMorphology(parsed.nounMorphology);
+    const updatedAt = parsed.updatedAt === null || parsed.updatedAt === undefined
+      ? null
+      : typeof parsed.updatedAt === "string" && Number.isFinite(Date.parse(parsed.updatedAt))
+        ? parsed.updatedAt
+        : (() => { throw new Error("Inventory state has an invalid updatedAt timestamp."); })();
+    validateState(cards, nounMorphology);
+    return { cards, nounMorphology, updatedAt };
   } catch (error) {
-    if (error?.code === "ENOENT") return [];
+    if (error?.code === "ENOENT") return emptyState();
     throw error;
   }
-}
-
-async function readNounMorphology() {
-  try {
-    return normalizeNounMorphology(JSON.parse(await readFile(morphologyPath, "utf8")));
-  } catch (error) {
-    if (error?.code === "ENOENT") return structuredClone(defaultNounMorphology);
-    throw error;
-  }
-}
-
-async function readUpdatedAt() {
-  try {
-    const parsed = JSON.parse(await readFile(metadataPath, "utf8"));
-    const updatedAt = typeof parsed?.updatedAt === "string" ? parsed.updatedAt : "";
-    if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) throw new Error("Invalid sync metadata.");
-    return updatedAt;
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    try {
-      const info = await stat(dataPath);
-      return info.mtime.toISOString();
-    } catch (statError) {
-      if (statError?.code === "ENOENT") return null;
-      throw statError;
-    }
-  }
-}
-
-async function readState() {
-  const [cards, nounMorphology, updatedAt] = await Promise.all([readCards(), readNounMorphology(), readUpdatedAt()]);
-  validateNounAssignments(cards, nounMorphology);
-  return { cards, nounMorphology, updatedAt };
 }
 
 async function writeAtomic(path, contents) {
@@ -329,11 +345,9 @@ async function writeAtomic(path, contents) {
   await rename(tempPath, path);
 }
 
-async function writeState(cards, nounMorphology, updatedAt) {
-  validateNounAssignments(cards, nounMorphology);
-  await writeAtomic(dataPath, `${JSON.stringify(cards, null, 2)}\n`);
-  await writeAtomic(morphologyPath, `${JSON.stringify(nounMorphology, null, 2)}\n`);
-  await writeAtomic(metadataPath, `${JSON.stringify({ updatedAt }, null, 2)}\n`);
+async function writeState(state) {
+  validateState(state.cards, state.nounMorphology);
+  await writeAtomic(dataPath, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function queueWrite(operation) {
@@ -346,7 +360,7 @@ function mutateCards(operation) {
   return queueWrite(async () => {
     const state = await readState();
     const result = await operation(state.cards);
-    await writeState(state.cards, state.nounMorphology, new Date().toISOString());
+    await writeState({ ...state, updatedAt: new Date().toISOString() });
     return result;
   });
 }
@@ -363,7 +377,7 @@ function replaceStateIfNewer(cards, nounMorphology, updatedAt) {
       return sameState ? { conflict: false, state: current } : { conflict: true, state: current };
     }
     const state = { cards, nounMorphology, updatedAt };
-    await writeState(cards, nounMorphology, updatedAt);
+    await writeState(state);
     return { conflict: false, state };
   });
 }
@@ -400,7 +414,7 @@ const server = createServer(async (req, res) => {
         if (typeof body.updatedAt !== "string" || !Number.isFinite(Date.parse(body.updatedAt))) return sendJson(res, 400, { error: "PUT /state requires a valid updatedAt timestamp." }, cors);
         const cards = body.cards.map((card) => normalizeCard(card, { requireId: true }));
         const nounMorphology = normalizeNounMorphology(body.nounMorphology);
-        validateNounAssignments(cards, nounMorphology);
+        validateState(cards, nounMorphology);
         const result = await replaceStateIfNewer(cards, nounMorphology, body.updatedAt);
         if (result.conflict) return sendJson(res, 409, { error: "Remote inventory is newer.", state: result.state }, cors);
         return sendJson(res, 200, result.state, cors);
@@ -409,7 +423,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname !== "/cards") return sendJson(res, 404, { error: "Not found." }, cors);
-    if (req.method === "GET") return sendJson(res, 200, { cards: await readCards() }, cors);
+    if (req.method === "GET") return sendJson(res, 200, { cards: (await readState()).cards }, cors);
 
     if (req.method === "POST") {
       const body = await readJsonBody(req);
@@ -466,5 +480,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Parola API listening on port ${port}; data: ${dataPath}`);
+  console.log(`Parola API listening on port ${port}; state: ${dataPath}`);
 });

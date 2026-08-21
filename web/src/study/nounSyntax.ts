@@ -302,11 +302,12 @@ export function analyzeNounInput(rawValue: string, morphology: NounMorphology, k
 export function choosePreviewAttempt(attempts: NounSyntaxAttempt[]) {
   const completeWithCandidates = attempts.filter((attempt) => attempt.status === "complete" && attempt.candidates.length);
   if (completeWithCandidates.length) return completeWithCandidates[0];
-  const complete = attempts.filter((attempt) => attempt.status === "complete");
-  if (complete.length) return complete[0];
+
   const partial = attempts.filter((attempt) => attempt.status === "partial");
   partial.sort((left, right) => right.consumedTokens - left.consumedTokens || left.missing.length - right.missing.length);
-  return partial[0] ?? null;
+  if (partial.length) return partial[0];
+
+  return attempts.find((attempt) => attempt.status === "complete") ?? null;
 }
 
 export function evaluateNounAnswer(card: Flashcard, rawValue: string, morphology: NounMorphology, keywords: AnswerKeywords): NounAnswerEvaluation {

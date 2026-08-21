@@ -10,6 +10,7 @@ import {
   type NounFormNumber,
   type NounMorphology,
   type NounSyntaxField,
+  type NounSyntaxMarker,
   type NounSyntaxRule,
 } from "../cards/nounMorphology";
 import type { InventoryState } from "../storage";
@@ -222,7 +223,7 @@ export function NounMorphologyPanel({
       ...current,
       syntaxRules: current.syntaxRules.map((syntax) => {
         if (syntax.id !== id) return syntax;
-        const markers = syntax.markers.filter((marker) => marker.kind !== "gender");
+        const markers: NounSyntaxMarker[] = syntax.markers.filter((marker) => marker.kind !== "gender");
         if (value !== "none") markers.unshift({ kind: "gender", required: value === "required" });
         return { ...syntax, markers };
       }),
@@ -234,7 +235,7 @@ export function NounMorphologyPanel({
       ...current,
       syntaxRules: current.syntaxRules.map((syntax) => {
         if (syntax.id !== id) return syntax;
-        const markers = syntax.markers.filter((marker) => marker.kind !== "tantum");
+        const markers: NounSyntaxMarker[] = syntax.markers.filter((marker) => marker.kind !== "tantum");
         if (value !== "none") markers.push({ kind: "tantum", required: true, value });
         return { ...syntax, markers };
       }),

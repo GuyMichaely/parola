@@ -91,7 +91,7 @@ export function InventoryCardsEditor({
   }, [cards]);
 
   function updateMetadata(id: string, field: "setName" | "tags", value: string) {
-    setMetadata((items) => ({ ...items, [id]: { ...items[id], [field]: value }));
+    setMetadata((items) => ({ ...items, [id]: { ...items[id], [field]: value } }));
   }
 
   function commonFor(rowId: string) {
