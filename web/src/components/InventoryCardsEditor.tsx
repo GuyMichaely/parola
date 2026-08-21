@@ -3,7 +3,7 @@ import type { CardType, Flashcard } from "../cards/types";
 import {
   nounDefinitionForCard,
   resolvedNounForms,
-  type NounArticleMode,
+  type NounArticleProfile,
   type NounGender,
   type NounMorphology,
 } from "../cards/nounMorphology";
@@ -35,7 +35,7 @@ type NounInventoryRow = {
   rule: string;
   base: string;
   gender: NounGender;
-  articleMode: NounArticleMode;
+  articleProfile: NounArticleProfile;
 };
 
 const inventoryHeightLimitKey = "parola:inventory:limit-height";
@@ -65,7 +65,7 @@ function nounInventoryRowFromCard(card: Flashcard): NounInventoryRow {
     rule: definition.rule,
     base: definition.base,
     gender: definition.gender,
-    articleMode: definition.articleMode,
+    articleProfile: definition.articleProfile,
   };
 }
 
@@ -81,7 +81,7 @@ function nounPreview(row: NounInventoryRow, morphology: NounMorphology) {
       rule: row.rule,
       base: row.base,
       gender: row.gender,
-      articleMode: row.articleMode,
+      articleProfile: row.articleProfile,
     },
   };
   return resolvedNounForms(card, morphology);
@@ -132,7 +132,7 @@ export function InventoryCardsEditor({
         rule: row.rule === previousRow.rule ? nextRow.rule : row.rule,
         base: row.base === previousRow.base ? nextRow.base : row.base,
         gender: row.gender === previousRow.gender ? nextRow.gender : row.gender,
-        articleMode: row.articleMode === previousRow.articleMode ? nextRow.articleMode : row.articleMode,
+        articleProfile: row.articleProfile === previousRow.articleProfile ? nextRow.articleProfile : row.articleProfile,
       };
     }));
 
@@ -213,7 +213,7 @@ export function InventoryCardsEditor({
             rule: row.rule,
             base: row.base.normalize("NFC"),
             gender: row.gender,
-            articleMode: row.articleMode,
+            articleProfile: row.articleProfile,
           },
         };
         const forms = resolvedNounForms(candidate, morphology);
@@ -258,17 +258,21 @@ export function InventoryCardsEditor({
     <datalist id="known-card-sets">{knownSets.map((name) => <option key={name} value={name} />)}</datalist>
     <p className="batch-help">Every visible definition field is editable. Filters use union matching; saving updates the cards currently shown.</p>
     <div className={`batch-table-wrap inventory-table-wrap${limitHeight ? " height-limited" : ""}`}>
-      {type === "noun" && <table className="batch-table inventory-edit-table noun-inventory-table"><thead><tr><th>English</th><th>Gender</th><th>Base</th><th>Declension</th><th>Articles</th><th>Singular</th><th>Plural</th><th>Set</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nounRows.map((row, index) => {
+      {type === "noun" && <table className="batch-table inventory-edit-table noun-inventory-table"><thead><tr><th>English</th><th>Gender</th><th>Base</th><th>Declension</th><th>Article profile</th><th>Singular</th><th>Plural</th><th>Set</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nounRows.map((row, index) => {
         let forms = null;
         try { forms = nounPreview(row, morphology); } catch { /* The row can be fixed in place. */ }
+        const singularArticles = forms?.singular
+          ? [forms.definiteSingularArticle, forms.indefiniteArticle].filter(Boolean).map((article) => joinArticle(article, forms!.singular)).join(" · ")
+          : "";
+        const pluralArticles = forms?.plural && forms.definitePluralArticle ? joinArticle(forms.definitePluralArticle, forms.plural) : "";
         return <tr key={row.id}>
           <td><input aria-label={`Row ${index + 1} English`} value={row.english} onChange={(event) => updateNounRow(row.id, { english: event.target.value })} /></td>
           <td><select aria-label={`Row ${index + 1} gender`} value={row.gender} onChange={(event) => updateNounRow(row.id, { gender: event.target.value as NounGender })}><option value="masculine">M</option><option value="feminine">F</option></select></td>
           <td><input aria-label={`Row ${index + 1} noun base`} value={row.base} onChange={(event) => updateNounRow(row.id, { base: event.target.value })} /></td>
           <td><select aria-label={`Row ${index + 1} declension rule`} value={row.rule} onChange={(event) => updateNounRow(row.id, { rule: event.target.value })}>{morphology.declensionRules.map((rule) => <option key={rule.name} value={rule.name}>{rule.name}</option>)}</select></td>
-          <td><select aria-label={`Row ${index + 1} article behavior`} value={row.articleMode} onChange={(event) => updateNounRow(row.id, { articleMode: event.target.value as NounArticleMode })}><option value="automatic">Automatic</option><option value="none">None</option></select></td>
-          <td className="noun-derived-cell">{forms?.singular ? <><strong>{forms.singular}</strong>{forms.articleMode === "automatic" && <small>{joinArticle(forms.definiteSingularArticle, forms.singular)} · {joinArticle(forms.indefiniteArticle, forms.singular)}</small>}</> : <span>—</span>}</td>
-          <td className="noun-derived-cell">{forms?.plural ? <><strong>{forms.plural}</strong>{forms.articleMode === "automatic" && <small>{joinArticle(forms.definitePluralArticle, forms.plural)}</small>}</> : <span>—</span>}</td>
+          <td><select aria-label={`Row ${index + 1} article profile`} value={row.articleProfile} onChange={(event) => updateNounRow(row.id, { articleProfile: event.target.value as NounArticleProfile })}><option value="111">111 · all three</option><option value="100">100 · definite singular only</option><option value="010">010 · definite plural only</option><option value="000">000 · no articles</option></select></td>
+          <td className="noun-derived-cell">{forms?.singular ? <><strong>{forms.singular}</strong>{singularArticles && <small>{singularArticles}</small>}</> : <span>—</span>}</td>
+          <td className="noun-derived-cell">{forms?.plural ? <><strong>{forms.plural}</strong>{pluralArticles && <small>{pluralArticles}</small>}</> : <span>—</span>}</td>
           {metadataCells(row.id)}
         </tr>;
       })}</tbody></table>}
