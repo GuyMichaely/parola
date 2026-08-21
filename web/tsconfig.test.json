@@ -11,6 +11,7 @@
     "src/cards/nounMorphology.ts",
     "src/study/nounSyntax.ts",
     "src/components/AnswerParsePreview.tsx",
-    "src/storage/sync.ts"
+    "src/storage/sync.ts",
+    "src/extensionImport.ts"
   ]
 }

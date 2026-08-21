@@ -6,11 +6,13 @@ on:
     paths:
       - "web/**"
       - "api/**"
+      - "extension/**"
       - ".github/workflows/validate.yml"
   pull_request:
     paths:
       - "web/**"
       - "api/**"
+      - "extension/**"
       - ".github/workflows/validate.yml"
   workflow_dispatch:
 
@@ -39,7 +41,7 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Run noun parser tests
+      - name: Run web tests
         working-directory: web
         run: npm test
 
@@ -49,3 +51,13 @@ jobs:
 
       - name: Check API syntax
         run: node --check api/server.mjs
+
+      - name: Check extension syntax
+        working-directory: extension
+        run: |
+          node --check background.js
+          node --check content/parola.js
+          node --check focus-preservation.js
+          node --check popup.js
+          node --check review.js
+          node -e 'const manifest = JSON.parse(require("fs").readFileSync("manifest.json", "utf8")); if (!manifest.version) throw new Error("manifest version is required")'
