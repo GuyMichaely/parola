@@ -1,4 +1,5 @@
 import type { Flashcard } from "../cards/types";
+import { cardTypes } from "../cardTypes";
 
 export function cloneCards(cards: Flashcard[]) {
   return cards.map((card) => ({ ...card, tags: [...card.tags], details: { ...card.details } }));
@@ -22,10 +23,12 @@ export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcar
 }
 
 export function normalizeCard(value: unknown): Flashcard {
-  if (!value || typeof value !== "object") throw new Error("Invalid card returned by storage.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid card returned by storage.");
   const card = value as Partial<Flashcard>;
-  if (!Number.isFinite(card.id) || !card.type || !card.english || !card.italian) throw new Error("Storage returned an incomplete card.");
-  const details = card.details && typeof card.details === "object"
+  if (!Number.isFinite(card.id) || !card.type || !cardTypes.includes(card.type) || !card.english || !card.italian) {
+    throw new Error("Storage returned an incomplete or invalid card.");
+  }
+  const details = card.details && typeof card.details === "object" && !Array.isArray(card.details)
     ? Object.fromEntries(Object.entries(card.details).map(([key, item]) => [key, String(item)]))
     : {};
   if (card.type === "noun") {
