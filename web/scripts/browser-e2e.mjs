@@ -84,8 +84,11 @@ try {
   page.on("pageerror", (error) => pageErrors.push(error));
 
   await page.addInitScript((snapshot) => {
+    const seedKey = "parola:e2e-stale-state-seeded";
+    if (window.sessionStorage.getItem(seedKey)) return;
     window.localStorage.clear();
     window.localStorage.setItem("parola:inventory", JSON.stringify(snapshot));
+    window.sessionStorage.setItem(seedKey, "1");
   }, staleLocalSnapshot);
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
