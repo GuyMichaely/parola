@@ -54,7 +54,7 @@ src/
     ├── CardEditors.tsx             editor-component public exports
     ├── EditCardModal.tsx           single-card editing
     ├── InventoryCardsEditor.tsx    editable inventory table
-    ├── NounMorphologyPanel.tsx     rules, inference sets, syntax display, assignments
+    ├── NounMorphologyPanel.tsx     rules, inference sets, syntax editing, assignments
     ├── SaveIndicator.tsx           persistence status UI
     ├── StorageSettingsModal.tsx    sync and inventory-transfer UI
     ├── StudyOptions.tsx            study options and noun answer-keyword settings
@@ -83,7 +83,7 @@ This gives three outcomes:
 
 Ambiguous grammatical facts can branch. For example, `l’` does not determine noun gender by itself, so the parser can try masculine and feminine interpretations. Contradictory explicit facts make that syntax inapplicable.
 
-The live preview is structural. It shows the recognized syntax, consumed fields, and missing fields, but does not display noun declension candidates or indicate which morphology would match the prompted card.
+The live preview is structural. It shows the selected syntax, consumed fields, and missing fields. When that selected syntax produces morphology candidates, the preview may also show their input-derived declension names. Those names come only from the selected syntax and never indicate which candidate, if any, matches the prompted card.
 
 See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the full model.
 
@@ -107,13 +107,19 @@ Inventory JSON export/import contains `cards` and `nounMorphology` without trans
 
 Changes to non-noun cards do not invalidate the morphology draft.
 
+## Validation
+
+`npm test` compiles the noun parsing and preview code into a temporary CommonJS test output and runs deterministic Node tests against the real source modules. The suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping.
+
+`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, and `node --check api/server.mjs` on relevant pull requests and pushes to `main`. The Pages deployment also runs the noun parser tests before building the production site.
+
 ## Extension
 
 The Chrome extension is source-controlled under `extension/`. It stages user-selected Italian words and context, provides a review UI, and sends approved typed cards to the hosted Parola page through its content script.
 
 There is no automated browser/end-to-end extension test harness. Release workflows perform static JavaScript/manifest validation and use Chrome only to pack/sign the CRX.
 
-The canonical extension release workflow is `.github/workflows/release-extension.yml`, which publishes signed release assets through GitHub Releases. The Pages workflow also packages the signed extension into the deployed Pages artifact.
+The canonical extension release workflow is `.github/workflows/release-extension.yml`, which publishes signed release assets through GitHub Releases. The extension manifest has used the GitHub Releases update feed since `0.2.3`; `0.2.4` was the cutover release. The Pages workflow still publishes the old feed path only as a compatibility bridge for clients installed before the cutover. Remove that bridge after the installed legacy client is confirmed to have reached `0.2.4` or later.
 
 ## API
 
@@ -121,6 +127,6 @@ The API is an independent Node service that stores the timestamped inventory sna
 
 ## Deployment
 
-- `.github/workflows/deploy-pages.yml` builds and deploys the web app to GitHub Pages and packages the signed extension into the Pages artifact.
-- `.github/workflows/release-extension.yml` independently validates, signs, and publishes extension release assets.
+- `.github/workflows/deploy-pages.yml` validates and deploys the web app to GitHub Pages and temporarily packages the signed extension into the Pages artifact for old-feed compatibility.
+- `.github/workflows/release-extension.yml` independently validates, signs, and publishes extension release assets through GitHub Releases.
 - `.github/workflows/deploy-api.yml` independently deploys the API to Azure App Service.

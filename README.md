@@ -14,9 +14,9 @@ The public repository is the canonical source for both the web app and extension
 - Extension update feed: `https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml`
 - Signed extension CRX: `https://github.com/GuyMichaely/parola/releases/latest/download/parola.crx`
 
-`.github/workflows/release-extension.yml` statically validates and signs the extension, verifies its fixed extension ID, and publishes release assets through GitHub Releases.
+`.github/workflows/release-extension.yml` statically validates and signs the extension, verifies its fixed extension ID, and publishes release assets through GitHub Releases. The source cutover to that independent feed was completed in extension `0.2.3` and finalized with `0.2.4`.
 
-`.github/workflows/deploy-pages.yml` builds and deploys the web app. During the current extension-feed migration it also publishes the temporary compatibility feed under `/parola/extension/`; that bridge can be removed once installed clients have updated to the GitHub Releases feed.
+`.github/workflows/deploy-pages.yml` builds and deploys the web app. It still publishes a temporary compatibility feed under `/parola/extension/` for clients installed before the GitHub Releases cutover. That bridge should be removed only after the installed legacy client is confirmed to have updated to `0.2.4` or later.
 
 The optional API is deployed separately to Azure by `.github/workflows/deploy-api.yml`.
 
@@ -24,6 +24,6 @@ The frontend always has a local working inventory. Configuring an API endpoint a
 
 ## Project checkpoint
 
-See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the current architecture decisions, deployment-migration status, testing policy, roadmap, and immediate next steps.
+See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the current architecture decisions, deployment status, testing policy, roadmap, and immediate next steps.
 
 See `web/README.md`, `web/ARCHITECTURE.md`, and `extension/README.md` for development details.

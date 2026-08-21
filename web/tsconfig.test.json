@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "isolatedModules": false
+  },
+  "include": [
+    "src/cards/nounMorphology.ts",
+    "src/study/nounSyntax.ts",
+    "src/components/AnswerParsePreview.tsx"
+  ]
+}

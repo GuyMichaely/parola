@@ -57,8 +57,9 @@ export function analyzeAnswerSyntax(card: Flashcard, rawValue: string, keywords:
     const attempts = analyzeNounInput(trimmed, morphology, keywords);
     const selected = choosePreviewAttempt(attempts);
     const hasCompleteSyntax = attempts.some((attempt) => attempt.status === "complete");
-    const candidates = attempts.flatMap((attempt) => attempt.candidates);
-    const candidateNames = Array.from(new Set(candidates.map((candidate) => candidate.declensionRuleName)));
+    const candidateNames = selected
+      ? Array.from(new Set(selected.candidates.map((candidate) => candidate.declensionRuleName)))
+      : [];
 
     if (!selected) {
       return {
