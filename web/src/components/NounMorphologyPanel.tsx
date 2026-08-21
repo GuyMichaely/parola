@@ -40,9 +40,10 @@ function newSyntax(inferenceSet: string, existing: NounSyntaxRule[]): NounSyntax
     name: uniqueName("New noun syntax", existing.map((syntax) => syntax.name)),
     markers: [{ kind: "gender", required: false }],
     markerOrder: "any",
-    fields: [{ kind: "noun", number: "singular" }],
-    numberMode: "both",
-    articleMode: "automatic",
+    fields: [
+      { kind: "article", definiteness: "definite", number: "singular" },
+      { kind: "noun", number: "singular" },
+    ],
     inferenceSet,
   };
 }
@@ -279,7 +280,6 @@ export function NounMorphologyPanel({
       syntaxRules: current.syntaxRules.map((syntax, index) => index !== syntaxIndex ? syntax : {
         ...syntax,
         fields: syntax.fields.map((item, itemIndex) => itemIndex === fieldIndex ? field : item),
-        articleMode: field.kind === "article" ? "automatic" : syntax.articleMode,
       }),
     }));
   }
@@ -322,15 +322,6 @@ export function NounMorphologyPanel({
     }));
   }
 
-  function updateSyntaxArticleMode(index: number, value: "automatic" | "none") {
-    const syntax = draft.syntaxRules[index];
-    if (value === "none" && syntax?.fields.some((field) => field.kind === "article")) {
-      setError("Remove article fields before setting article behavior to None.");
-      return;
-    }
-    updateSyntax(index, { articleMode: value });
-  }
-
   function reloadCurrentSource() {
     setDraft(cloneNounMorphology(morphology));
     setRuleNamesByOriginal(identityRuleNames(morphology));
@@ -358,7 +349,7 @@ export function NounMorphologyPanel({
             rule,
             base: definition.base,
             gender: definition.gender,
-            articleMode: definition.articleMode,
+            articleProfile: definition.articleProfile,
           },
         };
         const forms = resolvedNounForms(nextCard, normalized);
@@ -421,7 +412,7 @@ export function NounMorphologyPanel({
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, inferenceSets: [...current.inferenceSets, newInferenceSet(current.inferenceSets)] }))}>Add inference set</button></div>
 
       <h3>Syntax rules</h3>
-      <p>Syntax rules describe the learner's input structure. Field order is input order; the selected inference set controls which declensions that syntax may infer.</p>
+      <p>Syntax rules describe the learner's input structure. Article fields assert the corresponding article capability; a syntax with no article fields asserts an articleless noun. Tantum markers constrain the inferred declension to singular-only or plural-only.</p>
       {draft.syntaxRules.map((syntax, syntaxIndex) => {
         const genderMarker = syntax.markers.find((marker) => marker.kind === "gender");
         const tantumMarker = syntax.markers.find((marker) => marker.kind === "tantum");
@@ -434,10 +425,8 @@ export function NounMorphologyPanel({
           </div>
           <div className="noun-patterns-table-wrap">
             <table className="noun-patterns-table syntax-settings-table">
-              <thead><tr><th>Number</th><th>Articles</th><th>Gender marker</th><th>Tantum marker</th><th>Inference set</th></tr></thead>
+              <thead><tr><th>Gender marker</th><th>Tantum marker</th><th>Inference set</th></tr></thead>
               <tbody><tr>
-                <td><select value={syntax.numberMode} onChange={(event) => updateSyntax(syntaxIndex, { numberMode: event.target.value as NounSyntaxRule["numberMode"] })}><option value="both">Singular + plural</option><option value="singular">Singular only</option><option value="plural">Plural only</option></select></td>
-                <td><select value={syntax.articleMode} onChange={(event) => updateSyntaxArticleMode(syntaxIndex, event.target.value as "automatic" | "none")}><option value="automatic">Automatic</option><option value="none">None</option></select></td>
                 <td><select value={genderValue} onChange={(event) => setSyntaxGenderMarker(syntaxIndex, event.target.value as "none" | "optional" | "required")}><option value="none">None</option><option value="optional">Optional</option><option value="required">Required</option></select></td>
                 <td><select value={tantumMarker?.kind === "tantum" ? tantumMarker.value : "none"} onChange={(event) => setSyntaxTantumMarker(syntaxIndex, event.target.value as "none" | "singular" | "plural")}><option value="none">None</option><option value="singular">Required singular-only</option><option value="plural">Required plural-only</option></select></td>
                 <td><select value={syntax.inferenceSet} onChange={(event) => updateSyntax(syntaxIndex, { inferenceSet: event.target.value })}>{draft.inferenceSets.map((set) => <option key={set.name} value={set.name}>{set.name}</option>)}</select></td>
