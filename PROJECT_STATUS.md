@@ -36,6 +36,8 @@ Local and remote state are copies of one complete inventory snapshot.
 - The server rejects stale snapshot writes.
 - On load, the user can choose automatic reconciliation or ask-first behavior.
 - Persistent browser storage can be disabled while remote sync remains active for the session.
+- Browser persistence stores the complete state in one `parola:inventory` JSON value.
+- API persistence stores the complete state in one JSON file. Cards, morphology, and the sync timestamp are not persisted as separately coordinated files.
 
 The canonical synchronization state is:
 
@@ -74,9 +76,11 @@ Gender and tantum markers may appear in either order.
 
 Typed input can be partial, syntactically complete, or invalid. Syntax validity is separate from answer correctness.
 
-For noun answers, Parola evaluates candidate interpretations. If at least one candidate matches the prompted noun definition, the answer is correct. If complete candidates exist but none matches, the answer is wrong. If no complete candidate exists, the syntax is invalid.
+For noun answers, Parola evaluates candidate interpretations. If at least one candidate matches the prompted noun definition, the answer is correct. Otherwise, if at least one syntax is structurally complete, the answer is wrong even when no permitted declension rule produces a candidate. If no syntax is structurally complete, the syntax is invalid or incomplete.
 
-The live preview may show possible declension candidates, but it does not reveal which candidate matches the prompted card before submission.
+The live preview may show possible declension candidates, but it does not reveal which candidate matches the prompted card before submission. If one interpretation is structurally complete but produces no candidate while another syntax is still a viable partial parse, the live preview favors the viable partial parse.
+
+After submission, a wrong noun answer may show the syntax, declension rule, base, and gender Parola inferred from the submitted input.
 
 ## Noun morphology
 
@@ -108,9 +112,9 @@ vestito meaning dress: rule o-i, base vestit, both numbers
 
 Syntax rules describe typed-answer structure. They do not contain noun-specific morphology. Each syntax references an inference set. An inference set lists the declension rules that syntax may infer.
 
-This is the learner-control mechanism for shorthand. `chio-chi` can initially be absent from the shorthand inference set, making `lo specchio` a complete but wrong interpretation through another allowed rule. Adding `chio-chi` later makes the same input capable of producing the correct candidate without changing the `specchio` card.
+This is the learner-control mechanism for shorthand. The default `Article + singular` and `Gender + singular` syntaxes share the `learned-shorthand` inference set. `chio-chi` can initially be absent from that set, making `lo specchio` or `m specchio` complete but wrong interpretations through another allowed rule. Adding `chio-chi` later makes the same input capable of producing the correct candidate without changing the `specchio` card.
 
-The Inventory view exposes a noun morphology panel. Declension rules and inference-set membership are editable. Syntax definitions are already data-driven but are read-only in the current UI.
+The Inventory view exposes a noun morphology panel. Declension rules, inference sets, syntax definitions, and noun assignments are editable data. Morphological recognition remains owned by declension rules rather than syntax-specific parser code.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -158,8 +162,7 @@ Manual capture and the basic review flow exist. The next larger extension archit
 
 ## Immediate next steps
 
-1. Finish validating the new noun morphology and candidate parser with the web build and representative noun cases.
-2. When convenient, migrate the existing inventory to the current `nounMorphology` schema and verify it before replacing live state.
-3. Manually test `cetriolo`, `specchio`, singularia tantum, and pluralia tantum study flows after migration.
-4. Verify local/remote synchronization using the new complete inventory snapshot.
-5. Continue extension deployment separation and then resume the capture/enrichment roadmap.
+1. Validate the reconciled noun morphology and candidate parser with the real web build.
+2. Manually test `cetriolo`, `specchio`, the gender shorthand, singularia tantum, and pluralia tantum study flows.
+3. Verify local/remote synchronization using the single complete inventory snapshot.
+4. Continue extension deployment separation and then resume the capture/enrichment roadmap.
