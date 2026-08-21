@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
-import type { CardType, Flashcard } from "../cards/types";
+import type { Flashcard } from "../cards/types";
 import type { NounMorphology } from "../cards/nounMorphology";
-import { cardTypes, typeLabels } from "../cardTypes";
+import { typeLabels } from "../cardTypes";
 import {
   adjectiveRowFromCard,
   adverbRowFromCard,
@@ -44,15 +44,20 @@ export function EditCardModal({
   const [nounRow, setNounRow] = useState<BatchRow>(() => card.type === "noun" ? nounRowFromCard(card, morphology) : {
     id: String(card.id), english: card.english, gender: "masculine", singular: "", plural: "", definiteSingularArticle: "", definitePluralArticle: "", indefiniteArticle: "",
   });
-  const [verbRow, setVerbRow] = useState<VerbBatchRow>(() => verbRowFromCard(card));
-  const [adjectiveRow, setAdjectiveRow] = useState<AdjectiveBatchRow>(() => adjectiveRowFromCard(card));
-  const [adverbRow, setAdverbRow] = useState<AdverbBatchRow>(() => adverbRowFromCard(card));
+  const [verbRow, setVerbRow] = useState<VerbBatchRow>(() => card.type === "verb" ? verbRowFromCard(card) : {
+    id: String(card.id), english: card.english, infinitive: "", io: "", tu: "", luiLei: "", noi: "", voi: "", loro: "", auxiliary: "avere", participle: "",
+  });
+  const [adjectiveRow, setAdjectiveRow] = useState<AdjectiveBatchRow>(() => card.type === "adjective" ? adjectiveRowFromCard(card) : {
+    id: String(card.id), english: card.english, masculineSingular: "", feminineSingular: "", masculinePlural: "", femininePlural: "",
+  });
+  const [adverbRow, setAdverbRow] = useState<AdverbBatchRow>(() => card.type === "adverb" ? adverbRowFromCard(card) : {
+    id: String(card.id), english: card.english, form: "",
+  });
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const common = {
       id: card.id,
-      type: card.type,
       setName: setName.trim() || null,
       tags: parseTags(tags),
     };
@@ -73,19 +78,19 @@ export function EditCardModal({
       }, morphology);
     } else if (card.type === "verb") {
       if ([verbRow.english, verbRow.infinitive, verbRow.io, verbRow.tu, verbRow.luiLei, verbRow.noi, verbRow.voi, verbRow.loro, verbRow.participle].some((value) => !value.trim())) { setFormError("English, infinitive, all six present-tense forms, and the participle are required."); return; }
-      updated = { ...common, english: verbRow.english.trim(), italian: verbRow.infinitive.trim(), details: {
+      updated = { ...common, type: "verb", english: verbRow.english.trim(), italian: verbRow.infinitive.trim(), details: {
         io: verbRow.io.trim(), tu: verbRow.tu.trim(), luiLei: verbRow.luiLei.trim(), noi: verbRow.noi.trim(),
         voi: verbRow.voi.trim(), loro: verbRow.loro.trim(), auxiliary: verbRow.auxiliary, participle: verbRow.participle.trim(),
       }};
     } else if (card.type === "adjective") {
       if ([adjectiveRow.english, adjectiveRow.masculineSingular, adjectiveRow.feminineSingular, adjectiveRow.masculinePlural, adjectiveRow.femininePlural].some((value) => !value.trim())) { setFormError("English and all four Italian adjective forms are required."); return; }
-      updated = { ...common, english: adjectiveRow.english.trim(), italian: adjectiveRow.masculineSingular.trim(), details: {
+      updated = { ...common, type: "adjective", english: adjectiveRow.english.trim(), italian: adjectiveRow.masculineSingular.trim(), details: {
         masculineSingular: adjectiveRow.masculineSingular.trim(), feminineSingular: adjectiveRow.feminineSingular.trim(),
         masculinePlural: adjectiveRow.masculinePlural.trim(), femininePlural: adjectiveRow.femininePlural.trim(),
       }};
     } else {
       if (!adverbRow.english.trim() || !adverbRow.form.trim()) { setFormError("English and the Italian adverb are required."); return; }
-      updated = { ...common, english: adverbRow.english.trim(), italian: adverbRow.form.trim(), details: {} };
+      updated = { ...common, type: "adverb", english: adverbRow.english.trim(), italian: adverbRow.form.trim(), details: {} };
     }
     setFormError("");
     onSave(updated);
