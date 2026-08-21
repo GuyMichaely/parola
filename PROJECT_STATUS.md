@@ -42,15 +42,15 @@ Cards have optional sets and ordinary tags. There is no deck model. The Inventor
 
 Current card creation/editing supports nouns, verbs, adjectives, and adverbs. Duplicate card creation is rejected. Bulk edits and mass tag changes commit through complete inventory replacement so cards and noun morphology remain consistent.
 
-Noun definitions live in the Inventory noun grid. The noun grid shows English, gender, base, declension, article profile, derived singular/plural forms, set, and tags. Number is not an editable noun-card column because it is derived from the selected declension rule.
+Noun definitions live in the Inventory noun grid. The noun grid shows English, gender, base, declension, article profile, derived singular/plural forms, set, and tags. Number and the Italian noun surface form are not stored on the noun card because both are derived from its declension rule and base.
 
 ## Typed study
 
-The prompted card determines the expected part of speech; the learner does not type part-of-speech prefixes.
+The prompted card determines the expected part of speech; the learner does not type part-of-speech prefixes. English prompts display the part of speech next to the prompt itself rather than inside the parse preview.
 
 Study supports English, Italian, or both prompt directions; optional typed Italian verification; one direction per word; English-first ordering when both directions are studied; scope filtering by part of speech, set, or tag; mistake review; and creation of mistake tags.
 
-Noun typed verification uses configurable gender/tantum keywords and a candidate-based syntax parser. Default markers are `m`, `f`, `s`, and `p`. Syntax validity is separate from answer correctness. The live parse preview shows structural interpretation without revealing which candidate matches the prompted card before submission.
+Noun typed verification uses configurable gender/tantum keywords and a candidate-based syntax parser. Default markers are `m`, `f`, `s`, and `p`. Syntax validity is separate from answer correctness. The live parse preview shows structural interpretation without revealing which candidate matches the prompted card before submission. When an article supplies unambiguous gender, such as `lo`, the preview displays that inferred gender.
 
 Verb, adjective, and adverb typed verification use their current canonical stored forms. Regular adjective shorthand is supported where the stored adjective matches the standard pattern.
 
@@ -62,6 +62,8 @@ A canonical noun card stores:
 - `base`;
 - `gender`;
 - `articleProfile`, an object with Boolean `definiteSingular`, `definitePlural`, and `indefiniteSingular` capabilities.
+
+A noun card does not store top-level `italian`. Its singular and plural surface forms are generated from `rule` and `base` using the active noun morphology.
 
 Only four article-profile combinations are canonical:
 
@@ -99,9 +101,9 @@ specchio: rule -chio → -chi, base spec, all three article capabilities
 Venezia: rule Singular form is the base, base Venezia, no article capabilities
 ```
 
-The `specchio` learning-policy case remains deliberate. `-chio → -chi` exists and is assigned to the card but is excluded from `Learned shorthand` by default. `lo specchio` is wrong until that rule is added to the inference set, because the other permitted rules infer different rule/base definitions.
-
 Article-bearing shorthand requires an article. Ambiguous `l'` does not determine gender, so the learner must also provide a gender marker. Articleless nouns use explicit gender and singular/plural-only markers, for example `f s Venezia`.
+
+Masculine nouns whose generated definite singular article is `lo` use the full-declension study policy. A shorthand such as `lo specchio` or `lo zaino` is therefore wrong even when the noun's declension rule is in `Learned shorthand`. For an ordinary two-number, all-articles noun, the accepted full form is shaped like `lo specchio gli specchi uno`. This policy is derived from the generated article rather than stored on individual noun cards.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -109,13 +111,13 @@ See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 Parola does not contain a compatibility adapter for retired card formats.
 
-The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and structured `articleProfile` details and must agree with active noun morphology. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
+The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain current `rule`, `base`, `gender`, and structured `articleProfile` details, must not contain top-level `italian`, and must agree with active noun morphology. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
 
 After validation, imported cards use the same `addBatch` and `CardStorage` persistence path as ordinary card creation.
 
 ## Automated validation
 
-`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Noun coverage includes rule-derived number behavior, staged `specchio` inference, article capability matching, article profiles independent of declension number availability, ambiguous article gender, contradictory evidence, articleless nouns, zero-candidate complete syntax, candidate ordering, preview candidate scoping, and strict rejection of retired schemas.
+`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Noun coverage includes rule-derived number behavior, `lo`-class full-declension policy, article-derived gender, article capability matching, article profiles independent of declension number availability, ambiguous article gender, contradictory evidence, articleless nouns, zero-candidate complete syntax, candidate ordering, preview candidate scoping, and strict rejection of retired schemas.
 
 Test files run serially because they share one temporary CommonJS output directory.
 
@@ -131,7 +133,7 @@ The former Pages extension compatibility feed/package path has been removed.
 
 ## Inventory migration state
 
-The current noun schema is intentionally canonical and does not read previous noun representations. `scripts/migrate-article-profiles.mjs` is a one-off utility for converting retired `articleMode` inventories outside application runtime.
+The current noun schema is intentionally canonical and does not read previous noun representations. `scripts/migrate-article-profiles.mjs` is a one-off utility for converting retired `articleMode` inventories outside application runtime and removes the retired stored noun `italian` value as part of that conversion.
 
 ## Parola-only remaining work
 
