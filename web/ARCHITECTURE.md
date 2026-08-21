@@ -1,6 +1,6 @@
 # Architecture
 
-Parola consists of a static React frontend, a Chrome capture extension, and an optional remote sync API.
+Parola consists of a static React frontend and an optional remote sync API. Extension work is separate from the current Parola-only implementation.
 
 ```text
 Parola web (React + Vite)
@@ -49,39 +49,45 @@ src/
     ├── CardEditorFields.tsx        reusable editor table fields
     ├── CardEditors.tsx             editor-component public exports
     ├── EditCardModal.tsx           single-card editing
-    ├── InventoryCardsEditor.tsx    editable inventory table
-    ├── NounMorphologyPanel.tsx     rules, inference sets, syntax editing, assignments
+    ├── InventoryCardsEditor.tsx    editable inventory table and noun definitions
+    ├── NounMorphologyPanel.tsx     rules, inference sets, and syntax editing
     ├── SaveIndicator.tsx           persistence status UI
     ├── StorageSettingsModal.tsx    sync and inventory-transfer UI
     ├── StudyOptions.tsx            study options and noun answer-keyword settings
     └── StudyScope.tsx              study-scope selection UI
 ```
 
-`App.tsx` owns cross-cutting application state, including the current card collection and active noun morphology. Morphology is passed explicitly to study and editor code rather than stored in a second global runtime singleton. Domain transformations, persistence implementations, verification logic, and self-contained UI live outside the application shell.
+`App.tsx` owns cross-cutting application state, including the current card collection and active noun morphology. Morphology is passed explicitly to study and editor code rather than stored in a second runtime singleton.
 
-English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix or type-specific study mode. Noun gender and tantum markers remain configurable answer tokens.
+English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix. Noun gender and tantum markers remain configurable answer tokens.
 
 ## Noun morphology and syntax
 
-A noun card stores its actual morphology as `ruleId`, `base`, `gender`, `numberMode`, and `articleMode`. It does not store derived plural or article fields.
+A noun card stores its actual morphology as `rule`, `base`, `gender`, and `articleMode`. It does not store derived forms, article strings, or a separate number mode.
 
-A declension rule describes base-to-form transformations. Parola derives simple recognition by reversing those transformations. Gender and study policy are not part of a declension rule.
+A declension rule has a unique `name` plus supported `forms`. Its name is its reference. If both singular and plural form entries exist, the rule is a two-number rule. If only one exists, the rule is singular-only or plural-only. Number availability is therefore derived from the rule rather than duplicated on every noun card.
 
-A syntax rule describes the structure of a typed noun answer. Each syntax references an inference set. An inference set lists the declension rules that syntax may use to interpret the learner's input. Several syntaxes can share one inference set.
+An inference set has a unique `name` and a `declensionRules` array containing rule names. A syntax rule references an inference set by its name. Syntax-rule names are also unique and are used directly in parser diagnostics/editing instead of carrying separate IDs.
 
-The noun parser evaluates every syntax against the typed input. A structurally complete syntax can then produce zero, one, or several morphology candidates. Candidate generation does not consult the prompted card's actual rule. Verification compares the generated candidates with the card only after parsing.
+The morphology editor cascades renames through references. Renaming a declension updates inference-set membership immediately in the draft and updates noun-card rule references when the morphology state is saved. Renaming an inference set updates syntax references in the same draft. Duplicate names are rejected.
+
+A syntax rule describes the structure and parser policy for a typed noun answer. Its `numberMode` is still parser policy: it limits candidate generation to declension rules whose supported form entries match that mode. This is different from the removed noun-card `numberMode` field.
+
+The syntax schema currently also contains `articleMode`. For a syntax with article fields it is used to generate/check expected article tokens. It is also copied to the candidate noun definition and participates in final candidate equality. Whether a syntax with no article field should constrain the target noun's article behavior is a separate design question from the name/number simplification.
+
+The noun parser evaluates every syntax against the typed input. A structurally complete syntax can then produce zero, one, or several morphology candidates. Candidate generation does not consult the prompted card's stored rule. Verification compares generated candidates with the card only after parsing.
 
 This gives three outcomes:
 
 - a matching candidate means correct;
-- otherwise, any structurally complete syntax means wrong, even if that syntax produced no morphology candidate;
+- otherwise, any structurally complete syntax means wrong, even if it produced no morphology candidate;
 - no structurally complete syntax means invalid or incomplete.
 
-Ambiguous grammatical facts can branch. For example, `l’` does not determine noun gender by itself, so the parser can try masculine and feminine interpretations. Contradictory explicit facts make that syntax inapplicable.
+Ambiguous grammatical facts can branch. For example, `l'` does not determine noun gender by itself, so the parser can try masculine and feminine interpretations. Contradictory explicit facts make that syntax inapplicable.
 
-The live preview is structural. It shows the selected syntax, consumed fields, and missing fields. When that selected syntax produces morphology candidates, the preview may also show their input-derived declension names. Those names come only from the selected syntax and never indicate which candidate, if any, matches the prompted card.
+The live preview is structural. It shows the selected syntax, consumed fields, and missing fields. When that selected syntax produces morphology candidates, the preview may show their input-derived declension names. It does not indicate which candidate matches the prompted card.
 
-See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the full model.
+See `../docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 ## Storage and sync
 
@@ -89,9 +95,9 @@ Cards and noun morphology form one logical `InventoryState`. `App` loads them wi
 
 Local snapshots contain `cards`, `nounMorphology`, and an internal `updatedAt`. Remote synchronized snapshots contain the same three values. `nounMorphology` contains declension rules, inference sets, and syntax rules.
 
-Inventory validation checks the relationship between cards and morphology, not only their individual shapes. Every noun must reference an existing compatible rule, and its stored primary `italian` form must match the primary form generated from its canonical noun definition.
+Inventory validation checks relationships between cards and morphology. Every noun must reference an existing rule, and its stored primary `italian` form must match the primary form generated from its canonical rule/base definition.
 
-Bulk inventory edits and mass tag changes are committed as one inventory replacement instead of parallel card writes. Single-card creation, editing, and deletion continue to use the narrower card operations, which preserve the active morphology in the same snapshot.
+Bulk inventory edits and mass tag changes are committed as one inventory replacement instead of parallel card writes. Single-card creation, editing, and deletion continue to use narrower card operations that preserve active morphology in the same snapshot.
 
 Both local and remote sides carry an inventory-level `updatedAt` timestamp. When they differ, the later timestamp wins. Local changes automatically push remotely when sync is configured. The user can choose whether a synchronized local copy persists between browser sessions and whether startup mismatches reconcile automatically or wait for an explicit Sync now action.
 
@@ -99,33 +105,35 @@ Inventory JSON export/import contains `cards` and `nounMorphology` without trans
 
 ## Morphology editing
 
-`NounMorphologyPanel` edits a draft against the current App-owned inventory. If noun definitions or morphology change externally while that draft is dirty, the panel preserves the unsaved draft but marks it stale and disables saving. The user must explicitly discard the stale draft and reload the current noun inventory before saving further morphology changes.
+`NounMorphologyPanel` edits a draft against the current App-owned inventory. If noun definitions or morphology change externally while that draft is dirty, the panel preserves the unsaved draft but marks it stale and disables saving. The user must explicitly discard the stale draft and reload current inventory before saving further morphology changes.
 
 Changes to non-noun cards do not invalidate the morphology draft.
 
+Noun-to-declension assignment is not duplicated in this panel. It lives in the Inventory noun-definition grid together with each noun's base, gender, article behavior, and derived forms.
+
 ## External card import contract
 
-The import bridge is intentionally thin. It accepts an envelope containing cards that already obey Parola's **current canonical `Flashcard` schema**.
+The import bridge is intentionally thin. It accepts an envelope containing cards that already obey Parola's current canonical `Flashcard` schema.
 
-Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must already contain `ruleId`, `base`, `gender`, `numberMode`, and `articleMode`; the retired `singular`/`plural`/article-details representation is rejected rather than translated.
+Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must contain exactly the current `rule`, `base`, `gender`, and `articleMode` details. Retired `ruleId`, `numberMode`, singular/plural, and stored article-detail representations are rejected rather than translated.
 
-Imported noun cards are also checked against the active `NounMorphology` before persistence, so a syntactically current noun whose rule/base does not generate its stored primary Italian form is rejected. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
+Imported noun cards are checked against active `NounMorphology` before persistence. A syntactically current noun whose rule/base does not generate its stored primary Italian form is rejected. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
 
-This boundary is not a migration layer and does not contain extension-specific morphology inference.
+This boundary is not a migration layer.
 
 ## Validation
 
-`npm test` compiles the parser, preview, synchronization, and import-validation modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
+`npm test` compiles parser, preview, synchronization, and import-validation modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules. Test files run serially so their shared temporary CommonJS package marker cannot race.
 
-The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer. Import tests verify that current canonical cards are accepted while retired noun shapes, unknown card types, and noun/morphology mismatches are rejected.
+The noun suite covers rule-derived number behavior, ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. Import tests verify that current canonical cards are accepted while retired noun shapes, unknown card types, and noun/morphology mismatches are rejected.
 
-These synchronization tests verify decision logic without mutating a deployed inventory. A live browser↔API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
+These synchronization tests verify decision logic without mutating a deployed inventory. A live browser-to-API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
 
 `.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, and repository extension static checks on relevant pull requests and pushes to `main`.
 
 ## API
 
-The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the canonical noun-card shape, rule compatibility, and agreement between each noun's stored primary `italian` value and the form generated by its canonical morphology.
+The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the same canonical noun-card shape and name-reference morphology structure as the web app. It also verifies that each noun's stored primary `italian` value agrees with its referenced rule and base.
 
 ## Deployment
 
@@ -133,4 +141,4 @@ The API is an independent Node service that stores the timestamped inventory sna
 - `.github/workflows/release-extension.yml` independently validates, signs, and publishes extension release assets through GitHub Releases.
 - `.github/workflows/deploy-api.yml` independently deploys the API to Azure App Service.
 
-The former Pages extension update-feed/CRX compatibility bridge has been retired after a real installed `0.2.4` client successfully updated through the independent Releases feed to `0.2.5`.
+The former Pages extension compatibility path is retired.
