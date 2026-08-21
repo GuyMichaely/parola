@@ -9,40 +9,50 @@ import { assertNoDuplicateCards, cloneCards, normalizeCard } from "./cardCodec";
 import { assertInventoryState } from "./inventoryState";
 import type { CardStorage, InventoryState } from "./types";
 
-const cardsKey = "parola:cards";
-const nounMorphologyKey = "parola:noun-morphology";
-const updatedAtKey = "parola:cards-updated-at";
+const inventoryKey = "parola:inventory";
 
 export interface InventorySnapshot extends InventoryState {
   updatedAt: string | null;
 }
 
 export function readLocalSnapshot(): InventorySnapshot {
-  const storedCards = window.localStorage.getItem(cardsKey);
-  const storedMorphology = window.localStorage.getItem(nounMorphologyKey);
-  const updatedAt = window.localStorage.getItem(updatedAtKey)?.trim() || null;
-  const parsedCards = storedCards ? JSON.parse(storedCards) as unknown : [];
-  if (!Array.isArray(parsedCards)) throw new Error("Local card storage is invalid.");
-  const nounMorphology = storedMorphology
-    ? normalizeNounMorphology(JSON.parse(storedMorphology) as unknown)
-    : cloneNounMorphology(defaultNounMorphology);
-  const snapshot = { cards: parsedCards.map(normalizeCard), nounMorphology, updatedAt };
+  const stored = window.localStorage.getItem(inventoryKey);
+  if (!stored) {
+    return {
+      cards: [],
+      nounMorphology: cloneNounMorphology(defaultNounMorphology),
+      updatedAt: null,
+    };
+  }
+
+  const parsed = JSON.parse(stored) as {
+    cards?: unknown;
+    nounMorphology?: unknown;
+    updatedAt?: unknown;
+  };
+  if (!Array.isArray(parsed.cards)) throw new Error("Local inventory cards are invalid.");
+  if (!parsed.nounMorphology) throw new Error("Local inventory does not contain nounMorphology.");
+
+  const snapshot: InventorySnapshot = {
+    cards: parsed.cards.map(normalizeCard),
+    nounMorphology: normalizeNounMorphology(parsed.nounMorphology),
+    updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt.trim() ? parsed.updatedAt : null,
+  };
   assertInventoryState(snapshot);
   return snapshot;
 }
 
 export function writeLocalSnapshot(snapshot: InventorySnapshot) {
   assertInventoryState(snapshot);
-  window.localStorage.setItem(cardsKey, JSON.stringify(snapshot.cards));
-  window.localStorage.setItem(nounMorphologyKey, JSON.stringify(snapshot.nounMorphology));
-  if (snapshot.updatedAt) window.localStorage.setItem(updatedAtKey, snapshot.updatedAt);
-  else window.localStorage.removeItem(updatedAtKey);
+  window.localStorage.setItem(inventoryKey, JSON.stringify({
+    cards: snapshot.cards,
+    nounMorphology: snapshot.nounMorphology,
+    updatedAt: snapshot.updatedAt,
+  }));
 }
 
 export function clearLocalSnapshot() {
-  window.localStorage.removeItem(cardsKey);
-  window.localStorage.removeItem(nounMorphologyKey);
-  window.localStorage.removeItem(updatedAtKey);
+  window.localStorage.removeItem(inventoryKey);
 }
 
 function timestamped(cards: Flashcard[], nounMorphology: NounMorphology): InventorySnapshot {
