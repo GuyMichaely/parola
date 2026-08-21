@@ -32,8 +32,17 @@ export function normalizeCard(value: unknown): Flashcard {
     ? Object.fromEntries(Object.entries(card.details).map(([key, item]) => [key, String(item)]))
     : {};
   if (card.type === "noun") {
-    if (!details.ruleId || details.base === undefined || !["masculine", "feminine"].includes(details.gender) || !["both", "singular", "plural"].includes(details.numberMode) || !["automatic", "none"].includes(details.articleMode)) {
-      throw new Error(`Noun card ${card.id} does not use the current base/rule noun schema.`);
+    const nounKeys = Object.keys(details).sort();
+    const expectedKeys = ["articleMode", "base", "gender", "rule"];
+    if (
+      nounKeys.length !== expectedKeys.length
+      || nounKeys.some((key, index) => key !== expectedKeys[index])
+      || !details.rule
+      || details.base === undefined
+      || !["masculine", "feminine"].includes(details.gender)
+      || !["automatic", "none"].includes(details.articleMode)
+    ) {
+      throw new Error(`Noun card ${card.id} does not use the current rule/base/gender/article schema.`);
     }
   }
   return {
