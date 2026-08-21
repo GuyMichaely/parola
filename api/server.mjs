@@ -7,8 +7,14 @@ const port = Number(process.env.PORT || 8080);
 const dataPath = process.env.PAROLA_DATA_PATH || "/home/data/inventory.json";
 const allowedOrigin = process.env.PAROLA_ALLOWED_ORIGIN || "https://guymichaely.com";
 const validTypes = new Set(["noun", "verb", "adjective", "adverb"]);
-const validArticleProfiles = new Set(["111", "100", "010", "000"]);
 const maxBodyBytes = 1024 * 1024;
+
+const nounArticleProfiles = {
+  all: { definiteSingular: true, definitePlural: true, indefiniteSingular: true },
+  definiteSingularOnly: { definiteSingular: true, definitePlural: false, indefiniteSingular: false },
+  definitePluralOnly: { definiteSingular: false, definitePlural: true, indefiniteSingular: false },
+  none: { definiteSingular: false, definitePlural: false, indefiniteSingular: false },
+};
 
 const defaultNounMorphology = {
   declensionRules: [
@@ -148,43 +154,6 @@ function cardDuplicateKey(card) {
   return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${normalizeIdentityText(card.italian)}`;
 }
 
-function normalizeCard(value, { requireId = false } = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Card must be an object.");
-  const id = Number(value.id);
-  if (requireId && (!Number.isSafeInteger(id) || id < 1)) throw new Error("Card id must be a positive integer.");
-  const type = String(value.type || "");
-  if (!validTypes.has(type)) throw new Error("Invalid card type.");
-  const english = String(value.english || "").trim();
-  const italian = String(value.italian || "").trim();
-  if (!english || !italian) throw new Error("Card needs English and Italian text.");
-  const details = value.details && typeof value.details === "object" && !Array.isArray(value.details)
-    ? Object.fromEntries(Object.entries(value.details).map(([key, item]) => [key, String(item)]))
-    : {};
-  if (type === "noun") {
-    const nounKeys = Object.keys(details).sort();
-    const expectedKeys = ["articleProfile", "base", "gender", "rule"];
-    if (
-      nounKeys.length !== expectedKeys.length
-      || nounKeys.some((key, index) => key !== expectedKeys[index])
-      || !details.rule
-      || !Object.prototype.hasOwnProperty.call(details, "base")
-      || !["masculine", "feminine"].includes(details.gender)
-      || !validArticleProfiles.has(details.articleProfile)
-    ) {
-      throw new Error("Noun card does not use the current rule/base/gender/article-profile schema.");
-    }
-  }
-  return {
-    ...(requireId ? { id } : {}),
-    type,
-    english,
-    italian,
-    setName: typeof value.setName === "string" && value.setName.trim() ? value.setName.trim() : null,
-    tags: Array.isArray(value.tags) ? [...new Set(value.tags.map(String).map((tag) => tag.trim()).filter(Boolean))] : [],
-    details,
-  };
-}
-
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value;
@@ -196,6 +165,71 @@ function assertExactKeys(value, label, expected) {
   if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
     throw new Error(`${label} must contain exactly: ${wanted.join(", ")}.`);
   }
+}
+
+function articleProfilesEqual(left, right) {
+  return left.definiteSingular === right.definiteSingular
+    && left.definitePlural === right.definitePlural
+    && left.indefiniteSingular === right.indefiniteSingular;
+}
+
+function normalizeNounArticleProfile(value, label = "Noun article profile") {
+  const profile = objectValue(value, label);
+  assertExactKeys(profile, label, ["definiteSingular", "definitePlural", "indefiniteSingular"]);
+  if (
+    typeof profile.definiteSingular !== "boolean"
+    || typeof profile.definitePlural !== "boolean"
+    || typeof profile.indefiniteSingular !== "boolean"
+  ) {
+    throw new Error(`${label} capabilities must be booleans.`);
+  }
+  const normalized = {
+    definiteSingular: profile.definiteSingular,
+    definitePlural: profile.definitePlural,
+    indefiniteSingular: profile.indefiniteSingular,
+  };
+  if (!Object.values(nounArticleProfiles).some((candidate) => articleProfilesEqual(candidate, normalized))) {
+    throw new Error(`${label} must be all articles, definite singular only, definite plural only, or no articles.`);
+  }
+  return normalized;
+}
+
+function normalizeCard(value, { requireId = false } = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Card must be an object.");
+  const id = Number(value.id);
+  if (requireId && (!Number.isSafeInteger(id) || id < 1)) throw new Error("Card id must be a positive integer.");
+  const type = String(value.type || "");
+  if (!validTypes.has(type)) throw new Error("Invalid card type.");
+  const english = String(value.english || "").trim();
+  const italian = String(value.italian || "").trim();
+  if (!english || !italian) throw new Error("Card needs English and Italian text.");
+  const rawDetails = value.details && typeof value.details === "object" && !Array.isArray(value.details) ? value.details : {};
+  let details;
+  if (type === "noun") {
+    assertExactKeys(rawDetails, "Noun card details", ["articleProfile", "base", "gender", "rule"]);
+    const rule = String(rawDetails.rule ?? "").trim();
+    const gender = rawDetails.gender;
+    if (!rule || (gender !== "masculine" && gender !== "feminine")) {
+      throw new Error("Noun card does not use the current rule/base/gender/article-profile schema.");
+    }
+    details = {
+      rule,
+      base: String(rawDetails.base ?? "").normalize("NFC"),
+      gender,
+      articleProfile: normalizeNounArticleProfile(rawDetails.articleProfile),
+    };
+  } else {
+    details = Object.fromEntries(Object.entries(rawDetails).map(([key, item]) => [key, String(item)]));
+  }
+  return {
+    ...(requireId ? { id } : {}),
+    type,
+    english,
+    italian,
+    setName: typeof value.setName === "string" && value.setName.trim() ? value.setName.trim() : null,
+    tags: Array.isArray(value.tags) ? [...new Set(value.tags.map(String).map((tag) => tag.trim()).filter(Boolean))] : [],
+    details,
+  };
 }
 
 function nonEmptyString(value, label) {
@@ -225,24 +259,10 @@ function generateNounForm(rule, base, number) {
   return `${String(base).normalize("NFC")}${transform.suffix}`;
 }
 
-function ruleNumberMode(rule) {
-  const singular = Boolean(rule.forms.singular);
-  const plural = Boolean(rule.forms.plural);
-  if (singular && plural) return "both";
-  if (singular) return "singular";
-  return "plural";
-}
-
-function articleProfileAllows(profile, capability) {
-  if (capability === "definite-singular") return profile[0] === "1";
-  if (capability === "definite-plural") return profile[1] === "1";
-  return profile[2] === "1";
-}
-
 function articleProfileCompatibleWithRule(profile, rule) {
-  if (articleProfileAllows(profile, "definite-singular") && !rule.forms.singular) return false;
-  if (articleProfileAllows(profile, "definite-plural") && !rule.forms.plural) return false;
-  if (articleProfileAllows(profile, "indefinite-singular") && !rule.forms.singular) return false;
+  if (profile.definiteSingular && !rule.forms.singular) return false;
+  if (profile.definitePlural && !rule.forms.plural) return false;
+  if (profile.indefiniteSingular && !rule.forms.singular) return false;
   return true;
 }
 
@@ -359,7 +379,7 @@ function validateState(cards, nounMorphology) {
     const rule = rules.get(card.details.rule);
     if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.rule}.`);
     if (!articleProfileCompatibleWithRule(card.details.articleProfile, rule)) {
-      throw new Error(`Noun card ${card.id ?? card.english} has article profile ${card.details.articleProfile}, but its declension does not provide every required noun form.`);
+      throw new Error(`Noun card ${card.id ?? card.english} has an article profile that requires a noun form its declension does not provide.`);
     }
     const primaryNumber = rule.forms.singular ? "singular" : "plural";
     const primaryForm = generateNounForm(rule, card.details.base, primaryNumber);
