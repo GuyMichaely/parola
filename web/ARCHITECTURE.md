@@ -24,7 +24,7 @@ src/
 ├── cardTypes.ts                   shared card-type labels and ordering
 ├── extensionImport.ts             external import envelope and canonical-card validation
 ├── cards/
-│   ├── types.ts                   Flashcard/CardType domain model
+│   ├── types.ts                   discriminated Flashcard union and typed detail schemas
 │   ├── editorModel.ts             card editor rows, validation, conversion, drafts
 │   └── nounMorphology.ts          noun rules, syntax rules, inference sets, generation
 ├── storage/
@@ -57,17 +57,19 @@ src/
     └── StudyScope.tsx              study-scope selection UI
 ```
 
+`Flashcard` is a discriminated union keyed by `type`, so `card.type === "noun"` narrows `card.details` to the noun detail schema at compile time. External JSON remains untrusted until `cardCodec` validates and normalizes it.
+
 `App.tsx` owns cross-cutting application state, including the current card collection and active noun morphology. Morphology is passed explicitly to study and editor code rather than stored in a second runtime singleton.
 
 English-to-Italian typed verification always uses the prompted card's known part of speech. There is no part-of-speech answer prefix. Noun gender and tantum markers remain configurable answer tokens.
 
 ## Noun morphology and syntax
 
-A noun card stores its lexical definition as `rule`, `base`, `gender`, and `articleProfile`. The profile is one of `111`, `100`, `010`, or `000`; the bits represent definite singular, definite plural, and indefinite singular article availability.
+A noun card stores its lexical definition as `rule`, `base`, `gender`, and `articleProfile`. `articleProfile` contains three named Boolean capabilities: `definiteSingular`, `definitePlural`, and `indefiniteSingular`. The schema accepts only four combinations: all three, definite singular only, definite plural only, or none.
 
 A declension rule has a unique `name` plus supported `forms`. Its name is its reference. If both singular and plural form entries exist, the rule is a two-number rule. If only one exists, the rule is singular-only or plural-only. Number availability is therefore derived from the rule rather than duplicated on every noun card.
 
-Article availability is independent from declension number availability. A noun may use a two-number declension and still have profile `100`, for example. Validation only requires that any enabled article capability has the noun form it needs.
+Article availability is independent from declension number availability. A noun may use a two-number declension while enabling only `definiteSingular`. Validation only requires that each enabled article capability has the noun form it needs.
 
 An inference set has a unique `name` and a `declensionRules` array containing rule names. A syntax rule references an inference set by its name. Syntax-rule names are also unique and are used directly in parser diagnostics and editing instead of carrying separate IDs.
 
@@ -75,13 +77,13 @@ The morphology editor cascades renames through references. Renaming a declension
 
 A syntax rule stores markers, ordered fields, and an inference-set reference. It does not persist `articleMode`, `articleProfile`, or `numberMode`.
 
-Article constraints are derived from article fields at runtime. A definite singular field requires the target noun's first article-profile bit, a definite plural field requires the second, and an indefinite singular field requires the third. A syntax with no article field asserts `000` and must require explicit gender plus a singular-only or plural-only marker.
+Article constraints are derived from article fields at runtime. A definite singular field requires `articleProfile.definiteSingular`, a definite plural field requires `articleProfile.definitePlural`, and an indefinite singular field requires `articleProfile.indefiniteSingular`. A syntax with no article field requires the no-article profile and must require explicit gender plus a singular-only or plural-only marker.
 
 A noun field requires an inferred declension to support that surface number. A tantum marker additionally restricts inference to a declension whose number availability is exactly singular-only or plural-only. This lets article-bearing singular shorthand match both two-number and singular-only nouns without pretending that the syntax itself asserts one exact number class.
 
 The noun parser evaluates every syntax against the typed input. A structurally complete syntax can produce zero, one, or several morphology candidates. Candidate generation does not consult the prompted card. Verification compares generated candidates with the card only after parsing.
 
-A candidate contains inferred `rule`, `base`, and `gender`, plus an article constraint derived from its syntax. Final matching checks rule/base/gender and then applies that article constraint to the target's stored `articleProfile`. This means `il N` can match either `111` or `100`; it does not force an exact profile match.
+A candidate contains inferred `rule`, `base`, and `gender`, plus an article constraint derived from its syntax. Final matching checks rule/base/gender and applies that article constraint to the target's stored capabilities. Definite-singular input can therefore match either the all-three profile or definite-singular-only; it does not force exact profile equality.
 
 This gives three outcomes:
 
@@ -123,7 +125,7 @@ Noun-to-declension assignment is not duplicated in this panel. It lives in the I
 
 The import bridge is intentionally thin. It accepts an envelope containing cards that already obey Parola's current canonical `Flashcard` schema.
 
-Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must contain exactly the current `rule`, `base`, `gender`, and `articleProfile` details. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail representations are rejected rather than translated.
+Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must contain exactly the current `rule`, `base`, `gender`, and structured `articleProfile` details. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail representations are rejected rather than translated.
 
 Imported noun cards are checked against active `NounMorphology` before persistence. A syntactically current noun whose rule/base does not generate its stored primary Italian form, or whose enabled article capability lacks the required noun form, is rejected. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
 
@@ -137,11 +139,11 @@ The noun suite covers rule-derived number behavior, staged `specchio` inference,
 
 These synchronization tests verify decision logic without mutating a deployed inventory. A live browser-to-API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
 
-`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, and repository extension static checks on relevant pull requests and pushes to `main`.
+`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, migration-script syntax, and repository extension static checks on relevant pull requests and pushes to `main`.
 
 ## API
 
-The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the same strict noun-card article-profile schema and name-reference morphology structure as the web app. It also verifies article-profile/rule compatibility and that each noun's stored primary `italian` value agrees with its referenced rule and base.
+The API is an independent Node service that stores the timestamped inventory snapshot used for synchronization. It validates the same structured noun article-profile schema and name-reference morphology structure as the web app. It also verifies article-profile/rule compatibility and that each noun's stored primary `italian` value agrees with its referenced rule and base.
 
 ## Deployment
 
