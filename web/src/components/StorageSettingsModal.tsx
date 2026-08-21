@@ -109,9 +109,8 @@ export function StorageSettingsModal({
   }
 
   async function replaceWithImportedInventory(imported: ReturnType<typeof parseInventory>, sourceDescription: string) {
-    const current = await currentInventory();
     const confirmed = window.confirm(
-      `Replace the current ${current.cards.length}-card inventory with the ${imported.cards.length}-card inventory ${sourceDescription}?\n\nThis replaces cards and noun morphology and will sync remotely when sync is configured.`,
+      `Replace the current inventory with the ${imported.cards.length}-card inventory ${sourceDescription}?\n\nThis replaces cards and noun morphology and will sync remotely when sync is configured.`,
     );
     if (!confirmed) {
       setTransferMessage("Import canceled; the current inventory was not changed.");
