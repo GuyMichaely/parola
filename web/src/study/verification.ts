@@ -64,18 +64,19 @@ export function matchesExpected(actual: string[], expected: string[]) {
 
 export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: AnswerKeywords, morphology: NounMorphology) {
   const answer = rawValue.trim();
-  const d = card.details;
 
   if (card.type === "noun") {
     return evaluateNounAnswer(card, answer, morphology, keywords).result === "correct";
   }
 
   if (card.type === "verb") {
+    const d = card.details;
     return matchesExpected(whitespaceParts(answer), [card.italian, d.io, d.tu, d.luiLei, d.noi, d.voi, d.loro, d.auxiliary, d.participle]);
   }
 
   if (card.type === "adverb") return normalizeAnswer(answer) === normalizeAnswer(card.italian);
 
+  const d = card.details;
   const adjectiveParts = whitespaceParts(answer);
   if (adjectiveParts.length === 1 && cardSupportsStandardAdjectivePattern(card)) {
     const pattern = standardAdjectivePattern(adjectiveParts[0]);
@@ -85,7 +86,6 @@ export function verifyPowerAnswer(card: Flashcard, rawValue: string, keywords: A
 }
 
 export function verificationFields(card: Flashcard, morphology?: NounMorphology): VerificationField[] {
-  const d = card.details;
   if (card.type === "noun") {
     if (!morphology) throw new Error("Noun verification fields require noun morphology.");
     const forms = resolvedNounForms(card, morphology);
@@ -98,6 +98,7 @@ export function verificationFields(card: Flashcard, morphology?: NounMorphology)
     ].filter((field) => Boolean(field.expected));
   }
   if (card.type === "verb") {
+    const d = card.details;
     return [
       { key: "infinitive", label: "Infinitive", expected: card.italian },
       { key: "io", label: "io", expected: d.io },
@@ -111,6 +112,7 @@ export function verificationFields(card: Flashcard, morphology?: NounMorphology)
     ];
   }
   if (card.type === "adverb") return [{ key: "form", label: "Adverb", expected: card.italian }];
+  const d = card.details;
   return [
     { key: "masculineSingular", label: "Masculine singular", expected: d.masculineSingular || card.italian },
     { key: "feminineSingular", label: "Feminine singular", expected: d.feminineSingular },
