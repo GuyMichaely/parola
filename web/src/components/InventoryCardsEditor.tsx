@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { CardType, Flashcard } from "../cards/types";
+import type { CardType, Flashcard, NounCard } from "../cards/types";
 import {
+  articleProfilesEqual,
+  nounArticleProfiles,
   nounDefinitionForCard,
   resolvedNounForms,
   type NounArticleProfile,
@@ -38,6 +40,23 @@ type NounInventoryRow = {
   articleProfile: NounArticleProfile;
 };
 
+const articleProfileOptions = [
+  { value: "all", label: "All three", profile: nounArticleProfiles.all },
+  { value: "definite-singular", label: "Definite singular only", profile: nounArticleProfiles.definiteSingularOnly },
+  { value: "definite-plural", label: "Definite plural only", profile: nounArticleProfiles.definitePluralOnly },
+  { value: "none", label: "No articles", profile: nounArticleProfiles.none },
+] as const;
+
+type ArticleProfileOption = typeof articleProfileOptions[number]["value"];
+
+function articleProfileOption(profile: NounArticleProfile): ArticleProfileOption {
+  return articleProfileOptions.find((option) => articleProfilesEqual(option.profile, profile))?.value ?? "none";
+}
+
+function articleProfileForOption(value: ArticleProfileOption): NounArticleProfile {
+  return articleProfileOptions.find((option) => option.value === value)?.profile ?? nounArticleProfiles.none;
+}
+
 const inventoryHeightLimitKey = "parola:inventory:limit-height";
 
 function readInventoryHeightLimit() {
@@ -57,7 +76,7 @@ function writeInventoryHeightLimit(value: boolean) {
   }
 }
 
-function nounInventoryRowFromCard(card: Flashcard): NounInventoryRow {
+function nounInventoryRowFromCard(card: NounCard): NounInventoryRow {
   const definition = nounDefinitionForCard(card);
   return {
     id: String(card.id),
@@ -70,7 +89,7 @@ function nounInventoryRowFromCard(card: Flashcard): NounInventoryRow {
 }
 
 function nounPreview(row: NounInventoryRow, morphology: NounMorphology) {
-  const card: Flashcard = {
+  const card: NounCard = {
     id: Number(row.id),
     type: "noun",
     english: row.english,
@@ -132,7 +151,7 @@ export function InventoryCardsEditor({
         rule: row.rule === previousRow.rule ? nextRow.rule : row.rule,
         base: row.base === previousRow.base ? nextRow.base : row.base,
         gender: row.gender === previousRow.gender ? nextRow.gender : row.gender,
-        articleProfile: row.articleProfile === previousRow.articleProfile ? nextRow.articleProfile : row.articleProfile,
+        articleProfile: articleProfilesEqual(row.articleProfile, previousRow.articleProfile) ? nextRow.articleProfile : row.articleProfile,
       };
     }));
 
@@ -200,11 +219,11 @@ export function InventoryCardsEditor({
     if (adjectiveRows.some((row) => [row.english, row.masculineSingular, row.feminineSingular, row.masculinePlural, row.femininePlural].some((value) => !value.trim()))) { setType("adjective"); setError("Every adjective needs English and all four Italian forms."); return; }
     if (adverbRows.some((row) => !row.english.trim() || !row.form.trim())) { setType("adverb"); setError("Every adverb needs English and an Italian form."); return; }
 
-    let nounCards: Flashcard[];
+    let nounCards: NounCard[];
     try {
       nounCards = nounRows.map((row) => {
         const common = commonFor(row.id);
-        const candidate: Flashcard = {
+        const candidate: NounCard = {
           ...common,
           type: "noun",
           english: row.english.trim(),
@@ -270,7 +289,7 @@ export function InventoryCardsEditor({
           <td><select aria-label={`Row ${index + 1} gender`} value={row.gender} onChange={(event) => updateNounRow(row.id, { gender: event.target.value as NounGender })}><option value="masculine">M</option><option value="feminine">F</option></select></td>
           <td><input aria-label={`Row ${index + 1} noun base`} value={row.base} onChange={(event) => updateNounRow(row.id, { base: event.target.value })} /></td>
           <td><select aria-label={`Row ${index + 1} declension rule`} value={row.rule} onChange={(event) => updateNounRow(row.id, { rule: event.target.value })}>{morphology.declensionRules.map((rule) => <option key={rule.name} value={rule.name}>{rule.name}</option>)}</select></td>
-          <td><select aria-label={`Row ${index + 1} article profile`} value={row.articleProfile} onChange={(event) => updateNounRow(row.id, { articleProfile: event.target.value as NounArticleProfile })}><option value="111">111 · all three</option><option value="100">100 · definite singular only</option><option value="010">010 · definite plural only</option><option value="000">000 · no articles</option></select></td>
+          <td><select aria-label={`Row ${index + 1} article profile`} value={articleProfileOption(row.articleProfile)} onChange={(event) => updateNounRow(row.id, { articleProfile: articleProfileForOption(event.target.value as ArticleProfileOption) })}>{articleProfileOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></td>
           <td className="noun-derived-cell">{forms?.singular ? <><strong>{forms.singular}</strong>{singularArticles && <small>{singularArticles}</small>}</> : <span>—</span>}</td>
           <td className="noun-derived-cell">{forms?.plural ? <><strong>{forms.plural}</strong>{pluralArticles && <small>{pluralArticles}</small>}</> : <span>—</span>}</td>
           {metadataCells(row.id)}
