@@ -17,7 +17,9 @@ function assertSyntaxSemantics(state: InventoryState) {
 
     if (!syntax.fields.some((field) => field.kind === "article")) {
       const gender = syntax.markers.find((marker) => marker.kind === "gender");
-      if (!gender?.required) throw new Error(`Articleless noun syntax ${syntax.name} must require an explicit gender marker.`);
+      if (!gender?.required || !tantum?.required) {
+        throw new Error(`Articleless noun syntax ${syntax.name} must require explicit gender and singular/plural-only markers.`);
+      }
     }
   }
 }
