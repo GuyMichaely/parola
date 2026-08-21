@@ -1,7 +1,9 @@
 import type { Flashcard } from "../cards/types";
 import {
   articleProfileAllows,
+  articleProfilesEqual,
   generateNounForm,
+  nounArticleProfiles,
   nounDefinitionForCard,
   recognizeNounForm,
   ruleNumberMode,
@@ -212,7 +214,7 @@ function buildCandidates(
     const plural = generateNounForm(rule, base, "plural") ?? "";
 
     for (const gender of genders) {
-      const articles = suggestedNounArticles(gender, singular, plural, "111");
+      const articles = suggestedNounArticles(gender, singular, plural, nounArticleProfiles.all);
       const articlesMatch = syntax.fields.every((field, index) => {
         if (field.kind !== "article") return true;
         return normalize(values[index] ?? "") === normalize(expectedArticle(field, articles));
@@ -248,7 +250,7 @@ function candidateMatchesTarget(candidate: NounSyntaxCandidate, target: NounDefi
     || candidate.definition.gender !== target.gender
   ) return false;
 
-  if (candidate.articleConstraint.kind === "none") return target.articleProfile === "000";
+  if (candidate.articleConstraint.kind === "none") return articleProfilesEqual(target.articleProfile, nounArticleProfiles.none);
   return candidate.articleConstraint.capabilities.every((capability) => articleProfileAllows(target.articleProfile, capability));
 }
 
