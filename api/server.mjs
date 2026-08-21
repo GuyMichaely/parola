@@ -7,6 +7,7 @@ const port = Number(process.env.PORT || 8080);
 const dataPath = process.env.PAROLA_DATA_PATH || "/home/data/inventory.json";
 const allowedOrigin = process.env.PAROLA_ALLOWED_ORIGIN || "https://guymichaely.com";
 const validTypes = new Set(["noun", "verb", "adjective", "adverb"]);
+const validArticleProfiles = new Set(["111", "100", "010", "000"]);
 const maxBodyBytes = 1024 * 1024;
 
 const defaultNounMorphology = {
@@ -40,26 +41,48 @@ const defaultNounMorphology = {
     },
     {
       name: "Learned shorthand",
-      declensionRules: ["Unchanged singular / plural", "-o → -i", "-e → -i", "-a → -e", "-a → -i", "-ca → -che", "-ga → -ghe"],
+      declensionRules: [
+        "Singular form is the base",
+        "Plural form is the base",
+        "Unchanged singular / plural",
+        "-o → -i",
+        "-e → -i",
+        "-a → -e",
+        "-a → -i",
+        "-ca → -che",
+        "-ga → -ghe",
+      ],
     },
   ],
   syntaxRules: [
     {
-      name: "Article + singular",
+      name: "Definite singular article + noun",
       markers: [{ kind: "gender", required: false }],
       markerOrder: "any",
-      fields: [{ kind: "article", definiteness: "definite", number: "singular" }, { kind: "noun", number: "singular" }],
-      numberMode: "both",
-      articleMode: "automatic",
+      fields: [
+        { kind: "article", definiteness: "definite", number: "singular" },
+        { kind: "noun", number: "singular" },
+      ],
       inferenceSet: "Learned shorthand",
     },
     {
-      name: "Gender + singular",
-      markers: [{ kind: "gender", required: true }],
+      name: "Definite plural article + noun",
+      markers: [{ kind: "gender", required: false }],
       markerOrder: "any",
-      fields: [{ kind: "noun", number: "singular" }],
-      numberMode: "both",
-      articleMode: "automatic",
+      fields: [
+        { kind: "article", definiteness: "definite", number: "plural" },
+        { kind: "noun", number: "plural" },
+      ],
+      inferenceSet: "Learned shorthand",
+    },
+    {
+      name: "Indefinite singular article + noun",
+      markers: [{ kind: "gender", required: false }],
+      markerOrder: "any",
+      fields: [
+        { kind: "article", definiteness: "indefinite", number: "singular" },
+        { kind: "noun", number: "singular" },
+      ],
       inferenceSet: "Learned shorthand",
     },
     {
@@ -73,35 +96,26 @@ const defaultNounMorphology = {
         { kind: "noun", number: "plural" },
         { kind: "article", definiteness: "indefinite", number: "singular" },
       ],
-      numberMode: "both",
-      articleMode: "automatic",
       inferenceSet: "Full noun answers",
     },
     {
-      name: "Singular-only noun",
-      markers: [{ kind: "gender", required: false }, { kind: "tantum", required: true, value: "singular" }],
+      name: "Articleless singular noun",
+      markers: [
+        { kind: "gender", required: true },
+        { kind: "tantum", required: true, value: "singular" },
+      ],
       markerOrder: "any",
       fields: [{ kind: "noun", number: "singular" }],
-      numberMode: "singular",
-      articleMode: "none",
       inferenceSet: "Full noun answers",
     },
     {
-      name: "Singular-only article + noun",
-      markers: [{ kind: "gender", required: false }, { kind: "tantum", required: true, value: "singular" }],
+      name: "Articleless plural noun",
+      markers: [
+        { kind: "gender", required: true },
+        { kind: "tantum", required: true, value: "plural" },
+      ],
       markerOrder: "any",
-      fields: [{ kind: "article", definiteness: "definite", number: "singular" }, { kind: "noun", number: "singular" }],
-      numberMode: "singular",
-      articleMode: "automatic",
-      inferenceSet: "Full noun answers",
-    },
-    {
-      name: "Plural-only noun",
-      markers: [{ kind: "gender", required: false }, { kind: "tantum", required: true, value: "plural" }],
-      markerOrder: "any",
-      fields: [{ kind: "article", definiteness: "definite", number: "plural" }, { kind: "noun", number: "plural" }],
-      numberMode: "plural",
-      articleMode: "automatic",
+      fields: [{ kind: "noun", number: "plural" }],
       inferenceSet: "Full noun answers",
     },
   ],
@@ -148,16 +162,16 @@ function normalizeCard(value, { requireId = false } = {}) {
     : {};
   if (type === "noun") {
     const nounKeys = Object.keys(details).sort();
-    const expectedKeys = ["articleMode", "base", "gender", "rule"];
+    const expectedKeys = ["articleProfile", "base", "gender", "rule"];
     if (
       nounKeys.length !== expectedKeys.length
       || nounKeys.some((key, index) => key !== expectedKeys[index])
       || !details.rule
       || !Object.prototype.hasOwnProperty.call(details, "base")
       || !["masculine", "feminine"].includes(details.gender)
-      || !["automatic", "none"].includes(details.articleMode)
+      || !validArticleProfiles.has(details.articleProfile)
     ) {
-      throw new Error("Noun card does not use the current rule/base/gender/article schema.");
+      throw new Error("Noun card does not use the current rule/base/gender/article-profile schema.");
     }
   }
   return {
@@ -176,6 +190,14 @@ function objectValue(value, label) {
   return value;
 }
 
+function assertExactKeys(value, label, expected) {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+    throw new Error(`${label} must contain exactly: ${wanted.join(", ")}.`);
+  }
+}
+
 function nonEmptyString(value, label) {
   const result = String(value ?? "").trim();
   if (!result) throw new Error(`${label} must be a non-empty string.`);
@@ -185,6 +207,7 @@ function nonEmptyString(value, label) {
 function normalizeTransform(value, label) {
   if (value === undefined || value === null) return null;
   const transform = objectValue(value, label);
+  assertExactKeys(transform, label, ["suffix"]);
   return { suffix: String(transform.suffix ?? "").normalize("NFC") };
 }
 
@@ -202,15 +225,41 @@ function generateNounForm(rule, base, number) {
   return `${String(base).normalize("NFC")}${transform.suffix}`;
 }
 
+function ruleNumberMode(rule) {
+  const singular = Boolean(rule.forms.singular);
+  const plural = Boolean(rule.forms.plural);
+  if (singular && plural) return "both";
+  if (singular) return "singular";
+  return "plural";
+}
+
+function articleProfileAllows(profile, capability) {
+  if (capability === "definite-singular") return profile[0] === "1";
+  if (capability === "definite-plural") return profile[1] === "1";
+  return profile[2] === "1";
+}
+
+function articleProfileCompatibleWithRule(profile, rule) {
+  if (articleProfileAllows(profile, "definite-singular") && !rule.forms.singular) return false;
+  if (articleProfileAllows(profile, "definite-plural") && !rule.forms.plural) return false;
+  if (articleProfileAllows(profile, "indefinite-singular") && !rule.forms.singular) return false;
+  return true;
+}
+
 function normalizeNounMorphology(value) {
   const payload = objectValue(value, "Noun morphology");
+  assertExactKeys(payload, "Noun morphology", ["declensionRules", "inferenceSets", "syntaxRules"]);
   if (!Array.isArray(payload.declensionRules) || !Array.isArray(payload.inferenceSets) || !Array.isArray(payload.syntaxRules)) {
     throw new Error("Noun morphology needs declensionRules, inferenceSets, and syntaxRules arrays.");
   }
 
   const declensionRules = payload.declensionRules.map((raw) => {
     const rule = objectValue(raw, "Declension rule");
+    assertExactKeys(rule, "Declension rule", ["name", "forms"]);
     const forms = objectValue(rule.forms, "Declension rule forms");
+    if (Object.keys(forms).some((key) => key !== "singular" && key !== "plural")) {
+      throw new Error("Declension rule forms can contain only singular and plural.");
+    }
     const singular = normalizeTransform(forms.singular, "Singular transform");
     const plural = normalizeTransform(forms.plural, "Plural transform");
     if (!singular && !plural) throw new Error("A declension rule must define at least one form.");
@@ -224,6 +273,7 @@ function normalizeNounMorphology(value) {
 
   const inferenceSets = payload.inferenceSets.map((raw) => {
     const set = objectValue(raw, "Inference set");
+    assertExactKeys(set, "Inference set", ["name", "declensionRules"]);
     if (!Array.isArray(set.declensionRules)) throw new Error("Inference set declensionRules must be an array.");
     const declensionRules = [...new Set(set.declensionRules.map((name) => nonEmptyString(name, "Inference rule name")))];
     for (const name of declensionRules) if (!ruleNames.has(name)) throw new Error(`Inference set references unknown declension rule: ${name}.`);
@@ -234,11 +284,20 @@ function normalizeNounMorphology(value) {
 
   const syntaxRules = payload.syntaxRules.map((raw) => {
     const syntax = objectValue(raw, "Syntax rule");
+    assertExactKeys(syntax, "Syntax rule", ["name", "markers", "markerOrder", "fields", "inferenceSet"]);
     if (!Array.isArray(syntax.markers) || !Array.isArray(syntax.fields)) throw new Error("Syntax rule markers and fields must be arrays.");
+    if (syntax.markerOrder !== "any") throw new Error("Syntax markerOrder must be any.");
+
     const markers = syntax.markers.map((rawMarker) => {
       const marker = objectValue(rawMarker, "Syntax marker");
-      if (marker.kind === "gender") return { kind: "gender", required: Boolean(marker.required) };
-      if (marker.kind === "tantum" && (marker.value === "singular" || marker.value === "plural")) return { kind: "tantum", required: Boolean(marker.required), value: marker.value };
+      if (marker.kind === "gender") {
+        assertExactKeys(marker, "Gender syntax marker", ["kind", "required"]);
+        return { kind: "gender", required: Boolean(marker.required) };
+      }
+      if (marker.kind === "tantum" && (marker.value === "singular" || marker.value === "plural")) {
+        assertExactKeys(marker, "Tantum syntax marker", ["kind", "required", "value"]);
+        return { kind: "tantum", required: Boolean(marker.required), value: marker.value };
+      }
       throw new Error("Syntax marker must be a gender marker or a singular/plural tantum marker.");
     });
     if (markers.filter((marker) => marker.kind === "gender").length > 1) throw new Error("A syntax rule can contain at most one gender marker.");
@@ -246,8 +305,12 @@ function normalizeNounMorphology(value) {
 
     const fields = syntax.fields.map((rawField) => {
       const field = objectValue(rawField, "Syntax field");
-      if (field.kind === "noun" && (field.number === "singular" || field.number === "plural")) return { kind: "noun", number: field.number };
+      if (field.kind === "noun" && (field.number === "singular" || field.number === "plural")) {
+        assertExactKeys(field, "Noun syntax field", ["kind", "number"]);
+        return { kind: "noun", number: field.number };
+      }
       if (field.kind === "article" && (field.number === "singular" || field.number === "plural") && (field.definiteness === "definite" || field.definiteness === "indefinite")) {
+        assertExactKeys(field, "Article syntax field", ["kind", "definiteness", "number"]);
         if (field.definiteness === "indefinite" && field.number !== "singular") throw new Error("Indefinite article fields must be singular.");
         return { kind: "article", number: field.number, definiteness: field.definiteness };
       }
@@ -255,19 +318,19 @@ function normalizeNounMorphology(value) {
     });
     if (!fields.some((field) => field.kind === "noun")) throw new Error("A syntax rule must contain at least one noun field.");
 
-    const numberMode = ["both", "singular", "plural"].includes(syntax.numberMode) ? syntax.numberMode : null;
-    const articleMode = ["automatic", "none"].includes(syntax.articleMode) ? syntax.articleMode : null;
     const inferenceSet = nonEmptyString(syntax.inferenceSet, "Syntax inference set");
-    if (!numberMode || !articleMode || !inferenceSetNames.has(inferenceSet)) throw new Error("Syntax rule has invalid number, article, or inference-set configuration.");
-    if (articleMode === "none" && fields.some((field) => field.kind === "article")) throw new Error("A no-article syntax cannot contain article fields.");
+    if (!inferenceSetNames.has(inferenceSet)) throw new Error("Syntax rule references an unknown inference set.");
 
     const name = nonEmptyString(syntax.name, "Syntax name");
     const tantum = markers.find((marker) => marker.kind === "tantum");
-    if (tantum && (numberMode === "both" || tantum.value !== numberMode)) {
-      throw new Error(`Noun syntax ${name} has a ${tantum.value}-only marker that conflicts with its ${numberMode} number mode.`);
+    if (tantum && fields.some((field) => field.number !== tantum.value)) {
+      throw new Error(`Noun syntax ${name} has a ${tantum.value}-only marker but contains a field of the other number.`);
     }
-    if (numberMode !== "both" && fields.some((field) => field.number !== numberMode)) {
-      throw new Error(`Noun syntax ${name} contains a field that conflicts with its ${numberMode} number mode.`);
+    if (!fields.some((field) => field.kind === "article")) {
+      const gender = markers.find((marker) => marker.kind === "gender");
+      if (!gender?.required || !tantum?.required) {
+        throw new Error(`Articleless noun syntax ${name} must require explicit gender and singular/plural-only markers.`);
+      }
     }
 
     return {
@@ -275,8 +338,6 @@ function normalizeNounMorphology(value) {
       markers,
       markerOrder: "any",
       fields,
-      numberMode,
-      articleMode,
       inferenceSet,
     };
   });
@@ -297,6 +358,9 @@ function validateState(cards, nounMorphology) {
     if (card.type !== "noun") continue;
     const rule = rules.get(card.details.rule);
     if (!rule) throw new Error(`Noun card ${card.id ?? card.english} references unknown declension rule ${card.details.rule}.`);
+    if (!articleProfileCompatibleWithRule(card.details.articleProfile, rule)) {
+      throw new Error(`Noun card ${card.id ?? card.english} has article profile ${card.details.articleProfile}, but its declension does not provide every required noun form.`);
+    }
     const primaryNumber = rule.forms.singular ? "singular" : "plural";
     const primaryForm = generateNounForm(rule, card.details.base, primaryNumber);
     if (!primaryForm || normalizeIdentityText(card.italian) !== normalizeIdentityText(primaryForm)) {
