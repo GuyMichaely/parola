@@ -3,11 +3,9 @@ import type { CardType, Flashcard } from "../cards/types";
 import {
   nounDefinitionForCard,
   resolvedNounForms,
-  ruleSupportsNumberMode,
   type NounArticleMode,
   type NounGender,
   type NounMorphology,
-  type NounNumberMode,
 } from "../cards/nounMorphology";
 import { cardTypes, typeLabels } from "../cardTypes";
 import {
@@ -34,10 +32,9 @@ type InventoryMetadataDraft = Record<string, { setName: string; tags: string }>;
 type NounInventoryRow = {
   id: string;
   english: string;
-  ruleId: string;
+  rule: string;
   base: string;
   gender: NounGender;
-  numberMode: NounNumberMode;
   articleMode: NounArticleMode;
 };
 
@@ -65,20 +62,11 @@ function nounInventoryRowFromCard(card: Flashcard): NounInventoryRow {
   return {
     id: String(card.id),
     english: card.english,
-    ruleId: definition.ruleId,
+    rule: definition.rule,
     base: definition.base,
     gender: definition.gender,
-    numberMode: definition.numberMode,
     articleMode: definition.articleMode,
   };
-}
-
-function numberModeForRule(morphology: NounMorphology, ruleId: string): NounNumberMode {
-  const rule = morphology.declensionRules.find((item) => item.id === ruleId);
-  if (!rule) return "both";
-  if (rule.forms.singular && rule.forms.plural) return "both";
-  if (rule.forms.singular) return "singular";
-  return "plural";
 }
 
 function nounPreview(row: NounInventoryRow, morphology: NounMorphology) {
@@ -90,10 +78,9 @@ function nounPreview(row: NounInventoryRow, morphology: NounMorphology) {
     setName: null,
     tags: [],
     details: {
-      ruleId: row.ruleId,
+      rule: row.rule,
       base: row.base,
       gender: row.gender,
-      numberMode: row.numberMode,
       articleMode: row.articleMode,
     },
   };
@@ -176,10 +163,6 @@ export function InventoryCardsEditor({
     setNounRows((rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row));
   }
 
-  function changeNounRule(id: string, ruleId: string) {
-    updateNounRow(id, { ruleId, numberMode: numberModeForRule(morphology, ruleId) });
-  }
-
   function setHeightLimited(value: boolean) {
     setLimitHeight(value);
     writeInventoryHeightLimit(value);
@@ -189,9 +172,11 @@ export function InventoryCardsEditor({
     event.preventDefault();
     if (nounRows.some((row) => !row.english.trim())) { setType("noun"); setError("Every noun needs an English prompt."); return; }
     for (const row of nounRows) {
-      const rule = morphology.declensionRules.find((item) => item.id === row.ruleId);
-      if (!rule) { setType("noun"); setError(`${row.english} references a declension rule that no longer exists.`); return; }
-      if (!ruleSupportsNumberMode(rule, row.numberMode)) { setType("noun"); setError(`${rule.name} does not support the number behavior selected for ${row.english}.`); return; }
+      if (!morphology.declensionRules.some((rule) => rule.name === row.rule)) {
+        setType("noun");
+        setError(`${row.english} references a declension rule that no longer exists.`);
+        return;
+      }
     }
     if (verbRows.some((row) => [row.english, row.infinitive, row.io, row.tu, row.luiLei, row.noi, row.voi, row.loro, row.participle].some((value) => !value.trim()))) { setType("verb"); setError("Every verb needs English, infinitive, all six present-tense forms, and the participle."); return; }
     if (adjectiveRows.some((row) => [row.english, row.masculineSingular, row.feminineSingular, row.masculinePlural, row.femininePlural].some((value) => !value.trim()))) { setType("adjective"); setError("Every adjective needs English and all four Italian forms."); return; }
@@ -207,10 +192,9 @@ export function InventoryCardsEditor({
           english: row.english.trim(),
           italian: "",
           details: {
-            ruleId: row.ruleId,
+            rule: row.rule,
             base: row.base.normalize("NFC"),
             gender: row.gender,
-            numberMode: row.numberMode,
             articleMode: row.articleMode,
           },
         };
@@ -256,16 +240,14 @@ export function InventoryCardsEditor({
     <datalist id="known-card-sets">{knownSets.map((name) => <option key={name} value={name} />)}</datalist>
     <p className="batch-help">Every visible definition field is editable. Filters use union matching; saving updates the cards currently shown.</p>
     <div className={`batch-table-wrap inventory-table-wrap${limitHeight ? " height-limited" : ""}`}>
-      {type === "noun" && <table className="batch-table inventory-edit-table noun-inventory-table"><thead><tr><th>English</th><th>Gender</th><th>Base</th><th>Declension</th><th>Number</th><th>Articles</th><th>Singular</th><th>Plural</th><th>Set</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nounRows.map((row, index) => {
-        const rule = morphology.declensionRules.find((item) => item.id === row.ruleId);
+      {type === "noun" && <table className="batch-table inventory-edit-table noun-inventory-table"><thead><tr><th>English</th><th>Gender</th><th>Base</th><th>Declension</th><th>Articles</th><th>Singular</th><th>Plural</th><th>Set</th><th>Tags</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{nounRows.map((row, index) => {
         let forms = null;
         try { forms = nounPreview(row, morphology); } catch { /* The row can be fixed in place. */ }
         return <tr key={row.id}>
           <td><input aria-label={`Row ${index + 1} English`} value={row.english} onChange={(event) => updateNounRow(row.id, { english: event.target.value })} /></td>
           <td><select aria-label={`Row ${index + 1} gender`} value={row.gender} onChange={(event) => updateNounRow(row.id, { gender: event.target.value as NounGender })}><option value="masculine">M</option><option value="feminine">F</option></select></td>
           <td><input aria-label={`Row ${index + 1} noun base`} value={row.base} onChange={(event) => updateNounRow(row.id, { base: event.target.value })} /></td>
-          <td><select aria-label={`Row ${index + 1} declension rule`} value={row.ruleId} onChange={(event) => changeNounRule(row.id, event.target.value)}>{morphology.declensionRules.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></td>
-          <td><select aria-label={`Row ${index + 1} number behavior`} value={row.numberMode} onChange={(event) => updateNounRow(row.id, { numberMode: event.target.value as NounNumberMode })}><option value="both" disabled={!rule || !ruleSupportsNumberMode(rule, "both")}>Singular + plural</option><option value="singular" disabled={!rule || !ruleSupportsNumberMode(rule, "singular")}>Singular only</option><option value="plural" disabled={!rule || !ruleSupportsNumberMode(rule, "plural")}>Plural only</option></select></td>
+          <td><select aria-label={`Row ${index + 1} declension rule`} value={row.rule} onChange={(event) => updateNounRow(row.id, { rule: event.target.value })}>{morphology.declensionRules.map((rule) => <option key={rule.name} value={rule.name}>{rule.name}</option>)}</select></td>
           <td><select aria-label={`Row ${index + 1} article behavior`} value={row.articleMode} onChange={(event) => updateNounRow(row.id, { articleMode: event.target.value as NounArticleMode })}><option value="automatic">Automatic</option><option value="none">None</option></select></td>
           <td className="noun-derived-cell">{forms?.singular ? <><strong>{forms.singular}</strong>{forms.articleMode === "automatic" && <small>{joinArticle(forms.definiteSingularArticle, forms.singular)} · {joinArticle(forms.indefiniteArticle, forms.singular)}</small>}</> : <span>—</span>}</td>
           <td className="noun-derived-cell">{forms?.plural ? <><strong>{forms.plural}</strong>{forms.articleMode === "automatic" && <small>{joinArticle(forms.definitePluralArticle, forms.plural)}</small>}</> : <span>—</span>}</td>
