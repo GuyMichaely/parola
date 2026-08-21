@@ -10,15 +10,13 @@ export type NounFormTransform = {
 };
 
 export type NounDeclensionRule = {
-  id: string;
   name: string;
   forms: Partial<Record<NounFormNumber, NounFormTransform>>;
 };
 
 export type NounInferenceSet = {
-  id: string;
   name: string;
-  declensionRuleIds: string[];
+  declensionRules: string[];
 };
 
 export type NounSyntaxMarker =
@@ -30,14 +28,13 @@ export type NounSyntaxField =
   | { kind: "noun"; number: NounFormNumber };
 
 export type NounSyntaxRule = {
-  id: string;
   name: string;
   markers: NounSyntaxMarker[];
   markerOrder: "any";
   fields: NounSyntaxField[];
   numberMode: NounNumberMode;
   articleMode: NounArticleMode;
-  inferenceSetId: string;
+  inferenceSet: string;
 };
 
 export type NounMorphology = {
@@ -47,14 +44,14 @@ export type NounMorphology = {
 };
 
 export type NounDefinition = {
-  ruleId: string;
+  rule: string;
   base: string;
   gender: NounGender;
-  numberMode: NounNumberMode;
   articleMode: NounArticleMode;
 };
 
 export type ResolvedNounForms = NounDefinition & {
+  numberMode: NounNumberMode;
   singular: string;
   plural: string;
   definiteSingularArticle: string;
@@ -64,32 +61,48 @@ export type ResolvedNounForms = NounDefinition & {
 
 export const defaultNounMorphology: NounMorphology = {
   declensionRules: [
-    { id: "singular-base", name: "Singular form is the base", forms: { singular: { suffix: "" } } },
-    { id: "plural-base", name: "Plural form is the base", forms: { plural: { suffix: "" } } },
-    { id: "identity", name: "Unchanged singular / plural", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
-    { id: "o-i", name: "-o → -i", forms: { singular: { suffix: "o" }, plural: { suffix: "i" } } },
-    { id: "e-i", name: "-e → -i", forms: { singular: { suffix: "e" }, plural: { suffix: "i" } } },
-    { id: "a-e", name: "-a → -e", forms: { singular: { suffix: "a" }, plural: { suffix: "e" } } },
-    { id: "a-i", name: "-a → -i", forms: { singular: { suffix: "a" }, plural: { suffix: "i" } } },
-    { id: "ca-che", name: "-ca → -che", forms: { singular: { suffix: "ca" }, plural: { suffix: "che" } } },
-    { id: "ga-ghe", name: "-ga → -ghe", forms: { singular: { suffix: "ga" }, plural: { suffix: "ghe" } } },
-    { id: "chio-chi", name: "-chio → -chi", forms: { singular: { suffix: "chio" }, plural: { suffix: "chi" } } },
+    { name: "Singular form is the base", forms: { singular: { suffix: "" } } },
+    { name: "Plural form is the base", forms: { plural: { suffix: "" } } },
+    { name: "Unchanged singular / plural", forms: { singular: { suffix: "" }, plural: { suffix: "" } } },
+    { name: "-o → -i", forms: { singular: { suffix: "o" }, plural: { suffix: "i" } } },
+    { name: "-e → -i", forms: { singular: { suffix: "e" }, plural: { suffix: "i" } } },
+    { name: "-a → -e", forms: { singular: { suffix: "a" }, plural: { suffix: "e" } } },
+    { name: "-a → -i", forms: { singular: { suffix: "a" }, plural: { suffix: "i" } } },
+    { name: "-ca → -che", forms: { singular: { suffix: "ca" }, plural: { suffix: "che" } } },
+    { name: "-ga → -ghe", forms: { singular: { suffix: "ga" }, plural: { suffix: "ghe" } } },
+    { name: "-chio → -chi", forms: { singular: { suffix: "chio" }, plural: { suffix: "chi" } } },
   ],
   inferenceSets: [
     {
-      id: "full-noun",
       name: "Full noun answers",
-      declensionRuleIds: ["singular-base", "plural-base", "identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe", "chio-chi"],
+      declensionRules: [
+        "Singular form is the base",
+        "Plural form is the base",
+        "Unchanged singular / plural",
+        "-o → -i",
+        "-e → -i",
+        "-a → -e",
+        "-a → -i",
+        "-ca → -che",
+        "-ga → -ghe",
+        "-chio → -chi",
+      ],
     },
     {
-      id: "learned-shorthand",
       name: "Learned shorthand",
-      declensionRuleIds: ["identity", "o-i", "e-i", "a-e", "a-i", "ca-che", "ga-ghe"],
+      declensionRules: [
+        "Unchanged singular / plural",
+        "-o → -i",
+        "-e → -i",
+        "-a → -e",
+        "-a → -i",
+        "-ca → -che",
+        "-ga → -ghe",
+      ],
     },
   ],
   syntaxRules: [
     {
-      id: "article-singular",
       name: "Article + singular",
       markers: [{ kind: "gender", required: false }],
       markerOrder: "any",
@@ -99,20 +112,18 @@ export const defaultNounMorphology: NounMorphology = {
       ],
       numberMode: "both",
       articleMode: "automatic",
-      inferenceSetId: "learned-shorthand",
+      inferenceSet: "Learned shorthand",
     },
     {
-      id: "gender-singular",
       name: "Gender + singular",
       markers: [{ kind: "gender", required: true }],
       markerOrder: "any",
       fields: [{ kind: "noun", number: "singular" }],
       numberMode: "both",
       articleMode: "automatic",
-      inferenceSetId: "learned-shorthand",
+      inferenceSet: "Learned shorthand",
     },
     {
-      id: "full-declension",
       name: "Full declension",
       markers: [{ kind: "gender", required: false }],
       markerOrder: "any",
@@ -125,10 +136,9 @@ export const defaultNounMorphology: NounMorphology = {
       ],
       numberMode: "both",
       articleMode: "automatic",
-      inferenceSetId: "full-noun",
+      inferenceSet: "Full noun answers",
     },
     {
-      id: "singular-tantum",
       name: "Singular-only noun",
       markers: [
         { kind: "gender", required: false },
@@ -138,10 +148,9 @@ export const defaultNounMorphology: NounMorphology = {
       fields: [{ kind: "noun", number: "singular" }],
       numberMode: "singular",
       articleMode: "none",
-      inferenceSetId: "full-noun",
+      inferenceSet: "Full noun answers",
     },
     {
-      id: "singular-tantum-article",
       name: "Singular-only article + noun",
       markers: [
         { kind: "gender", required: false },
@@ -154,10 +163,9 @@ export const defaultNounMorphology: NounMorphology = {
       ],
       numberMode: "singular",
       articleMode: "automatic",
-      inferenceSetId: "full-noun",
+      inferenceSet: "Full noun answers",
     },
     {
-      id: "plural-tantum",
       name: "Plural-only noun",
       markers: [
         { kind: "gender", required: false },
@@ -170,7 +178,7 @@ export const defaultNounMorphology: NounMorphology = {
       ],
       numberMode: "plural",
       articleMode: "automatic",
-      inferenceSetId: "full-noun",
+      inferenceSet: "Full noun answers",
     },
   ],
 };
@@ -200,16 +208,28 @@ function normalizedTransform(value: unknown, label: string): NounFormTransform |
   return { suffix: String(transform.suffix ?? "").normalize("NFC") };
 }
 
+function assertUniqueNames(values: { name: string }[], label: string) {
+  const names = new Set<string>();
+  for (const value of values) {
+    if (names.has(value.name)) throw new Error(`Duplicate ${label} name: ${value.name}.`);
+    names.add(value.name);
+  }
+}
+
 export function cloneNounMorphology(value: NounMorphology) {
   return clone(value);
 }
 
-export function ruleSupportsNumberMode(rule: NounDeclensionRule, numberMode: NounNumberMode) {
+export function ruleNumberMode(rule: NounDeclensionRule): NounNumberMode {
   const singular = Boolean(rule.forms.singular);
   const plural = Boolean(rule.forms.plural);
-  if (numberMode === "both") return singular && plural;
-  if (numberMode === "singular") return singular && !plural;
-  return plural && !singular;
+  if (singular && plural) return "both";
+  if (singular) return "singular";
+  return "plural";
+}
+
+export function ruleSupportsNumberMode(rule: NounDeclensionRule, numberMode: NounNumberMode) {
+  return ruleNumberMode(rule) === numberMode;
 }
 
 export function normalizeNounMorphology(value: unknown): NounMorphology {
@@ -225,37 +245,27 @@ export function normalizeNounMorphology(value: unknown): NounMorphology {
     const plural = normalizedTransform(forms.plural, "Plural transform");
     if (!singular && !plural) throw new Error("A declension rule must define at least one form.");
     return {
-      id: nonEmptyString(rule.id, "Declension rule id"),
       name: nonEmptyString(rule.name, "Declension rule name"),
       forms: { ...(singular ? { singular } : {}), ...(plural ? { plural } : {}) },
     };
   });
-
-  const ruleIds = new Set<string>();
-  for (const rule of declensionRules) {
-    if (ruleIds.has(rule.id)) throw new Error(`Duplicate declension rule id: ${rule.id}.`);
-    ruleIds.add(rule.id);
-  }
+  assertUniqueNames(declensionRules, "declension rule");
+  const ruleNames = new Set(declensionRules.map((rule) => rule.name));
 
   const inferenceSets: NounInferenceSet[] = payload.inferenceSets.map((raw) => {
     const set = objectValue(raw, "Inference set");
-    if (!Array.isArray(set.declensionRuleIds)) throw new Error("Inference set declensionRuleIds must be an array.");
-    const declensionRuleIds = set.declensionRuleIds.map((id) => nonEmptyString(id, "Inference rule id"));
-    for (const id of declensionRuleIds) {
-      if (!ruleIds.has(id)) throw new Error(`Inference set references unknown declension rule: ${id}.`);
+    if (!Array.isArray(set.declensionRules)) throw new Error("Inference set declensionRules must be an array.");
+    const declensionRuleNames = set.declensionRules.map((name) => nonEmptyString(name, "Inference rule name"));
+    for (const name of declensionRuleNames) {
+      if (!ruleNames.has(name)) throw new Error(`Inference set references unknown declension rule: ${name}.`);
     }
     return {
-      id: nonEmptyString(set.id, "Inference set id"),
       name: nonEmptyString(set.name, "Inference set name"),
-      declensionRuleIds: [...new Set(declensionRuleIds)],
+      declensionRules: [...new Set(declensionRuleNames)],
     };
   });
-
-  const inferenceSetIds = new Set<string>();
-  for (const set of inferenceSets) {
-    if (inferenceSetIds.has(set.id)) throw new Error(`Duplicate inference set id: ${set.id}.`);
-    inferenceSetIds.add(set.id);
-  }
+  assertUniqueNames(inferenceSets, "inference set");
+  const inferenceSetNames = new Set(inferenceSets.map((set) => set.name));
 
   const syntaxRules: NounSyntaxRule[] = payload.syntaxRules.map((raw) => {
     const syntax = objectValue(raw, "Syntax rule");
@@ -290,26 +300,20 @@ export function normalizeNounMorphology(value: unknown): NounMorphology {
 
     const numberMode = syntax.numberMode === "both" || syntax.numberMode === "singular" || syntax.numberMode === "plural" ? syntax.numberMode : null;
     const articleMode = syntax.articleMode === "automatic" || syntax.articleMode === "none" ? syntax.articleMode : null;
-    const inferenceSetId = nonEmptyString(syntax.inferenceSetId, "Syntax inferenceSetId");
-    if (!numberMode || !articleMode || !inferenceSetIds.has(inferenceSetId)) throw new Error("Syntax rule has invalid number, article, or inference-set configuration.");
+    const inferenceSet = nonEmptyString(syntax.inferenceSet, "Syntax inference set");
+    if (!numberMode || !articleMode || !inferenceSetNames.has(inferenceSet)) throw new Error("Syntax rule has invalid number, article, or inference-set configuration.");
     if (articleMode === "none" && fields.some((field) => field.kind === "article")) throw new Error("A no-article syntax cannot contain article fields.");
     return {
-      id: nonEmptyString(syntax.id, "Syntax rule id"),
       name: nonEmptyString(syntax.name, "Syntax rule name"),
       markers,
       markerOrder: "any",
       fields,
       numberMode,
       articleMode,
-      inferenceSetId,
+      inferenceSet,
     };
   });
-
-  const syntaxIds = new Set<string>();
-  for (const syntax of syntaxRules) {
-    if (syntaxIds.has(syntax.id)) throw new Error(`Duplicate syntax rule id: ${syntax.id}.`);
-    syntaxIds.add(syntax.id);
-  }
+  assertUniqueNames(syntaxRules, "syntax rule");
 
   return { declensionRules, inferenceSets, syntaxRules };
 }
@@ -358,26 +362,24 @@ export function suggestedNounArticles(gender: NounGender, singular: string, plur
 export function nounDefinitionForCard(card: Flashcard): NounDefinition {
   if (card.type !== "noun") throw new Error("Only noun cards have noun definitions.");
   const d = card.details;
-  const ruleId = String(d.ruleId ?? "").trim();
+  const rule = String(d.rule ?? "").trim();
   const base = String(d.base ?? "").normalize("NFC");
   const gender: NounGender | null = d.gender === "masculine" || d.gender === "feminine" ? d.gender : null;
-  const numberMode: NounNumberMode | null = d.numberMode === "both" || d.numberMode === "singular" || d.numberMode === "plural" ? d.numberMode : null;
   const articleMode: NounArticleMode | null = d.articleMode === "automatic" || d.articleMode === "none" ? d.articleMode : null;
-  if (!ruleId || !gender || !numberMode || !articleMode) throw new Error(`Noun card ${card.id} does not have a canonical noun definition.`);
-  return { ruleId, base, gender, numberMode, articleMode };
+  if (!rule || !gender || !articleMode) throw new Error(`Noun card ${card.id} does not have a canonical noun definition.`);
+  return { rule, base, gender, articleMode };
 }
 
 export function resolvedNounForms(card: Flashcard, morphology: NounMorphology): ResolvedNounForms {
   const definition = nounDefinitionForCard(card);
-  const rule = morphology.declensionRules.find((item) => item.id === definition.ruleId);
-  if (!rule) throw new Error(`Noun card ${card.id} references unknown declension rule ${definition.ruleId}.`);
-  if (!ruleSupportsNumberMode(rule, definition.numberMode)) {
-    throw new Error(`Declension rule ${rule.id} does not support ${definition.numberMode} noun definitions.`);
-  }
-  const singular = definition.numberMode === "plural" ? "" : generateNounForm(rule, definition.base, "singular") ?? "";
-  const plural = definition.numberMode === "singular" ? "" : generateNounForm(rule, definition.base, "plural") ?? "";
+  const rule = morphology.declensionRules.find((item) => item.name === definition.rule);
+  if (!rule) throw new Error(`Noun card ${card.id} references unknown declension rule ${definition.rule}.`);
+  const numberMode = ruleNumberMode(rule);
+  const singular = generateNounForm(rule, definition.base, "singular") ?? "";
+  const plural = generateNounForm(rule, definition.base, "plural") ?? "";
   return {
     ...definition,
+    numberMode,
     singular,
     plural,
     ...suggestedNounArticles(definition.gender, singular, plural, definition.articleMode),
@@ -386,14 +388,13 @@ export function resolvedNounForms(card: Flashcard, morphology: NounMorphology): 
 
 export function ruleForNounCard(card: Flashcard, morphology: NounMorphology) {
   const definition = nounDefinitionForCard(card);
-  return morphology.declensionRules.find((rule) => rule.id === definition.ruleId) ?? null;
+  return morphology.declensionRules.find((rule) => rule.name === definition.rule) ?? null;
 }
 
 export function nounDefinitionMatches(left: NounDefinition, right: NounDefinition) {
-  return left.ruleId === right.ruleId
+  return left.rule === right.rule
     && normalizeText(left.base) === normalizeText(right.base)
     && left.gender === right.gender
-    && left.numberMode === right.numberMode
     && left.articleMode === right.articleMode;
 }
 
@@ -420,23 +421,22 @@ export function inferNounDefinitionFromForms(input: {
     if (plural && pluralBase === null) continue;
     const base = singularBase ?? pluralBase ?? "";
     if (singularBase !== null && pluralBase !== null && normalizeText(singularBase) !== normalizeText(pluralBase)) continue;
-    const generatedSingular = numberMode === "plural" ? "" : generateNounForm(rule, base, "singular") ?? "";
-    const generatedPlural = numberMode === "singular" ? "" : generateNounForm(rule, base, "plural") ?? "";
+    const generatedSingular = generateNounForm(rule, base, "singular") ?? "";
+    const generatedPlural = generateNounForm(rule, base, "plural") ?? "";
     const articles = suggestedNounArticles(input.gender, generatedSingular, generatedPlural, articleMode);
     if (normalizeText(articles.definiteSingularArticle) !== normalizeText(input.definiteSingularArticle)) continue;
     if (normalizeText(articles.definitePluralArticle) !== normalizeText(input.definitePluralArticle)) continue;
     if (normalizeText(articles.indefiniteArticle) !== normalizeText(input.indefiniteArticle)) continue;
     const suffixLengths = [rule.forms.singular?.suffix.length, rule.forms.plural?.suffix.length].filter((value): value is number => value !== undefined);
     matches.push({
-      ruleId: rule.id,
+      rule: rule.name,
       base,
       gender: input.gender,
-      numberMode,
       articleMode,
       specificity: Math.max(...suffixLengths),
     });
   }
-  matches.sort((left, right) => right.specificity - left.specificity || left.ruleId.localeCompare(right.ruleId));
+  matches.sort((left, right) => right.specificity - left.specificity || left.rule.localeCompare(right.rule));
   const match = matches[0];
   if (!match) return null;
   if (matches[1]?.specificity === match.specificity) return null;
