@@ -15,6 +15,7 @@ import type { Flashcard } from "./cards/types";
 import {
   cloneNounMorphology,
   defaultNounMorphology,
+  resolvedNounForms,
   type NounMorphology,
 } from "./cards/nounMorphology";
 import { cardTypes, typeLabels } from "./cardTypes";
@@ -44,7 +45,16 @@ import {
 } from "./study/logic";
 
 function duplicateCardKey(card: Flashcard) {
-  return `${card.type}\u0000${normalizeAnswer(card.english)}\u0000${normalizeAnswer(card.italian)}`;
+  const italianIdentity = card.type === "noun"
+    ? `${normalizeAnswer(card.details.rule)}\u0000${normalizeAnswer(card.details.base)}`
+    : normalizeAnswer(card.italian);
+  return `${card.type}\u0000${normalizeAnswer(card.english)}\u0000${italianIdentity}`;
+}
+
+function cardItalianText(card: Flashcard, morphology: NounMorphology) {
+  if (card.type !== "noun") return card.italian;
+  const forms = resolvedNounForms(card, morphology);
+  return forms.singular || forms.plural;
 }
 
 export default function Home() {
@@ -140,9 +150,11 @@ export default function Home() {
     return selectedInventoryTags.length === 0 || selectedInventoryTags.some((tag) => cardTagKeys.includes(tag));
   }), [cards, selectedInventoryTags]);
   const filteredCards = useMemo(() => tagMatchedCards.filter((item) => {
-    const haystack = `${item.english} ${item.italian} ${item.details.base ?? ""} ${item.setName ?? ""} ${item.tags.join(" ")}`.toLowerCase();
+    const italian = cardItalianText(item, nounMorphology);
+    const base = item.type === "noun" ? item.details.base : "";
+    const haystack = `${item.english} ${italian} ${base} ${item.setName ?? ""} ${item.tags.join(" ")}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
-  }), [query, tagMatchedCards]);
+  }), [nounMorphology, query, tagMatchedCards]);
 
   useEffect(() => {
     let active = true;
@@ -427,7 +439,7 @@ export default function Home() {
     for (const newCard of newCards) {
       const key = duplicateCardKey(newCard);
       if (existingKeys.has(key) || newKeys.has(key)) {
-        throw new Error(`A ${newCard.type} card for “${newCard.italian}” / “${newCard.english}” already exists.`);
+        throw new Error(`A ${newCard.type} card for “${cardItalianText(newCard, nounMorphology)}” / “${newCard.english}” already exists.`);
       }
       newKeys.add(key);
     }
@@ -610,7 +622,7 @@ export default function Home() {
               {typingItalian ? (
                 <div className={`flashcard verification-card ${verificationResult ?? ""}`}>
                   {!verificationResult ? <>
-                    <div className="verification-prompt"><span className="answer-label">English prompt</span><h2>{card.english}</h2></div>
+                    <div className="verification-prompt"><span className="answer-label">English prompt · {typeLabels[card.type]}</span><h2>{card.english}</h2></div>
                     <ItalianVerificationForm key={studyItem.key} card={card} keywords={answerKeywords} morphology={nounMorphology} onResult={verifyItalian} />
                   </> : <>
                     <div className={`verification-result ${verificationResult}`} role="status">
@@ -625,7 +637,7 @@ export default function Home() {
               ) : (
                 <button className="flashcard" onClick={() => setRevealed((value) => !value)} aria-label={revealed ? `Show ${studyItem.promptLanguage} prompt` : `Show ${studyItem.promptLanguage === "english" ? "Italian" : "English"} answer`}>
                   {!revealed
-                    ? studyItem.promptLanguage === "english" ? <div className="question-content"><span className="answer-label">English</span><h2>{card.english}</h2></div> : <ItalianPrompt card={card} morphology={nounMorphology} />
+                    ? studyItem.promptLanguage === "english" ? <div className="question-content"><span className="answer-label">English · {typeLabels[card.type]}</span><h2>{card.english}</h2></div> : <ItalianPrompt card={card} morphology={nounMorphology} />
                     : studyItem.promptLanguage === "english" ? <CardAnswer card={card} morphology={nounMorphology} /> : <EnglishAnswer card={card} showType />}
                 </button>
               )}
