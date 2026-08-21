@@ -8,15 +8,16 @@ function normalizeItalian(value: string) {
 function assertSyntaxSemantics(state: InventoryState) {
   for (const syntax of state.nounMorphology.syntaxRules) {
     const tantum = syntax.markers.find((marker) => marker.kind === "tantum");
-    if (tantum && (syntax.numberMode === "both" || tantum.value !== syntax.numberMode)) {
-      throw new Error(`Noun syntax ${syntax.name} has a ${tantum.value}-only marker that conflicts with its ${syntax.numberMode} number mode.`);
+    if (tantum) {
+      const conflictingField = syntax.fields.find((field) => field.number !== tantum.value);
+      if (conflictingField) {
+        throw new Error(`Noun syntax ${syntax.name} has a ${tantum.value}-only marker but contains a ${conflictingField.number} field.`);
+      }
     }
 
-    if (syntax.numberMode !== "both") {
-      const conflictingField = syntax.fields.find((field) => field.number !== syntax.numberMode);
-      if (conflictingField) {
-        throw new Error(`Noun syntax ${syntax.name} is ${syntax.numberMode}-only but contains a ${conflictingField.number} field.`);
-      }
+    if (!syntax.fields.some((field) => field.kind === "article")) {
+      const gender = syntax.markers.find((marker) => marker.kind === "gender");
+      if (!gender?.required) throw new Error(`Articleless noun syntax ${syntax.name} must require an explicit gender marker.`);
     }
   }
 }
