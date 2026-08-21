@@ -120,7 +120,7 @@ try {
   await page.getByRole("checkbox", { name: /Type to verify/i }).check();
   await page.getByText("English prompt · Noun", { exact: true }).waitFor({ state: "visible" });
 
-  const answer = page.getByLabel("Answer");
+  const answer = page.getByRole("textbox", { name: "Answer" });
   await answer.fill("lo");
   const articleGender = page.locator(".answer-parse-piece").filter({ hasText: "Gender from article" });
   await articleGender.waitFor({ state: "visible" });
