@@ -120,11 +120,13 @@ See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 ## Automated validation
 
-The web package has deterministic tests against the real parser, preview, and synchronization modules. The noun cases cover ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
+The web package has deterministic tests against the real parser, preview, synchronization, and extension-import conversion modules. The noun cases cover ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
 
 The synchronization cases cover newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. These tests exercise the single-snapshot synchronization logic with in-memory browser storage and a fake HTTP peer; they do not replace a smoke test against the deployed browser/API environment.
 
-`.github/workflows/validate.yml` runs the tests, the production web build, and the API syntax check on relevant pull requests and pushes to `main`. The Pages deployment also runs the test suite before building the production site.
+Extension-import tests verify that reviewed candidate forms are converted through the current Parola card model and noun morphology, including `specchio` and an explicitly plural-only `vestiti` candidate. The PR workflow also performs static syntax/manifest validation for the extension itself. There is still no automated browser/E2E extension harness.
+
+`.github/workflows/validate.yml` runs the tests, the production web build, API syntax, and extension static checks on relevant pull requests and pushes to `main`. The Pages deployment also runs the web test suite before building the production site.
 
 ## Inventory migration state
 
@@ -144,13 +146,21 @@ Supported capture paths:
 
 Captured words are staged for review before import.
 
-The longer-term extension model should keep capture facts separate from canonical card candidates. A captured surface form such as `mangio` should remain distinct from the eventual lemma/card form `mangiare`.
+The current staged record still combines capture evidence (`word`, contexts, sources) with editable candidate fields (`english`, `cardType`, grammatical `details`). The next model change should separate those concepts so a captured surface form such as `mangio` remains immutable evidence while the canonical candidate can independently become `mangiare`.
+
+## Extension import boundary
+
+The extension no longer writes Parola inventory localStorage or calls the synchronization API directly.
+
+Approved review items are sent to the loaded Parola page as import candidates. The web app validates and converts them using its current card model and active noun morphology, then saves them through the same `CardStorage` path used by ordinary card creation. The extension removes staged items only after Parola acknowledges a successful save.
+
+This keeps persistence mode, inventory validation, and noun morphology ownership in the web app. It also means the extension transport shape is not a second persisted Parola card schema.
 
 ## Extension testing policy
 
 Do not maintain automated browser or end-to-end tests for the extension.
 
-Use static source checks, manifest validation, signing/package checks, manual testing with the real signed extension, and exported debug logs.
+Use static source checks, manifest validation, signing/package checks, manual testing with the real signed extension, and exported debug logs. Web-side candidate conversion can be tested deterministically without launching the extension.
 
 ## Extension deployment
 
@@ -160,17 +170,17 @@ The independent deployment model is already implemented:
 - extension through `.github/workflows/release-extension.yml` and GitHub Releases;
 - API through `.github/workflows/deploy-api.yml`.
 
-The extension source moved to the GitHub Releases update feed in `0.2.3`, and `0.2.4` was the explicit cutover release. The Pages workflow still publishes `/parola/extension/updates.xml` and its CRX only as a compatibility bridge for clients installed on the old Pages feed. The project record does not yet confirm that the installed legacy client reached `0.2.4`, so the compatibility bridge should remain until that is confirmed. No further deployment-separation implementation is required before that confirmation.
+The extension source moved to the GitHub Releases update feed in `0.2.3`, and `0.2.4` was the explicit feed-cutover release. Current source is `0.2.5`, which contains the repaired Parola import boundary. The Pages workflow still publishes `/parola/extension/updates.xml` and its CRX as a compatibility bridge for clients installed on the old Pages feed. Keep that bridge until the installed extension is confirmed to have updated onto the independent feed; confirming `0.2.5` also verifies the current import build is installed.
 
 ## Product roadmap
 
 The core pipeline is `capture -> enrichment -> validation -> review -> persistence`.
 
-Manual capture and the basic review flow exist. The next larger extension architecture step is separating captured surface forms and contexts from canonical card candidates, then adding user-initiated enrichment through a provider/API abstraction.
+Manual capture, review, and the current Parola-owned persistence handoff exist. The next larger extension architecture step is separating captured surface forms and contexts from canonical card candidates, then adding user-initiated enrichment through a provider/API abstraction.
 
 ## Immediate next steps
 
 1. Keep the automated suite green and manually exercise `cetriolo`, staged `specchio` inference, gender shorthand, elided articles, singularia tantum, and pluralia tantum in the actual study UI.
 2. Run a live browser↔Azure sync smoke test against the deployed environment. The synchronization decision logic itself is covered deterministically, including automatic/ask-first reconciliation and offline/non-persistent behavior.
-3. Confirm the installed Parola Capture client is `0.2.4` or later. Once confirmed, remove the temporary Pages extension compatibility feed/package path.
-4. Resume the capture/enrichment roadmap: separate captured surface forms/context from canonical card candidates, then add user-initiated enrichment behind a provider/API abstraction.
+3. Confirm the installed Parola Capture client reaches `0.2.5`, then manually import at least an ordinary noun and a nonstandard/plural-only noun through the signed extension. Once the client is known to be using the independent release feed, remove the temporary Pages extension compatibility feed/package path.
+4. Separate immutable capture evidence from editable canonical-card candidates in extension staging, then add user-initiated enrichment behind a provider/API abstraction.
