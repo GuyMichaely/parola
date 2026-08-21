@@ -90,6 +90,8 @@ export const defaultNounMorphology: NounMorphology = {
     {
       name: "Learned shorthand",
       declensionRules: [
+        "Singular form is the base",
+        "Plural form is the base",
         "Unchanged singular / plural",
         "-o → -i",
         "-e → -i",
@@ -333,9 +335,15 @@ export function normalizeNounMorphology(value: unknown): NounMorphology {
 
     const inferenceSet = nonEmptyString(syntax.inferenceSet, "Syntax inference set");
     if (!inferenceSetNames.has(inferenceSet)) throw new Error("Syntax rule references an unknown inference set.");
+    const tantum = markers.find((marker) => marker.kind === "tantum");
+    if (tantum && fields.some((field) => field.number !== tantum.value)) {
+      throw new Error(`Noun syntax ${syntax.name} has a ${tantum.value}-only marker but contains a field of the other number.`);
+    }
     if (!fields.some((field) => field.kind === "article")) {
       const genderMarker = markers.find((marker) => marker.kind === "gender");
-      if (!genderMarker?.required) throw new Error("An articleless syntax must require an explicit gender marker.");
+      if (!genderMarker?.required || !tantum?.required) {
+        throw new Error("An articleless syntax must require explicit gender and singular/plural-only markers.");
+      }
     }
 
     return {
