@@ -1,4 +1,4 @@
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { CardType, Flashcard } from "../cards/types";
 import {
   nounDefinitionForCard,
@@ -129,31 +129,34 @@ export function InventoryCardsEditor({
   const cardById = new Map(cards.map((card) => [card.id, card]));
   const counts = { noun: nounRows.length, verb: verbRows.length, adjective: adjectiveRows.length, adverb: adverbRows.length };
 
-  const previousById = new Map(previousCardsRef.current.map((card) => [card.id, card]));
-  if (previousCardsRef.current !== cards) {
-    const nextMetadata: InventoryMetadataDraft = {};
-    for (const card of cards) {
-      const id = String(card.id);
-      const previous = previousById.get(card.id);
-      const existing = metadata[id];
-      if (!previous || !existing) {
-        nextMetadata[id] = { setName: card.setName ?? "", tags: card.tags.join(", ") };
-        continue;
+  useEffect(() => {
+    const previousById = new Map(previousCardsRef.current.map((card) => [card.id, card]));
+    setMetadata((current) => {
+      const next: InventoryMetadataDraft = {};
+      for (const card of cards) {
+        const id = String(card.id);
+        const previous = previousById.get(card.id);
+        const existing = current[id];
+        if (!previous || !existing) {
+          next[id] = { setName: card.setName ?? "", tags: card.tags.join(", ") };
+          continue;
+        }
+
+        const removedTags = new Set(previous.tags.filter((tag) => !card.tags.includes(tag)));
+        const addedTags = card.tags.filter((tag) => !previous.tags.includes(tag));
+        const draftTags = parseTags(existing.tags).filter((tag) => !removedTags.has(tag));
+        for (const tag of addedTags) {
+          if (!draftTags.includes(tag)) draftTags.push(tag);
+        }
+        next[id] = {
+          setName: existing.setName === (previous.setName ?? "") ? (card.setName ?? "") : existing.setName,
+          tags: draftTags.join(", "),
+        };
       }
-      const removedTags = new Set(previous.tags.filter((tag) => !card.tags.includes(tag)));
-      const addedTags = card.tags.filter((tag) => !previous.tags.includes(tag));
-      const draftTags = parseTags(existing.tags).filter((tag) => !removedTags.has(tag));
-      for (const tag of addedTags) {
-        if (!draftTags.includes(tag)) draftTags.push(tag);
-      }
-      nextMetadata[id] = {
-        setName: existing.setName === (previous.setName ?? "") ? (card.setName ?? "") : existing.setName,
-        tags: draftTags.join(", "),
-      };
-    }
+      return next;
+    });
     previousCardsRef.current = cards;
-    if (JSON.stringify(nextMetadata) !== JSON.stringify(metadata)) queueMicrotask(() => setMetadata(nextMetadata));
-  }
+  }, [cards]);
 
   function updateMetadata(id: string, field: "setName" | "tags", value: string) {
     setMetadata((items) => ({ ...items, [id]: { ...items[id], [field]: value } }));
