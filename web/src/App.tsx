@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createCardStorage,
   readStorageEndpoint,
@@ -30,6 +30,12 @@ import { NounMorphologyPanel } from "./components/NounMorphologyPanel";
 import { StorageSettingsModal } from "./components/StorageSettingsModal";
 import { StudyOptions, readAnswerKeywords, writeAnswerKeywords, type AnswerKeywords, type PromptLanguage, type PromptMode } from "./components/StudyOptions";
 import { StudyScope, type ScopeMode, type StudyScopeOption } from "./components/StudyScope";
+import {
+  extensionCandidatesToCards,
+  extensionImportResultType,
+  parseExtensionImportRequest,
+  type ExtensionImportResult,
+} from "./extensionImport";
 import {
   normalizeAnswer,
   shuffled,
@@ -79,6 +85,7 @@ export default function Home() {
   const [mistakeOnlyKeys, setMistakeOnlyKeys] = useState<string[] | null>(null);
   const [mistakeTagName, setMistakeTagName] = useState("");
   const [createdMistakeTagName, setCreatedMistakeTagName] = useState("");
+  const extensionImportRequests = useRef(new Map<string, Promise<ExtensionImportResult>>());
 
   const setNames = useMemo(() => Array.from(new Set(cards.map((card) => card.setName).filter((name): name is string => Boolean(name)))).sort((a, b) => a.localeCompare(b)), [cards]);
   const tags = useMemo(() => Array.from(new Set(cards.flatMap((card) => card.tags))).sort((a, b) => a.localeCompare(b)), [cards]);
@@ -158,6 +165,63 @@ export default function Home() {
   useEffect(() => {
     writeAnswerKeywords(answerKeywords);
   }, [answerKeywords]);
+
+  useEffect(() => {
+    function reply(result: ExtensionImportResult) {
+      window.postMessage(result, window.location.origin);
+    }
+
+    function handleExtensionImport(event: MessageEvent) {
+      if (event.source !== window || event.origin !== window.location.origin) return;
+      let request;
+      try {
+        request = parseExtensionImportRequest(event.data);
+      } catch (error) {
+        const requestId = typeof event.data?.requestId === "string" ? event.data.requestId.trim() : "";
+        if (!requestId) return;
+        reply({
+          source: "parola-web",
+          type: extensionImportResultType,
+          requestId,
+          ok: false,
+          error: error instanceof Error ? error.message : "Extension import request is invalid.",
+        });
+        return;
+      }
+      if (!request) return;
+
+      let work = extensionImportRequests.current.get(request.requestId);
+      if (!work) {
+        work = (async (): Promise<ExtensionImportResult> => {
+          try {
+            const importedCards = extensionCandidatesToCards(request.candidates, nounMorphology);
+            await addBatch(importedCards);
+            return {
+              source: "parola-web",
+              type: extensionImportResultType,
+              requestId: request.requestId,
+              ok: true,
+              importedCount: importedCards.length,
+              storage: storageEndpoint ? "sync" : "browser",
+            };
+          } catch (error) {
+            return {
+              source: "parola-web",
+              type: extensionImportResultType,
+              requestId: request.requestId,
+              ok: false,
+              error: error instanceof Error ? error.message : "Parola could not import the staged candidates.",
+            };
+          }
+        })();
+        extensionImportRequests.current.set(request.requestId, work);
+      }
+      void work.then(reply);
+    }
+
+    window.addEventListener("message", handleExtensionImport);
+    return () => window.removeEventListener("message", handleExtensionImport);
+  });
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {

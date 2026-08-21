@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "tsc -p tsconfig.test.json && node --test scripts/noun-tests.cjs scripts/sync-tests.cjs",
+    "test": "tsc -p tsconfig.test.json && node --test scripts/noun-tests.cjs scripts/sync-tests.cjs scripts/extension-import-tests.cjs",
     "build": "tsc --noEmit && vite build --base=./",
     "preview": "vite preview"
   },
