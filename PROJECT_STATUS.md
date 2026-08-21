@@ -40,7 +40,7 @@ Cards have optional sets and ordinary tags. There is no deck model. The Inventor
 
 Current card creation/editing supports nouns, verbs, adjectives, and adverbs. Duplicate card creation is rejected. Bulk edits and mass tag changes commit through complete inventory replacement so cards and noun morphology remain consistent.
 
-Noun definitions live in the Inventory noun grid. The separate noun-assignment table has been removed. The noun grid shows English, gender, base, declension, article behavior, derived singular/plural forms, set, and tags. Number is not an editable noun-card column because it is derived from the selected declension rule.
+Noun definitions live in the Inventory noun grid. The noun grid shows English, gender, base, declension, article profile, derived singular/plural forms, set, and tags. Number is not an editable noun-card column because it is derived from the selected declension rule.
 
 ## Typed study
 
@@ -59,9 +59,9 @@ A canonical noun card stores:
 - `rule`, the unique name of its declension rule;
 - `base`;
 - `gender`;
-- `articleMode`, currently `automatic` or `none`.
+- `articleProfile`, one of `111`, `100`, `010`, or `000`.
 
-It does not store derived singular/plural strings, article strings, or a separate `numberMode`.
+The bits mean definite singular, definite plural, and indefinite singular article availability in that order. Article availability is stored independently from declension number availability.
 
 Declension rules use their unique names as references. Their `forms` entries define number availability:
 
@@ -71,24 +71,27 @@ singular only     -> singular-only
 plural only       -> plural-only
 ```
 
-Inference sets also use unique names as references. Their `declensionRules` arrays contain declension-rule names. Syntax rules reference an inference set by name. Syntax-rule names are unique and are used directly for parser identity/diagnostics.
+A two-number rule may therefore be paired with `articleProfile: "100"`; the plural noun form exists even though the card does not accept a definite plural article.
+
+Inference sets use unique names as references. Their `declensionRules` arrays contain declension-rule names. Syntax rules reference an inference set by name. Syntax-rule names are unique and are used directly for parser identity and diagnostics.
 
 The morphology editor cascades renames. A rule rename updates inference-set references in the draft and noun-card references on save. An inference-set rename updates syntax references in the draft. Duplicate names are rejected.
 
-Syntax `numberMode` remains because it is parser policy rather than noun-card data. It decides whether a syntax may try two-number, singular-only, or plural-only declension rules.
+Syntax rules no longer store `numberMode` or `articleMode`. Article constraints come from article fields. A definite singular field requires the target's first profile bit, a definite plural field the second, and an indefinite singular field the third. A syntax with no article field asserts `000` and must require explicit gender plus a singular-only or plural-only marker.
 
-Syntax `articleMode` currently has two effects: it controls expected article generation for article fields, and it is copied to produced candidates for equality against the target noun. Whether no-article-field syntaxes should constrain target article behavior is still a design question under discussion.
+A noun field requires the inferred declension to support that surface number. A tantum marker is stronger and restricts inference to an exactly singular-only or plural-only rule.
 
 Examples:
 
 ```text
-cetriolo: rule -o → -i, base cetriol
-specchio: rule -chio → -chi, base spec
-Venezia: rule Singular form is the base, base Venezia
-vestiti meaning clothes: rule Plural form is the base, base vestiti
+cetriolo: rule -o → -i, base cetriol, articleProfile 111
+specchio: rule -chio → -chi, base spec, articleProfile 111
+Venezia: rule Singular form is the base, base Venezia, articleProfile 000
 ```
 
-The `specchio` learning-policy case is implemented: a rule may exist for the noun while being absent from shorthand inference until the learner adds it to the relevant inference set.
+The `specchio` learning-policy case remains deliberate. `-chio → -chi` exists and is assigned to the card but is excluded from `Learned shorthand` by default. `lo specchio` is wrong until that rule is added to the inference set, because the other permitted rules infer different rule/base definitions.
+
+Article-bearing shorthand now requires an article. Ambiguous `l'` does not determine gender, so the learner must also provide a gender marker. Articleless nouns use explicit gender and singular/plural-only markers, for example `f s Venezia`.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -96,13 +99,13 @@ See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 Parola does not contain a compatibility adapter for retired card formats.
 
-The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and `articleMode` details and must agree with active noun morphology. Retired `ruleId`, `numberMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
+The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and `articleProfile` details and must agree with active noun morphology. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
 
 After validation, imported cards use the same `addBatch` and `CardStorage` persistence path as ordinary card creation.
 
 ## Automated validation
 
-`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Coverage includes rule-derived number behavior, ordinary shorthand, staged `specchio` inference, gender shorthand, elided and ambiguous articles, contradictory evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate ordering, preview candidate scoping, synchronization decisions, and rejection of retired/invalid import shapes.
+`npm test` runs deterministic tests against the real noun parser/preview, synchronization logic, and external import contract. Noun coverage includes rule-derived number behavior, staged `specchio` inference, article capability matching, article profiles independent of declension number availability, ambiguous article gender, contradictory evidence, articleless nouns, zero-candidate complete syntax, candidate ordering, preview candidate scoping, and strict rejection of retired schemas.
 
 Test files run serially because they share one temporary CommonJS output directory.
 
@@ -122,10 +125,9 @@ The current noun schema is intentionally canonical and does not read previous no
 
 ## Parola-only remaining work
 
-There is no known unimplemented core feature from the current Parola architecture/issue set. Remaining work is primarily validation and product iteration:
+Remaining work is primarily validation and product iteration:
 
 1. Run a live browser-to-Azure synchronization smoke test.
 2. Manually exercise noun-study edge cases in the actual UI.
 3. Expand automated coverage beyond the current noun-heavy suite if useful.
-4. Resolve whether syntax-level `articleMode` should constrain candidate equality when the syntax contains no article field.
-5. Continue normal UX/product iteration as new requirements are identified.
+4. Continue normal UX/product iteration as new requirements are identified.
