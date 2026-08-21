@@ -118,6 +118,24 @@ export function InventoryCardsEditor({
 
   useEffect(() => {
     const previousById = new Map(previousCardsRef.current.map((card) => [card.id, card]));
+
+    setNounRows((current) => current.map((row) => {
+      const id = Number(row.id);
+      const previous = previousById.get(id);
+      const next = cards.find((card) => card.id === id);
+      if (!previous || previous.type !== "noun" || !next || next.type !== "noun") return row;
+      const previousRow = nounInventoryRowFromCard(previous);
+      const nextRow = nounInventoryRowFromCard(next);
+      return {
+        ...row,
+        english: row.english === previousRow.english ? nextRow.english : row.english,
+        rule: row.rule === previousRow.rule ? nextRow.rule : row.rule,
+        base: row.base === previousRow.base ? nextRow.base : row.base,
+        gender: row.gender === previousRow.gender ? nextRow.gender : row.gender,
+        articleMode: row.articleMode === previousRow.articleMode ? nextRow.articleMode : row.articleMode,
+      };
+    }));
+
     setMetadata((current) => {
       const next: InventoryMetadataDraft = {};
       for (const card of cards) {
