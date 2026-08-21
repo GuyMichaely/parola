@@ -205,10 +205,9 @@ export function nounCard(input: {
     setName: input.setName,
     tags: input.tags,
     details: {
-      ruleId: definition.ruleId,
+      rule: definition.rule,
       base: definition.base,
       gender: definition.gender,
-      numberMode: definition.numberMode,
       articleMode: definition.articleMode,
     },
   };
