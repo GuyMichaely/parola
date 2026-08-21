@@ -11,6 +11,7 @@ const {
   cloneNounMorphology,
   defaultNounMorphology,
   normalizeNounMorphology,
+  nounArticleProfiles,
   resolvedNounForms,
   ruleNumberMode,
 } = require(path.join(testDist, "cards", "nounMorphology.js"));
@@ -44,7 +45,7 @@ function nounCard({
   rule,
   base,
   gender = "masculine",
-  articleProfile = "111",
+  articleProfile = nounArticleProfiles.all,
 }) {
   return {
     id: 1,
@@ -115,19 +116,19 @@ test("conflicting explicit gender and article evidence is invalid", () => {
 });
 
 test("article capability constraints do not require an exact profile match", () => {
-  const all = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "111" });
+  const all = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: nounArticleProfiles.all });
   assert.equal(evaluateNounAnswer(all, "il libro", defaultNounMorphology, keywords).result, "correct");
   assert.equal(evaluateNounAnswer(all, "i libri", defaultNounMorphology, keywords).result, "correct");
   assert.equal(evaluateNounAnswer(all, "un libro", defaultNounMorphology, keywords).result, "correct");
 
-  const definiteSingularOnly = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "100" });
+  const definiteSingularOnly = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: nounArticleProfiles.definiteSingularOnly });
   assert.equal(evaluateNounAnswer(definiteSingularOnly, "il libro", defaultNounMorphology, keywords).result, "correct");
   assert.equal(evaluateNounAnswer(definiteSingularOnly, "i libri", defaultNounMorphology, keywords).result, "wrong");
   assert.equal(evaluateNounAnswer(definiteSingularOnly, "un libro", defaultNounMorphology, keywords).result, "wrong");
 });
 
 test("article profile is independent from whether a declension has plural forms", () => {
-  const card = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "100" });
+  const card = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: nounArticleProfiles.definiteSingularOnly });
   const forms = resolvedNounForms(card, defaultNounMorphology);
   assert.equal(forms.singular, "libro");
   assert.equal(forms.plural, "libri");
@@ -142,10 +143,10 @@ test("singular-only and plural-only article nouns use ordinary article shorthand
   assert.ok(learned);
   if (!learned.declensionRules.includes(rules.pluralBase)) learned.declensionRules.push(rules.pluralBase);
 
-  const burro = nounCard({ english: "butter", italian: "burro", rule: rules.singularBase, base: "burro", articleProfile: "100" });
+  const burro = nounCard({ english: "butter", italian: "burro", rule: rules.singularBase, base: "burro", articleProfile: nounArticleProfiles.definiteSingularOnly });
   assert.equal(evaluateNounAnswer(burro, "il burro", morphology, keywords).result, "correct");
 
-  const nozze = nounCard({ english: "wedding", italian: "nozze", rule: rules.pluralBase, base: "nozze", gender: "feminine", articleProfile: "010" });
+  const nozze = nounCard({ english: "wedding", italian: "nozze", rule: rules.pluralBase, base: "nozze", gender: "feminine", articleProfile: nounArticleProfiles.definitePluralOnly });
   assert.equal(evaluateNounAnswer(nozze, "le nozze", morphology, keywords).result, "correct");
 });
 
@@ -156,7 +157,7 @@ test("articleless nouns require explicit gender and plurality", () => {
     rule: rules.singularBase,
     base: "Venezia",
     gender: "feminine",
-    articleProfile: "000",
+    articleProfile: nounArticleProfiles.none,
   });
   assert.equal(evaluateNounAnswer(card, "f s Venezia", defaultNounMorphology, keywords).result, "correct");
   assert.equal(evaluateNounAnswer(card, "s f Venezia", defaultNounMorphology, keywords).result, "correct");
