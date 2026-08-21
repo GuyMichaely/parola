@@ -22,8 +22,8 @@ const {
 const keywords = {
   masculine: "m",
   feminine: "f",
-  singularOnly: "sin",
-  pluralOnly: "plu",
+  singularOnly: "s",
+  pluralOnly: "p",
 };
 
 function nounCard({
@@ -114,7 +114,7 @@ test("pluralia tantum uses plural-base and has no inferred singular", () => {
     base: "vestiti",
     numberMode: "plural",
   });
-  const evaluation = evaluateNounAnswer(card, "plu i vestiti", defaultNounMorphology, keywords);
+  const evaluation = evaluateNounAnswer(card, "p i vestiti", defaultNounMorphology, keywords);
   assert.equal(evaluation.result, "correct");
   assert.ok(evaluation.matchingCandidates.every((candidate) => candidate.definition.ruleId === "plural-base" && candidate.definition.base === "vestiti"));
 });
@@ -129,8 +129,8 @@ test("singularia tantum uses singular-base and accepts marker order in either di
     numberMode: "singular",
     articleMode: "none",
   });
-  assert.equal(evaluateNounAnswer(card, "f sin Venezia", defaultNounMorphology, keywords).result, "correct");
-  assert.equal(evaluateNounAnswer(card, "sin f Venezia", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(card, "f s Venezia", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(card, "s f Venezia", defaultNounMorphology, keywords).result, "correct");
 });
 
 test("a structurally complete syntax with zero candidates is wrong, not invalid", () => {
