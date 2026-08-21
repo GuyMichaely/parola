@@ -39,15 +39,24 @@ function normalizeIdentityText(value: string) {
   return value.normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/\s+/g, " ");
 }
 
-export function cardDuplicateKey(card: { type: CardType; english: string; italian: string }) {
-  return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${normalizeIdentityText(card.italian)}`;
+function nounIdentity(card: Extract<Flashcard, { type: "noun" }>) {
+  return `${normalizeIdentityText(card.details.rule)}\u0000${normalizeIdentityText(card.details.base)}`;
+}
+
+export function cardDuplicateKey(card: Flashcard) {
+  const italianIdentity = card.type === "noun" ? nounIdentity(card) : normalizeIdentityText(card.italian);
+  return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${italianIdentity}`;
+}
+
+function cardIdentityLabel(card: Flashcard) {
+  return card.type === "noun" ? `${card.details.rule} / base ${card.details.base || "∅"}` : card.italian;
 }
 
 export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcard[]) {
   const keys = new Set(existing.map(cardDuplicateKey));
   for (const card of incoming) {
     const key = cardDuplicateKey(card);
-    if (keys.has(key)) throw new Error(`A ${card.type} card for “${card.italian}” / “${card.english}” already exists.`);
+    if (keys.has(key)) throw new Error(`A ${card.type} card for “${cardIdentityLabel(card)}” / “${card.english}” already exists.`);
     keys.add(key);
   }
 }
@@ -57,21 +66,22 @@ export function normalizeCard(value: unknown): Flashcard {
   const id = Number(raw.id);
   const type = raw.type;
   const english = String(raw.english ?? "");
-  const italian = String(raw.italian ?? "");
-  if (!Number.isFinite(id) || typeof type !== "string" || !cardTypes.includes(type as CardType) || !english || !italian) {
+  if (!Number.isFinite(id) || typeof type !== "string" || !cardTypes.includes(type as CardType) || !english) {
     throw new Error("Storage returned an incomplete or invalid card.");
   }
 
   const common = {
     id,
     english,
-    italian,
     setName: typeof raw.setName === "string" && raw.setName ? raw.setName : null,
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
   };
   const details = objectValue(raw.details, `${type} card ${id} details`);
 
   if (type === "noun") {
+    if (Object.prototype.hasOwnProperty.call(raw, "italian")) {
+      throw new Error(`Noun card ${id} must not store a derived italian field.`);
+    }
     assertExactKeys(details, `Noun card ${id} details`, ["articleProfile", "base", "gender", "rule"]);
     const rule = String(details.rule ?? "").trim();
     const gender = details.gender;
@@ -90,6 +100,9 @@ export function normalizeCard(value: unknown): Flashcard {
     };
   }
 
+  const italian = String(raw.italian ?? "");
+  if (!italian) throw new Error(`Storage returned a ${type} card without an Italian form.`);
+
   if (type === "verb") {
     assertExactKeys(details, `Verb card ${id} details`, ["io", "tu", "luiLei", "noi", "voi", "loro", "auxiliary", "participle"]);
     const auxiliary = details.auxiliary;
@@ -97,6 +110,7 @@ export function normalizeCard(value: unknown): Flashcard {
     return {
       ...common,
       type: "verb",
+      italian,
       details: {
         io: stringField(details.io),
         tu: stringField(details.tu),
@@ -115,6 +129,7 @@ export function normalizeCard(value: unknown): Flashcard {
     return {
       ...common,
       type: "adjective",
+      italian,
       details: {
         masculineSingular: stringField(details.masculineSingular),
         feminineSingular: stringField(details.feminineSingular),
@@ -125,7 +140,7 @@ export function normalizeCard(value: unknown): Flashcard {
   }
 
   assertExactKeys(details, `Adverb card ${id} details`, []);
-  return { ...common, type: "adverb", details: {} };
+  return { ...common, type: "adverb", italian, details: {} };
 }
 
 export function parseCardsResponse(value: unknown): Flashcard[] {
