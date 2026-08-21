@@ -19,7 +19,7 @@ import {
 } from "./cards/nounMorphology";
 import { cardTypes, typeLabels } from "./cardTypes";
 import { SaveIndicator, type SaveState } from "./components/SaveIndicator";
-import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm } from "./components/CardAnswer";
+import { CardAnswer, EnglishAnswer, ItalianPrompt, ItalianVerificationForm, NounAnswerDiagnostic } from "./components/CardAnswer";
 import {
   AddCardModal,
   EditCardModal,
@@ -554,6 +554,7 @@ export default function Home() {
                       <span>{verificationResult === "correct" ? "Your Italian matched every stored field." : "Compare your response with the stored answer below."}</span>
                     </div>
                     <div className="submitted-answer"><span>Your answer</span><strong>{submittedAnswer}</strong></div>
+                    <NounAnswerDiagnostic card={card} answer={submittedAnswer} keywords={answerKeywords} morphology={nounMorphology} />
                     <div className="verified-answer-stack"><EnglishAnswer card={card} /><CardAnswer card={card} morphology={nounMorphology} /></div>
                   </>}
                 </div>
