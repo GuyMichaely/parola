@@ -8,11 +8,6 @@ Parola web (React + Vite)
     +--> local inventory snapshot
     |
     +--> optional remote sync snapshot
-
-Chrome capture extension
-    |
-    +--> stages words/contexts
-    +--> hands reviewed candidates to Parola web
 ```
 
 ## Web
@@ -25,9 +20,9 @@ The main source boundaries are:
 
 ```text
 src/
-├── App.tsx                         application, inventory, study, extension-import orchestration
+├── App.tsx                         application, inventory, study, external-import orchestration
 ├── cardTypes.ts                   shared card-type labels and ordering
-├── extensionImport.ts             extension candidate protocol and current-card conversion
+├── extensionImport.ts             external import envelope and canonical-card validation
 ├── cards/
 │   ├── types.ts                   Flashcard/CardType domain model
 │   ├── editorModel.ts             card editor rows, validation, conversion, drafts
@@ -37,7 +32,7 @@ src/
 │   ├── browser.ts                 local snapshot persistence
 │   ├── remote.ts                  HTTP snapshot client
 │   ├── sync.ts                    local/remote last-write-wins synchronization
-│   ├── cardCodec.ts               storage-boundary card normalization/parsing
+│   ├── cardCodec.ts               canonical card normalization/validation
 │   ├── inventoryState.ts          cross-card/morphology inventory invariants
 │   ├── inventoryTransfer.ts       inventory JSON import/export
 │   ├── settings.ts                sync settings
@@ -108,33 +103,25 @@ Inventory JSON export/import contains `cards` and `nounMorphology` without trans
 
 Changes to non-noun cards do not invalidate the morphology draft.
 
-## Extension import boundary
+## External card import contract
 
-The extension does not persist Parola inventory state itself. Its content script forwards reviewed candidates to the loaded Parola page through a same-page request/response bridge.
+The import bridge is intentionally thin. It accepts an envelope containing cards that already obey Parola's **current canonical `Flashcard` schema**.
 
-`extensionImport.ts` validates that transport shape and converts candidates into the current `Flashcard` model. Nouns are canonicalized through the active `NounMorphology`, so an ordinary reviewed form can become an `o-i` definition while a nonstandard or tantum noun resolves according to the currently configured morphology. The converted cards then use the same `addBatch` and `CardStorage` path as ordinary card creation.
+Parola normalizes those cards with the same `cardCodec` used at storage boundaries. Unknown card types are rejected. Nouns must already contain `ruleId`, `base`, `gender`, `numberMode`, and `articleMode`; the retired `singular`/`plural`/article-details representation is rejected rather than translated.
 
-The bridge retries one request ID while waiting for the page, and `App` memoizes work for that request ID so retries do not create duplicate imports. The extension removes its staged items only after Parola acknowledges a successful save.
+Imported noun cards are also checked against the active `NounMorphology` before persistence, so a syntactically current noun whose rule/base does not generate its stored primary Italian form is rejected. After validation, imported cards use the same `addBatch` and `CardStorage` path as ordinary card creation.
 
-The transport candidate is not a second persisted Parola card schema. The current extension staged record still combines capture evidence and editable candidate fields; separating those is a later extension-domain cleanup.
+This boundary is not a migration layer and does not contain extension-specific morphology inference.
 
 ## Validation
 
-`npm test` compiles the parser, preview, synchronization, and extension-import conversion modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
+`npm test` compiles the parser, preview, synchronization, and import-validation modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
 
-The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer. Extension-import tests cover current-model conversion, including `specchio` and explicit plural-only `vestiti`.
+The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer. Import tests verify that current canonical cards are accepted while retired noun shapes, unknown card types, and noun/morphology mismatches are rejected.
 
 These synchronization tests verify decision logic without mutating a deployed inventory. A live browser↔API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
 
-`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, and extension static syntax/manifest checks on relevant pull requests and pushes to `main`. The Pages deployment also runs the complete web test suite before building the production site.
-
-## Extension
-
-The Chrome extension is source-controlled under `extension/`. It stages user-selected Italian words and context, provides a review UI, and hands approved reviewed candidates to the hosted Parola page through its content script.
-
-There is no automated browser/end-to-end extension test harness. Release workflows perform static JavaScript/manifest validation and use Chrome only to pack/sign the CRX. The web-side candidate conversion is covered deterministically without launching Chrome.
-
-The canonical extension release workflow is `.github/workflows/release-extension.yml`, which publishes signed release assets through GitHub Releases. The extension manifest has used the GitHub Releases update feed since `0.2.3`; `0.2.4` was the feed-cutover release. Source/tag `0.2.5` contains the repaired Parola import boundary. The Pages workflow still publishes the old feed path only as a compatibility bridge for clients installed before the cutover. Remove that bridge after the installed extension is confirmed to have moved onto the independent release feed.
+`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, and repository extension static checks on relevant pull requests and pushes to `main`.
 
 ## API
 
@@ -142,6 +129,8 @@ The API is an independent Node service that stores the timestamped inventory sna
 
 ## Deployment
 
-- `.github/workflows/deploy-pages.yml` validates and deploys the web app to GitHub Pages and temporarily packages the signed extension into the Pages artifact for old-feed compatibility.
+- `.github/workflows/deploy-pages.yml` tests, builds, and deploys only the web app to GitHub Pages.
 - `.github/workflows/release-extension.yml` independently validates, signs, and publishes extension release assets through GitHub Releases.
 - `.github/workflows/deploy-api.yml` independently deploys the API to Azure App Service.
+
+The former Pages extension update-feed/CRX compatibility bridge has been retired after a real installed `0.2.4` client successfully updated through the independent Releases feed to `0.2.5`.
