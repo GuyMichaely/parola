@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "tsc -p tsconfig.test.json && node --test scripts/noun-tests.cjs",
     "build": "tsc --noEmit && vite build --base=./",
     "preview": "vite preview"
   },

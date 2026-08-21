@@ -78,7 +78,7 @@ Typed input can be partial, syntactically complete, or invalid. Syntax validity 
 
 For noun answers, Parola evaluates candidate interpretations. If at least one candidate matches the prompted noun definition, the answer is correct. Otherwise, if at least one syntax is structurally complete, the answer is wrong even when no permitted declension rule produces a candidate. If no syntax is structurally complete, the syntax is invalid or incomplete.
 
-The live preview may show possible declension candidates, but it does not reveal which candidate matches the prompted card before submission. If one interpretation is structurally complete but produces no candidate while another syntax is still a viable partial parse, the live preview favors the viable partial parse.
+The live preview may show possible declension candidates, but it does not reveal which candidate matches the prompted card before submission. Candidate names shown in the preview belong to the syntax the preview is currently displaying. If one interpretation is structurally complete but produces no candidate while another syntax is still a viable partial parse, the live preview favors the viable partial parse.
 
 After submission, a wrong noun answer may show the syntax, declension rule, base, and gender Parola inferred from the submitted input.
 
@@ -118,6 +118,12 @@ The Inventory view exposes a noun morphology panel. Declension rules, inference 
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
+## Parser validation
+
+The web package has a deterministic noun parser test suite. `npm test` compiles the real parsing/preview modules into temporary test output and checks the main architectural cases: ordinary shorthand, the staged `specchio` rule, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
+
+`.github/workflows/validate.yml` runs the tests, the production web build, and the API syntax check on relevant pull requests and pushes to `main`. The Pages deployment also runs the noun parser tests before building the production site.
+
 ## Inventory migration state
 
 The current noun schema intentionally breaks the previous `nounPatterns` representation. The application contains no compatibility reader for the old schema.
@@ -146,13 +152,13 @@ Use static source checks, manifest validation, signing/package checks, manual te
 
 ## Extension deployment
 
-Target deployment model:
+The independent deployment model is already implemented:
 
 - web through GitHub Pages;
 - extension through `.github/workflows/release-extension.yml` and GitHub Releases;
 - API through `.github/workflows/deploy-api.yml`.
 
-The extension source points to the GitHub Releases update feed. The one-time feed cutover still needs to be verified on the installed extension before the temporary Pages extension bridge is removed.
+The extension source moved to the GitHub Releases update feed in `0.2.3`, and `0.2.4` was the explicit cutover release. The Pages workflow still publishes `/parola/extension/updates.xml` and its CRX only as a compatibility bridge for clients installed on the old Pages feed. The project record does not yet confirm that the installed legacy client reached `0.2.4`, so the compatibility bridge should remain until that is confirmed. No further deployment-separation implementation is required before that confirmation.
 
 ## Product roadmap
 
@@ -162,7 +168,7 @@ Manual capture and the basic review flow exist. The next larger extension archit
 
 ## Immediate next steps
 
-1. Validate the reconciled noun morphology and candidate parser with the real web build.
-2. Manually test `cetriolo`, `specchio`, the gender shorthand, singularia tantum, and pluralia tantum study flows.
-3. Verify local/remote synchronization using the single complete inventory snapshot.
-4. Continue extension deployment separation and then resume the capture/enrichment roadmap.
+1. Keep the noun parser suite green and manually exercise `cetriolo`, staged `specchio` inference, gender shorthand, elided articles, singularia tantum, and pluralia tantum in the actual study UI.
+2. Verify local/remote synchronization behavior using the single complete inventory snapshot, including conflict and ask-first behavior.
+3. Confirm the installed Parola Capture client is `0.2.4` or later. Once confirmed, remove the temporary Pages extension compatibility feed/package path.
+4. Resume the capture/enrichment roadmap: separate captured surface forms/context from canonical card candidates, then add user-initiated enrichment behind a provider/API abstraction.
