@@ -352,8 +352,8 @@ export function NounMorphologyPanel({
             articleProfile: definition.articleProfile,
           },
         };
-        const forms = resolvedNounForms(nextCard, normalized);
-        return { ...nextCard, italian: forms.singular || forms.plural };
+        resolvedNounForms(nextCard, normalized);
+        return nextCard;
       });
       await onSave({ cards: updatedCards, nounMorphology: normalized });
       setDraft(cloneNounMorphology(normalized));
