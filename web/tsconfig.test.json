@@ -10,6 +10,7 @@
   "include": [
     "src/cards/nounMorphology.ts",
     "src/study/nounSyntax.ts",
-    "src/components/AnswerParsePreview.tsx"
+    "src/components/AnswerParsePreview.tsx",
+    "src/storage/sync.ts"
   ]
 }
