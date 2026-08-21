@@ -16,7 +16,6 @@ export type NounDetails = {
 };
 
 export type VerbDetails = {
-  base?: never;
   io: string;
   tu: string;
   luiLei: string;
@@ -28,30 +27,30 @@ export type VerbDetails = {
 };
 
 export type AdjectiveDetails = {
-  base?: never;
   masculineSingular: string;
   feminineSingular: string;
   masculinePlural: string;
   femininePlural: string;
 };
 
-export type AdverbDetails = {
-  base?: never;
-};
+export type AdverbDetails = Record<string, never>;
 
 type CardBase<Type extends CardType, Details> = {
   id: number;
   type: Type;
   english: string;
-  italian: string;
   setName: string | null;
   tags: string[];
   details: Details;
 };
 
+type ItalianCardBase<Type extends Exclude<CardType, "noun">, Details> = CardBase<Type, Details> & {
+  italian: string;
+};
+
 export type NounCard = CardBase<"noun", NounDetails>;
-export type VerbCard = CardBase<"verb", VerbDetails>;
-export type AdjectiveCard = CardBase<"adjective", AdjectiveDetails>;
-export type AdverbCard = CardBase<"adverb", AdverbDetails>;
+export type VerbCard = ItalianCardBase<"verb", VerbDetails>;
+export type AdjectiveCard = ItalianCardBase<"adjective", AdjectiveDetails>;
+export type AdverbCard = ItalianCardBase<"adverb", AdverbDetails>;
 
 export type Flashcard = NounCard | VerbCard | AdjectiveCard | AdverbCard;
