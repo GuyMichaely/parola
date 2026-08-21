@@ -102,6 +102,16 @@ export const defaultNounMorphology: NounMorphology = {
       inferenceSetId: "learned-shorthand",
     },
     {
+      id: "gender-singular",
+      name: "Gender + singular",
+      markers: [{ kind: "gender", required: true }],
+      markerOrder: "any",
+      fields: [{ kind: "noun", number: "singular" }],
+      numberMode: "both",
+      articleMode: "automatic",
+      inferenceSetId: "learned-shorthand",
+    },
+    {
       id: "full-declension",
       name: "Full declension",
       markers: [{ kind: "gender", required: false }],
