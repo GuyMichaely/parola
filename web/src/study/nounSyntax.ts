@@ -168,6 +168,16 @@ function parseMarkers(tokens: string[], syntax: NounSyntaxRule, keywords: Answer
   return { invalid: false as const, index, gender, tantum, pieces, missingRequired };
 }
 
+function suppliedArticleGender(fields: NounSyntaxField[], values: string[]): NounGender | null {
+  const genders = new Set<NounGender>();
+  fields.slice(0, values.length).forEach((field, index) => {
+    if (field.kind !== "article") return;
+    const gender = articleFacts(values[index] ?? "")?.gender;
+    if (gender) genders.add(gender);
+  });
+  return genders.size === 1 ? [...genders][0]! : null;
+}
+
 function candidateGenders(explicitGender: NounGender | null, fields: NounSyntaxField[], values: string[]): NounGender[] {
   const articleGenders = new Set<NounGender>();
   fields.forEach((field, index) => {
@@ -307,6 +317,9 @@ export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morp
     pieces.push({ label: fieldLabel(field), value });
   }
 
+  const articleGender = markerParse.gender ? null : suppliedArticleGender(syntax.fields, values);
+  if (articleGender) pieces.push({ label: "Gender from article", value: articleGender });
+
   if (values.length < syntax.fields.length) {
     return {
       syntax,
@@ -322,15 +335,11 @@ export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morp
   const genders = candidateGenders(markerParse.gender, syntax.fields, values);
   if (!genders.length) {
     const hasArticle = syntax.fields.some((field) => field.kind === "article");
-    const suppliedArticleGender = syntax.fields.some((field, index) => field.kind === "article" && articleFacts(values[index] ?? "")?.gender);
-    const reason = hasArticle && !markerParse.gender && !suppliedArticleGender
+    const suppliedGender = suppliedArticleGender(syntax.fields, values);
+    const reason = hasArticle && !markerParse.gender && !suppliedGender
       ? "The supplied article does not determine gender; add a gender marker before the answer fields."
       : "The supplied gender and articles conflict.";
     return { syntax, status: "not-applicable", pieces, missing: [], candidates: [], consumedTokens: originalTokens.length, reason };
-  }
-
-  if (!markerParse.gender && genders.length === 1 && syntax.fields.some((field) => field.kind === "article")) {
-    pieces.push({ label: "Gender from article", value: genders[0] });
   }
 
   const candidates = buildCandidates(syntax, morphology, genders, markerParse.tantum, values);
