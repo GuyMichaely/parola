@@ -14,8 +14,8 @@ const answerKeywordsKey = "parola:answer-keywords";
 const defaultAnswerKeywords: AnswerKeywords = {
   masculine: "m",
   feminine: "f",
-  singularOnly: "sin",
-  pluralOnly: "plu",
+  singularOnly: "s",
+  pluralOnly: "p",
 };
 
 export function readAnswerKeywords(): AnswerKeywords {
