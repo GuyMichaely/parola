@@ -1,8 +1,12 @@
-import type { Flashcard } from "./types";
+import type {
+  Flashcard,
+  NounArticleProfile,
+  NounGender,
+  NounDetails,
+} from "./types";
 
-export type NounGender = "masculine" | "feminine";
+export type { NounArticleProfile, NounGender } from "./types";
 export type NounNumberMode = "both" | "singular" | "plural";
-export type NounArticleProfile = "111" | "100" | "010" | "000";
 export type NounArticleCapability = "definite-singular" | "definite-plural" | "indefinite-singular";
 export type NounFormNumber = "singular" | "plural";
 
@@ -42,12 +46,7 @@ export type NounMorphology = {
   syntaxRules: NounSyntaxRule[];
 };
 
-export type NounDefinition = {
-  rule: string;
-  base: string;
-  gender: NounGender;
-  articleProfile: NounArticleProfile;
-};
+export type NounDefinition = NounDetails;
 
 export type ResolvedNounForms = NounDefinition & {
   numberMode: NounNumberMode;
@@ -57,6 +56,13 @@ export type ResolvedNounForms = NounDefinition & {
   definitePluralArticle: string;
   indefiniteArticle: string;
 };
+
+export const nounArticleProfiles = {
+  all: { definiteSingular: true, definitePlural: true, indefiniteSingular: true },
+  definiteSingularOnly: { definiteSingular: true, definitePlural: false, indefiniteSingular: false },
+  definitePluralOnly: { definiteSingular: false, definitePlural: true, indefiniteSingular: false },
+  none: { definiteSingular: false, definitePlural: false, indefiniteSingular: false },
+} as const satisfies Record<string, NounArticleProfile>;
 
 export const defaultNounMorphology: NounMorphology = {
   declensionRules: [
@@ -232,9 +238,38 @@ export function ruleSupportsFormNumber(rule: NounDeclensionRule, number: NounFor
 }
 
 export function articleProfileAllows(profile: NounArticleProfile, capability: NounArticleCapability) {
-  if (capability === "definite-singular") return profile[0] === "1";
-  if (capability === "definite-plural") return profile[1] === "1";
-  return profile[2] === "1";
+  if (capability === "definite-singular") return profile.definiteSingular;
+  if (capability === "definite-plural") return profile.definitePlural;
+  return profile.indefiniteSingular;
+}
+
+export function articleProfilesEqual(left: NounArticleProfile, right: NounArticleProfile) {
+  return left.definiteSingular === right.definiteSingular
+    && left.definitePlural === right.definitePlural
+    && left.indefiniteSingular === right.indefiniteSingular;
+}
+
+export function normalizeNounArticleProfile(value: unknown, label = "Noun article profile"): NounArticleProfile {
+  const profile = objectValue(value, label);
+  assertExactKeys(profile, label, ["definiteSingular", "definitePlural", "indefiniteSingular"]);
+  if (
+    typeof profile.definiteSingular !== "boolean"
+    || typeof profile.definitePlural !== "boolean"
+    || typeof profile.indefiniteSingular !== "boolean"
+  ) {
+    throw new Error(`${label} capabilities must be booleans.`);
+  }
+
+  const normalized = {
+    definiteSingular: profile.definiteSingular,
+    definitePlural: profile.definitePlural,
+    indefiniteSingular: profile.indefiniteSingular,
+  };
+  const allowed = Object.values(nounArticleProfiles).some((candidate) => articleProfilesEqual(candidate, normalized as NounArticleProfile));
+  if (!allowed) {
+    throw new Error(`${label} must be all articles, definite singular only, definite plural only, or no articles.`);
+  }
+  return normalized as NounArticleProfile;
 }
 
 export function articleProfileFromArticlePresence(input: {
@@ -242,14 +277,18 @@ export function articleProfileFromArticlePresence(input: {
   definitePluralArticle: string;
   indefiniteArticle: string;
 }): NounArticleProfile | null {
-  const bits = `${input.definiteSingularArticle.trim() ? "1" : "0"}${input.definitePluralArticle.trim() ? "1" : "0"}${input.indefiniteArticle.trim() ? "1" : "0"}`;
-  return bits === "111" || bits === "100" || bits === "010" || bits === "000" ? bits : null;
+  const profile = {
+    definiteSingular: Boolean(input.definiteSingularArticle.trim()),
+    definitePlural: Boolean(input.definitePluralArticle.trim()),
+    indefiniteSingular: Boolean(input.indefiniteArticle.trim()),
+  };
+  return Object.values(nounArticleProfiles).find((candidate) => articleProfilesEqual(candidate, profile as NounArticleProfile)) ?? null;
 }
 
 export function articleProfileCompatibleWithRule(profile: NounArticleProfile, rule: NounDeclensionRule) {
-  if (articleProfileAllows(profile, "definite-singular") && !rule.forms.singular) return false;
-  if (articleProfileAllows(profile, "definite-plural") && !rule.forms.plural) return false;
-  if (articleProfileAllows(profile, "indefinite-singular") && !rule.forms.singular) return false;
+  if (profile.definiteSingular && !rule.forms.singular) return false;
+  if (profile.definitePlural && !rule.forms.plural) return false;
+  if (profile.indefiniteSingular && !rule.forms.singular) return false;
   return true;
 }
 
@@ -379,7 +418,7 @@ export function suggestedNounArticles(
   gender: NounGender,
   singular: string,
   plural: string,
-  articleProfile: NounArticleProfile = "111",
+  articleProfile: NounArticleProfile = nounArticleProfiles.all,
 ) {
   const startsWithVowel = (word: string) => /^[aeiouàèéìòóù]/u.test(normalizeText(word));
   const takesLoSet = (word: string) => {
@@ -403,21 +442,24 @@ export function suggestedNounArticles(
   }
 
   return {
-    definiteSingularArticle: articleProfileAllows(articleProfile, "definite-singular") ? definiteSingularArticle : "",
-    definitePluralArticle: articleProfileAllows(articleProfile, "definite-plural") ? definitePluralArticle : "",
-    indefiniteArticle: articleProfileAllows(articleProfile, "indefinite-singular") ? indefiniteArticle : "",
+    definiteSingularArticle: articleProfile.definiteSingular ? definiteSingularArticle : "",
+    definitePluralArticle: articleProfile.definitePlural ? definitePluralArticle : "",
+    indefiniteArticle: articleProfile.indefiniteSingular ? indefiniteArticle : "",
   };
 }
 
 export function nounDefinitionForCard(card: Flashcard): NounDefinition {
   if (card.type !== "noun") throw new Error("Only noun cards have noun definitions.");
   const d = card.details;
-  const rule = String(d.rule ?? "").trim();
-  const base = String(d.base ?? "").normalize("NFC");
-  const gender: NounGender | null = d.gender === "masculine" || d.gender === "feminine" ? d.gender : null;
-  const articleProfile: NounArticleProfile | null = d.articleProfile === "111" || d.articleProfile === "100" || d.articleProfile === "010" || d.articleProfile === "000" ? d.articleProfile : null;
-  if (!rule || !gender || !articleProfile) throw new Error(`Noun card ${card.id} does not have a canonical noun definition.`);
-  return { rule, base, gender, articleProfile };
+  const rule = d.rule.trim();
+  const base = d.base.normalize("NFC");
+  if (!rule) throw new Error(`Noun card ${card.id} does not have a canonical noun definition.`);
+  return {
+    rule,
+    base,
+    gender: d.gender,
+    articleProfile: normalizeNounArticleProfile(d.articleProfile, `Noun card ${card.id} article profile`),
+  };
 }
 
 export function resolvedNounForms(card: Flashcard, morphology: NounMorphology): ResolvedNounForms {
@@ -425,7 +467,7 @@ export function resolvedNounForms(card: Flashcard, morphology: NounMorphology): 
   const rule = morphology.declensionRules.find((item) => item.name === definition.rule);
   if (!rule) throw new Error(`Noun card ${card.id} references unknown declension rule ${definition.rule}.`);
   if (!articleProfileCompatibleWithRule(definition.articleProfile, rule)) {
-    throw new Error(`Noun card ${card.id} has article profile ${definition.articleProfile}, but its declension does not provide every required noun form.`);
+    throw new Error(`Noun card ${card.id} has an article profile that requires a noun form its declension does not provide.`);
   }
   const numberMode = ruleNumberMode(rule);
   const singular = generateNounForm(rule, definition.base, "singular") ?? "";
@@ -448,7 +490,7 @@ export function nounDefinitionMatches(left: NounDefinition, right: NounDefinitio
   return left.rule === right.rule
     && normalizeText(left.base) === normalizeText(right.base)
     && left.gender === right.gender
-    && left.articleProfile === right.articleProfile;
+    && articleProfilesEqual(left.articleProfile, right.articleProfile);
 }
 
 export function inferNounDefinitionFromForms(input: {
