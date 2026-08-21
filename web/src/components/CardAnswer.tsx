@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import type { Flashcard } from "../cards/types";
+import type { AdjectiveCard, AdverbCard, Flashcard, NounCard, VerbCard } from "../cards/types";
 import { resolvedNounForms, ruleForNounCard, type NounMorphology } from "../cards/nounMorphology";
 import { typeLabels } from "../cardTypes";
 import type { AnswerKeywords } from "./StudyOptions";
@@ -7,7 +7,7 @@ import { AnswerParsePreview, analyzeAnswerSyntax } from "./AnswerParsePreview";
 import { verifyPowerAnswer } from "../study/logic";
 import { evaluateNounAnswer } from "../study/nounSyntax";
 
-export function NounAnswer({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
+export function NounAnswer({ card, morphology }: { card: NounCard; morphology: NounMorphology }) {
   const forms = resolvedNounForms(card, morphology);
   const rule = ruleForNounCard(card, morphology);
   const hasArticles = Boolean(forms.definiteSingularArticle || forms.definitePluralArticle || forms.indefiniteArticle);
@@ -56,7 +56,7 @@ export function NounAnswerDiagnostic({ card, answer, keywords, morphology }: { c
   </div>;
 }
 
-export function VerbAnswer({ card }: { card: Flashcard }) {
+export function VerbAnswer({ card }: { card: VerbCard }) {
   const d = card.details;
   return (
     <div className="answer-content compact-answer">
@@ -72,7 +72,7 @@ export function VerbAnswer({ card }: { card: Flashcard }) {
   );
 }
 
-export function AdjectiveAnswer({ card }: { card: Flashcard }) {
+export function AdjectiveAnswer({ card }: { card: AdjectiveCard }) {
   const d = card.details;
   return (
     <div className="answer-content">
@@ -88,7 +88,7 @@ export function AdjectiveAnswer({ card }: { card: Flashcard }) {
   );
 }
 
-export function AdverbAnswer({ card }: { card: Flashcard }) {
+export function AdverbAnswer({ card }: { card: AdverbCard }) {
   return <div className="answer-content"><span className="answer-label">Italian · adverb</span><h2>{card.italian}</h2><p className="noun-article-note">Invariant</p></div>;
 }
 
