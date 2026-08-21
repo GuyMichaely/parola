@@ -22,6 +22,8 @@ Parola web is a static React/Vite application served at `https://guymichaely.com
 
 Cards and noun morphology form one logical inventory. Browser persistence stores one `parola:inventory` JSON value containing cards, noun morphology, and an internal `updatedAt` timestamp. Remote synchronization uses the same complete snapshot and last-write-wins timestamp semantics.
 
+`Flashcard` is a discriminated union keyed by `type`. Nouns, verbs, adjectives, and adverbs each have their own typed `details` shape. Storage/import code validates external JSON at runtime before it enters that typed model.
+
 ## Inventory synchronization
 
 - Local and remote are copies of one complete inventory snapshot.
@@ -59,9 +61,19 @@ A canonical noun card stores:
 - `rule`, the unique name of its declension rule;
 - `base`;
 - `gender`;
-- `articleProfile`, one of `111`, `100`, `010`, or `000`.
+- `articleProfile`, an object with Boolean `definiteSingular`, `definitePlural`, and `indefiniteSingular` capabilities.
 
-The bits mean definite singular, definite plural, and indefinite singular article availability in that order. Article availability is stored independently from declension number availability.
+Only four article-profile combinations are canonical:
+
+```text
+definite singular  definite plural  indefinite singular
+true               true             true
+true               false            false
+false              true             false
+false              false            false
+```
+
+Article availability is independent from declension number availability. A two-number rule may therefore be paired with a profile whose only enabled capability is `definiteSingular`; the plural noun form still exists even though the card does not accept a definite plural article.
 
 Declension rules use their unique names as references. Their `forms` entries define number availability:
 
@@ -71,27 +83,25 @@ singular only     -> singular-only
 plural only       -> plural-only
 ```
 
-A two-number rule may therefore be paired with `articleProfile: "100"`; the plural noun form exists even though the card does not accept a definite plural article.
-
 Inference sets use unique names as references. Their `declensionRules` arrays contain declension-rule names. Syntax rules reference an inference set by name. Syntax-rule names are unique and are used directly for parser identity and diagnostics.
 
 The morphology editor cascades renames. A rule rename updates inference-set references in the draft and noun-card references on save. An inference-set rename updates syntax references in the draft. Duplicate names are rejected.
 
-Syntax rules no longer store `numberMode` or `articleMode`. Article constraints come from article fields. A definite singular field requires the target's first profile bit, a definite plural field the second, and an indefinite singular field the third. A syntax with no article field asserts `000` and must require explicit gender plus a singular-only or plural-only marker.
+Syntax rules do not store article or number profiles. Article constraints come from article fields. A definite singular field requires `articleProfile.definiteSingular`, a definite plural field requires `articleProfile.definitePlural`, and an indefinite singular field requires `articleProfile.indefiniteSingular`. A syntax with no article field requires the no-article profile and must require explicit gender plus a singular-only or plural-only marker.
 
 A noun field requires the inferred declension to support that surface number. A tantum marker is stronger and restricts inference to an exactly singular-only or plural-only rule.
 
 Examples:
 
 ```text
-cetriolo: rule -o → -i, base cetriol, articleProfile 111
-specchio: rule -chio → -chi, base spec, articleProfile 111
-Venezia: rule Singular form is the base, base Venezia, articleProfile 000
+cetriolo: rule -o → -i, base cetriol, all three article capabilities
+specchio: rule -chio → -chi, base spec, all three article capabilities
+Venezia: rule Singular form is the base, base Venezia, no article capabilities
 ```
 
 The `specchio` learning-policy case remains deliberate. `-chio → -chi` exists and is assigned to the card but is excluded from `Learned shorthand` by default. `lo specchio` is wrong until that rule is added to the inference set, because the other permitted rules infer different rule/base definitions.
 
-Article-bearing shorthand now requires an article. Ambiguous `l'` does not determine gender, so the learner must also provide a gender marker. Articleless nouns use explicit gender and singular/plural-only markers, for example `f s Venezia`.
+Article-bearing shorthand requires an article. Ambiguous `l'` does not determine gender, so the learner must also provide a gender marker. Articleless nouns use explicit gender and singular/plural-only markers, for example `f s Venezia`.
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
@@ -99,7 +109,7 @@ See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
 Parola does not contain a compatibility adapter for retired card formats.
 
-The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and `articleProfile` details and must agree with active noun morphology. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
+The external import bridge accepts only cards that already obey the current canonical `Flashcard` schema. Unknown card types are rejected. Nouns must contain exactly current `rule`, `base`, `gender`, and structured `articleProfile` details and must agree with active noun morphology. Retired `ruleId`, noun `numberMode`, `articleMode`, singular/plural, and stored article-detail payloads are rejected rather than converted.
 
 After validation, imported cards use the same `addBatch` and `CardStorage` persistence path as ordinary card creation.
 
@@ -109,7 +119,7 @@ After validation, imported cards use the same `addBatch` and `CardStorage` persi
 
 Test files run serially because they share one temporary CommonJS output directory.
 
-`.github/workflows/validate.yml` runs tests, the production web build, API syntax, and repository static checks on relevant pull requests and pushes to `main`.
+`.github/workflows/validate.yml` runs tests, the production web build, API syntax, migration-script syntax, and repository static checks on relevant pull requests and pushes to `main`.
 
 ## Deployment
 
@@ -121,7 +131,7 @@ The former Pages extension compatibility feed/package path has been removed.
 
 ## Inventory migration state
 
-The current noun schema is intentionally canonical and does not read previous noun representations. Any one-time conversion of real old inventory belongs outside application runtime.
+The current noun schema is intentionally canonical and does not read previous noun representations. `scripts/migrate-article-profiles.mjs` is a one-off utility for converting retired `articleMode` inventories outside application runtime.
 
 ## Parola-only remaining work
 
