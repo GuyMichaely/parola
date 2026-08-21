@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Flashcard } from "../cards/types";
 import {
   cloneNounMorphology,
@@ -63,21 +63,6 @@ function syntaxFieldFromValue(value: string): NounSyntaxField {
   return { kind: "article", definiteness: "indefinite", number: "singular" };
 }
 
-type Assignment = {
-  ruleId: string;
-  base: string;
-  gender: string;
-  numberMode: string;
-  articleMode: string;
-};
-
-function assignmentsFor(cards: Flashcard[]) {
-  return Object.fromEntries(cards.filter((card) => card.type === "noun").map((card) => {
-    const definition = nounDefinitionForCard(card);
-    return [card.id, { ...definition }];
-  })) as Record<number, Assignment>;
-}
-
 function nounSourceFingerprint(cards: Flashcard[], morphology: NounMorphology) {
   return JSON.stringify({
     morphology,
@@ -97,7 +82,6 @@ export function NounMorphologyPanel({
   onSave: (state: InventoryState) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(() => cloneNounMorphology(morphology));
-  const [assignments, setAssignments] = useState<Record<number, Assignment>>(() => assignmentsFor(cards));
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [sourceChanged, setSourceChanged] = useState(false);
@@ -113,12 +97,9 @@ export function NounMorphologyPanel({
       return;
     }
     setDraft(cloneNounMorphology(morphology));
-    setAssignments(assignmentsFor(cards));
     appliedSourceRef.current = nextFingerprint;
     setSourceChanged(false);
   }, [cards, dirty, morphology]);
-
-  const nounCards = useMemo(() => cards.filter((card) => card.type === "noun"), [cards]);
 
   function markEdited() {
     setDirty(true);
@@ -162,10 +143,10 @@ export function NounMorphologyPanel({
   }
 
   function removeRule(id: string) {
-    const usedByCard = Object.values(assignments).some((assignment) => assignment.ruleId === id);
+    const usedByCard = cards.some((card) => card.type === "noun" && card.details.ruleId === id);
     const usedBySet = draft.inferenceSets.some((set) => set.declensionRuleIds.includes(id));
     if (usedByCard || usedBySet) {
-      setError("Remove this rule from noun assignments and inference sets first.");
+      setError("This rule is still used by a noun or inference set. Reassign those references first.");
       return;
     }
     changeMorphology((current) => ({ ...current, declensionRules: current.declensionRules.filter((rule) => rule.id !== id) }));
@@ -301,18 +282,12 @@ export function NounMorphologyPanel({
     updateSyntax(id, { articleMode: value });
   }
 
-  function updateAssignment(cardId: number, field: keyof Assignment, value: string) {
-    setAssignments((current) => ({ ...current, [cardId]: { ...current[cardId], [field]: value } }));
-    markEdited();
-  }
-
   function reloadCurrentSource() {
     setDraft(cloneNounMorphology(morphology));
-    setAssignments(assignmentsFor(cards));
     appliedSourceRef.current = nounSourceFingerprint(cards, morphology);
     setDirty(false);
     setSourceChanged(false);
-    setMessage("Reloaded current noun morphology and assignments.");
+    setMessage("Reloaded current noun morphology.");
     setError("");
   }
 
@@ -323,38 +298,23 @@ export function NounMorphologyPanel({
     setError("");
     try {
       const normalized = normalizeNounMorphology(draft);
-      const ruleIds = new Set(normalized.declensionRules.map((rule) => rule.id));
       const updatedCards = cards.map((card) => {
         if (card.type !== "noun") return card;
-        const assignment = assignments[card.id];
-        if (!assignment || !ruleIds.has(assignment.ruleId)) throw new Error(`Choose a valid declension rule for ${card.english}.`);
-        if (assignment.gender !== "masculine" && assignment.gender !== "feminine") throw new Error(`Choose a gender for ${card.english}.`);
-        if (assignment.numberMode !== "both" && assignment.numberMode !== "singular" && assignment.numberMode !== "plural") throw new Error(`Choose a number mode for ${card.english}.`);
-        if (assignment.articleMode !== "automatic" && assignment.articleMode !== "none") throw new Error(`Choose article behavior for ${card.english}.`);
-        const rule = normalized.declensionRules.find((item) => item.id === assignment.ruleId)!;
-        if (!ruleSupportsNumberMode(rule, assignment.numberMode)) {
-          throw new Error(`${rule.name} does not support the ${assignment.numberMode} number mode used by ${card.english}.`);
+        const definition = nounDefinitionForCard(card);
+        const rule = normalized.declensionRules.find((item) => item.id === definition.ruleId);
+        if (!rule) throw new Error(`${card.english} references a declension rule that no longer exists.`);
+        if (!ruleSupportsNumberMode(rule, definition.numberMode)) {
+          throw new Error(`${rule.name} no longer supports the number behavior used by ${card.english}.`);
         }
-        const nextCard: Flashcard = {
-          ...card,
-          details: {
-            ruleId: assignment.ruleId,
-            base: assignment.base.normalize("NFC"),
-            gender: assignment.gender,
-            numberMode: assignment.numberMode,
-            articleMode: assignment.articleMode,
-          },
-        };
-        const forms = resolvedNounForms(nextCard, normalized);
-        return { ...nextCard, italian: forms.singular || forms.plural };
+        const forms = resolvedNounForms(card, normalized);
+        return { ...card, italian: forms.singular || forms.plural };
       });
       await onSave({ cards: updatedCards, nounMorphology: normalized });
       setDraft(cloneNounMorphology(normalized));
-      setAssignments(assignmentsFor(updatedCards));
       appliedSourceRef.current = nounSourceFingerprint(updatedCards, normalized);
       setDirty(false);
       setSourceChanged(false);
-      setMessage("Saved noun morphology and assignments.");
+      setMessage("Saved noun morphology.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Noun morphology could not be saved.");
     } finally {
@@ -362,33 +322,36 @@ export function NounMorphologyPanel({
     }
   }
 
-  return <details className="noun-patterns-panel">
-    <summary>Noun morphology & syntax</summary>
+  return <section className="noun-patterns-panel" aria-labelledby="noun-morphology-heading">
+    <header className="noun-patterns-header">
+      <div>
+        <h2 id="noun-morphology-heading">Noun morphology & syntax</h2>
+        <p>Define reusable declension rules, decide which rules each shorthand may infer, and configure the accepted noun-answer syntaxes. Noun-to-rule assignments live with the noun definitions above.</p>
+      </div>
+    </header>
     <div className="noun-patterns-body">
-      <p>Cards store a base and their actual declension rule. A rule defines only the number forms it supports. Syntax rules decide what the learner may type. Inference sets decide which declension rules a syntax may infer.</p>
-
       {sourceChanged && <div className="sync-warning" role="alert">
         <p>The noun inventory changed while this morphology draft had unsaved edits. The draft was preserved, but it cannot be saved over the newer inventory.</p>
         <button type="button" className="neutral-button" onClick={reloadCurrentSource}>Discard draft and reload current inventory</button>
       </div>}
 
       <h3>Declension rules</h3>
+      <p>A rule describes how a stored base produces singular and/or plural forms. A blank suffix means the base itself is the surface form.</p>
       <div className="noun-patterns-table-wrap">
-        <table className="noun-patterns-table">
+        <table className="noun-patterns-table declension-rules-table">
           <thead><tr><th>Name</th><th>Singular form</th><th>Plural form</th><th /></tr></thead>
           <tbody>{draft.declensionRules.map((rule) => <tr key={rule.id}>
             <td><input value={rule.name} onChange={(event) => updateRule(rule.id, { name: event.target.value })} /></td>
-            <td><label><input type="checkbox" checked={Boolean(rule.forms.singular)} onChange={(event) => toggleRuleForm(rule.id, "singular", event.target.checked)} /> supported</label>{rule.forms.singular && <input value={rule.forms.singular.suffix} onChange={(event) => updateRuleSuffix(rule.id, "singular", event.target.value)} placeholder="suffix" />}</td>
-            <td><label><input type="checkbox" checked={Boolean(rule.forms.plural)} onChange={(event) => toggleRuleForm(rule.id, "plural", event.target.checked)} /> supported</label>{rule.forms.plural && <input value={rule.forms.plural.suffix} onChange={(event) => updateRuleSuffix(rule.id, "plural", event.target.value)} placeholder="suffix" />}</td>
-            <td><button type="button" className="row-remove" onClick={() => removeRule(rule.id)}>×</button></td>
+            <td><div className="morphology-form-cell"><label className="morphology-support-toggle"><input type="checkbox" checked={Boolean(rule.forms.singular)} onChange={(event) => toggleRuleForm(rule.id, "singular", event.target.checked)} /><span>Supported</span></label>{rule.forms.singular && <input className="morphology-suffix-input" value={rule.forms.singular.suffix} onChange={(event) => updateRuleSuffix(rule.id, "singular", event.target.value)} placeholder="suffix" />}</div></td>
+            <td><div className="morphology-form-cell"><label className="morphology-support-toggle"><input type="checkbox" checked={Boolean(rule.forms.plural)} onChange={(event) => toggleRuleForm(rule.id, "plural", event.target.checked)} /><span>Supported</span></label>{rule.forms.plural && <input className="morphology-suffix-input" value={rule.forms.plural.suffix} onChange={(event) => updateRuleSuffix(rule.id, "plural", event.target.value)} placeholder="suffix" />}</div></td>
+            <td><button type="button" className="row-remove" onClick={() => removeRule(rule.id)} aria-label={`Remove declension rule ${rule.name}`}>×</button></td>
           </tr>)}</tbody>
         </table>
       </div>
-      <p>A blank suffix means the stored base is already that surface form. This lets a singular-only or plural-only rule use the word itself as its base.</p>
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, declensionRules: [...current.declensionRules, newRule()] }))}>Add rule</button></div>
 
       <h3>Inference sets</h3>
-      <p>Inference sets are reusable learning-policy groups. Add a declension to a set when syntaxes linked to that set should be allowed to infer it.</p>
+      <p>Inference sets are learning-policy groups. A syntax can infer only the declension rules in its selected set.</p>
       {draft.inferenceSets.map((set) => <div className="morphology-inference-set" key={set.id}>
         <div className="noun-pattern-actions">
           <input value={set.name} onChange={(event) => updateInferenceSet(set.id, event.target.value)} aria-label="Inference set name" />
@@ -402,7 +365,7 @@ export function NounMorphologyPanel({
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={() => changeMorphology((current) => ({ ...current, inferenceSets: [...current.inferenceSets, newInferenceSet()] }))}>Add inference set</button></div>
 
       <h3>Syntax rules</h3>
-      <p>Syntax rules are parser data. Edit their fields, markers, noun behavior, and inference policy directly. Field order is input order.</p>
+      <p>Syntax rules describe the learner's input structure. Field order is input order; the selected inference set controls which declensions that syntax may infer.</p>
       {draft.syntaxRules.map((syntax) => {
         const genderMarker = syntax.markers.find((marker) => marker.kind === "gender");
         const tantumMarker = syntax.markers.find((marker) => marker.kind === "tantum");
@@ -414,7 +377,7 @@ export function NounMorphologyPanel({
             <button type="button" className="row-remove" onClick={() => removeSyntax(syntax.id)} aria-label={`Remove syntax ${syntax.name}`}>×</button>
           </div>
           <div className="noun-patterns-table-wrap">
-            <table className="noun-patterns-table">
+            <table className="noun-patterns-table syntax-settings-table">
               <thead><tr><th>Number</th><th>Articles</th><th>Gender marker</th><th>Tantum marker</th><th>Inference set</th></tr></thead>
               <tbody><tr>
                 <td><select value={syntax.numberMode} onChange={(event) => updateSyntax(syntax.id, { numberMode: event.target.value as NounSyntaxRule["numberMode"] })}><option value="both">Singular + plural</option><option value="singular">Singular only</option><option value="plural">Plural only</option></select></td>
@@ -426,7 +389,7 @@ export function NounMorphologyPanel({
             </table>
           </div>
           <div className="noun-patterns-table-wrap">
-            <table className="noun-patterns-table">
+            <table className="noun-patterns-table syntax-fields-table">
               <thead><tr><th>#</th><th>Input field</th><th /></tr></thead>
               <tbody>{syntax.fields.map((field, index) => <tr key={`${syntax.id}:${index}`}>
                 <td>{index + 1}</td>
@@ -450,38 +413,9 @@ export function NounMorphologyPanel({
       })}
       <div className="noun-pattern-actions"><button type="button" className="neutral-button" onClick={addSyntax}>Add syntax rule</button></div>
 
-      <h3>Noun assignments</h3>
-      <p>Each noun stores only its base, actual declension rule, gender, number behavior, and article behavior. Parola derives the available forms.</p>
-      <div className="noun-patterns-table-wrap noun-assignments-wrap">
-        <table className="noun-patterns-table noun-assignments-table">
-          <thead><tr><th>English</th><th>Base</th><th>Rule</th><th>Gender</th><th>Number</th><th>Articles</th><th>Derived</th></tr></thead>
-          <tbody>{nounCards.map((card) => {
-            const assignment = assignments[card.id];
-            if (!assignment) return null;
-            let derived = "";
-            try {
-              const previewCard: Flashcard = { ...card, details: { ruleId: assignment.ruleId, base: assignment.base, gender: assignment.gender, numberMode: assignment.numberMode, articleMode: assignment.articleMode } };
-              const forms = resolvedNounForms(previewCard, draft);
-              derived = [forms.singular, forms.plural].filter(Boolean).join(" / ");
-            } catch {
-              derived = "Invalid assignment";
-            }
-            return <tr key={card.id}>
-              <td>{card.english}</td>
-              <td><input value={assignment.base} onChange={(event) => updateAssignment(card.id, "base", event.target.value)} /></td>
-              <td><select value={assignment.ruleId} onChange={(event) => updateAssignment(card.id, "ruleId", event.target.value)}>{draft.declensionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}</select></td>
-              <td><select value={assignment.gender} onChange={(event) => updateAssignment(card.id, "gender", event.target.value)}><option value="masculine">Masculine</option><option value="feminine">Feminine</option></select></td>
-              <td><select value={assignment.numberMode} onChange={(event) => updateAssignment(card.id, "numberMode", event.target.value)}><option value="both">Singular + plural</option><option value="singular">Singular only</option><option value="plural">Plural only</option></select></td>
-              <td><select value={assignment.articleMode} onChange={(event) => updateAssignment(card.id, "articleMode", event.target.value)}><option value="automatic">Automatic</option><option value="none">None</option></select></td>
-              <td>{derived}</td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>
-
       {message && <p className="inventory-transfer-message" role="status">{message}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="noun-pattern-actions"><button type="button" className="primary-button" onClick={() => void save()} disabled={saving || sourceChanged}>{saving ? "Saving…" : "Save morphology"}</button></div>
+      <div className="noun-pattern-actions morphology-save-actions"><button type="button" className="primary-button" onClick={() => void save()} disabled={saving || sourceChanged}>{saving ? "Saving…" : "Save morphology"}</button></div>
     </div>
-  </details>;
+  </section>;
 }
