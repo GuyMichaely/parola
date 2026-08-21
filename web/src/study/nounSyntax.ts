@@ -22,10 +22,8 @@ export type NounSyntaxPiece = {
 };
 
 export type NounSyntaxCandidate = {
-  syntaxRuleId: string;
   syntaxName: string;
-  declensionRuleId: string;
-  declensionRuleName: string;
+  declensionRule: string;
   definition: NounDefinition;
 };
 
@@ -155,8 +153,8 @@ function candidateGenders(explicitGender: NounGender | null, fields: NounSyntaxF
   return ["masculine", "feminine"];
 }
 
-function ruleSpecificity(ruleId: string, syntax: NounSyntaxRule, morphology: NounMorphology) {
-  const rule = morphology.declensionRules.find((item) => item.id === ruleId);
+function ruleSpecificity(ruleName: string, syntax: NounSyntaxRule, morphology: NounMorphology) {
+  const rule = morphology.declensionRules.find((item) => item.name === ruleName);
   if (!rule) return 0;
   return Math.max(0, ...syntax.fields.flatMap((field) => {
     if (field.kind !== "noun") return [];
@@ -170,12 +168,12 @@ function buildCandidates(
   genders: NounGender[],
   values: string[],
 ): NounSyntaxCandidate[] {
-  const inferenceSet = morphology.inferenceSets.find((set) => set.id === syntax.inferenceSetId);
+  const inferenceSet = morphology.inferenceSets.find((set) => set.name === syntax.inferenceSet);
   if (!inferenceSet || !genders.length) return [];
   const result: NounSyntaxCandidate[] = [];
 
-  for (const ruleId of inferenceSet.declensionRuleIds) {
-    const rule = morphology.declensionRules.find((item) => item.id === ruleId);
+  for (const ruleName of inferenceSet.declensionRules) {
+    const rule = morphology.declensionRules.find((item) => item.name === ruleName);
     if (!rule || !ruleSupportsNumberMode(rule, syntax.numberMode)) continue;
     const observedBases: string[] = [];
     syntax.fields.forEach((field, index) => {
@@ -189,8 +187,8 @@ function buildCandidates(
     if (normalizedBases.size !== 1) continue;
     const base = observedBases[0] ?? "";
 
-    const singular = syntax.numberMode === "plural" ? "" : generateNounForm(rule, base, "singular") ?? "";
-    const plural = syntax.numberMode === "singular" ? "" : generateNounForm(rule, base, "plural") ?? "";
+    const singular = generateNounForm(rule, base, "singular") ?? "";
+    const plural = generateNounForm(rule, base, "plural") ?? "";
 
     for (const gender of genders) {
       const articles = suggestedNounArticles(gender, singular, plural, syntax.articleMode);
@@ -201,15 +199,12 @@ function buildCandidates(
       if (!articlesMatch) continue;
 
       result.push({
-        syntaxRuleId: syntax.id,
         syntaxName: syntax.name,
-        declensionRuleId: rule.id,
-        declensionRuleName: rule.name,
+        declensionRule: rule.name,
         definition: {
-          ruleId: rule.id,
+          rule: rule.name,
           base,
           gender,
-          numberMode: syntax.numberMode,
           articleMode: syntax.articleMode,
         },
       });
@@ -217,9 +212,9 @@ function buildCandidates(
   }
 
   return result.sort((left, right) => {
-    const specificity = ruleSpecificity(right.declensionRuleId, syntax, morphology) - ruleSpecificity(left.declensionRuleId, syntax, morphology);
+    const specificity = ruleSpecificity(right.declensionRule, syntax, morphology) - ruleSpecificity(left.declensionRule, syntax, morphology);
     if (specificity) return specificity;
-    const byRule = left.declensionRuleId.localeCompare(right.declensionRuleId);
+    const byRule = left.declensionRule.localeCompare(right.declensionRule);
     if (byRule) return byRule;
     return left.definition.gender.localeCompare(right.definition.gender);
   });
