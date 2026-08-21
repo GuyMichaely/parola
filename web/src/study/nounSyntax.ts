@@ -118,6 +118,16 @@ function syntaxArticleConstraint(syntax: NounSyntaxRule): NounArticleConstraint 
   return capabilities.length ? { kind: "requires", capabilities } : { kind: "none" };
 }
 
+function syntaxSuppliesFullDeclension(syntax: NounSyntaxRule) {
+  const constraint = syntaxArticleConstraint(syntax);
+  return constraint.kind === "requires"
+    && constraint.capabilities.includes("definite-singular")
+    && constraint.capabilities.includes("definite-plural")
+    && constraint.capabilities.includes("indefinite-singular")
+    && syntax.fields.some((field) => field.kind === "noun" && field.number === "singular")
+    && syntax.fields.some((field) => field.kind === "noun" && field.number === "plural");
+}
+
 function expectedArticle(field: Extract<NounSyntaxField, { kind: "article" }>, articles: ReturnType<typeof suggestedNounArticles>) {
   if (field.definiteness === "indefinite") return articles.indefiniteArticle;
   return field.number === "singular" ? articles.definiteSingularArticle : articles.definitePluralArticle;
@@ -194,6 +204,7 @@ function buildCandidates(
   if (!inferenceSet || !genders.length) return [];
   const result: NounSyntaxCandidate[] = [];
   const articleConstraint = syntaxArticleConstraint(syntax);
+  const fullDeclension = syntaxSuppliesFullDeclension(syntax);
 
   for (const ruleName of inferenceSet.declensionRules) {
     const rule = morphology.declensionRules.find((item) => item.name === ruleName);
@@ -215,6 +226,7 @@ function buildCandidates(
 
     for (const gender of genders) {
       const articles = suggestedNounArticles(gender, singular, plural, nounArticleProfiles.all);
+      if (!fullDeclension && normalize(articles.definiteSingularArticle) === "lo") continue;
       const articlesMatch = syntax.fields.every((field, index) => {
         if (field.kind !== "article") return true;
         return normalize(values[index] ?? "") === normalize(expectedArticle(field, articles));
@@ -315,6 +327,10 @@ export function attemptNounSyntax(rawValue: string, syntax: NounSyntaxRule, morp
       ? "The supplied article does not determine gender; add a gender marker before the answer fields."
       : "The supplied gender and articles conflict.";
     return { syntax, status: "not-applicable", pieces, missing: [], candidates: [], consumedTokens: originalTokens.length, reason };
+  }
+
+  if (!markerParse.gender && genders.length === 1 && syntax.fields.some((field) => field.kind === "article")) {
+    pieces.push({ label: "Gender from article", value: genders[0] });
   }
 
   const candidates = buildCandidates(syntax, morphology, genders, markerParse.tantum, values);
