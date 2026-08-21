@@ -109,9 +109,13 @@ Changes to non-noun cards do not invalidate the morphology draft.
 
 ## Validation
 
-`npm test` compiles the noun parsing and preview code into a temporary CommonJS test output and runs deterministic Node tests against the real source modules. The suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping.
+`npm test` compiles the parser, preview, and synchronization modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
 
-`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, and `node --check api/server.mjs` on relevant pull requests and pushes to `main`. The Pages deployment also runs the noun parser tests before building the production site.
+The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer.
+
+These synchronization tests verify decision logic without mutating a deployed inventory. A live browser↔API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
+
+`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, and `node --check api/server.mjs` on relevant pull requests and pushes to `main`. The Pages deployment also runs the complete web test suite before building the production site.
 
 ## Extension
 
