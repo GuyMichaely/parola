@@ -1,8 +1,15 @@
-import type { CardType, Flashcard } from "./types";
+import type {
+  AdjectiveCard,
+  AdverbCard,
+  CardType,
+  NounCard,
+  VerbCard,
+} from "./types";
 import { cardTypes } from "../cardTypes";
 import {
   articleProfileFromArticlePresence,
   inferNounDefinitionFromForms,
+  nounArticleProfiles,
   resolvedNounForms,
   suggestedNounArticles,
   type NounMorphology,
@@ -160,7 +167,7 @@ export function nounFormsError(input: Pick<BatchRow, "singular" | "plural" | "de
   if (!singular && !plural) return "Enter at least a singular or plural form.";
   if (!singular && (definiteSingular || indefinite)) return "Singular articles require a singular noun form.";
   if (!plural && definitePlural) return "A definite plural article requires a plural noun form.";
-  if (!articleProfileFromArticlePresence(input)) return "Article availability must be one of 111, 100, 010, or 000.";
+  if (!articleProfileFromArticlePresence(input)) return "Article availability must be all articles, definite singular only, definite plural only, or none.";
   return "";
 }
 
@@ -187,7 +194,7 @@ export function nounCard(input: {
   definiteSingularArticle: string;
   definitePluralArticle: string;
   indefiniteArticle: string;
-}, morphology: NounMorphology): Flashcard {
+}, morphology: NounMorphology): NounCard {
   const definition = inferNounDefinitionFromForms({
     singular: input.singular,
     plural: input.plural,
@@ -215,7 +222,7 @@ export function nounCard(input: {
   };
 }
 
-export function verbCard(input: Omit<VerbBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): Flashcard {
+export function verbCard(input: Omit<VerbBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): VerbCard {
   return {
     id: input.id,
     type: "verb",
@@ -227,7 +234,7 @@ export function verbCard(input: Omit<VerbBatchRow, "id"> & { id: number; setName
   };
 }
 
-export function adjectiveCard(input: Omit<AdjectiveBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): Flashcard {
+export function adjectiveCard(input: Omit<AdjectiveBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): AdjectiveCard {
   return {
     id: input.id,
     type: "adjective",
@@ -239,11 +246,11 @@ export function adjectiveCard(input: Omit<AdjectiveBatchRow, "id"> & { id: numbe
   };
 }
 
-export function adverbCard(input: Omit<AdverbBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): Flashcard {
+export function adverbCard(input: Omit<AdverbBatchRow, "id"> & { id: number; setName: string | null; tags: string[] }): AdverbCard {
   return { id: input.id, type: "adverb", english: input.english, italian: input.form, setName: input.setName, tags: input.tags, details: {} };
 }
 
-export function nounRowFromCard(card: Flashcard, morphology: NounMorphology): BatchRow {
+export function nounRowFromCard(card: NounCard, morphology: NounMorphology): BatchRow {
   const forms = resolvedNounForms(card, morphology);
   return {
     id: String(card.id),
@@ -257,15 +264,15 @@ export function nounRowFromCard(card: Flashcard, morphology: NounMorphology): Ba
   };
 }
 
-export function verbRowFromCard(card: Flashcard): VerbBatchRow {
-  return { id: String(card.id), english: card.english, infinitive: card.italian, io: card.details.io ?? "", tu: card.details.tu ?? "", luiLei: card.details.luiLei ?? "", noi: card.details.noi ?? "", voi: card.details.voi ?? "", loro: card.details.loro ?? "", auxiliary: card.details.auxiliary === "essere" ? "essere" : "avere", participle: card.details.participle ?? "" };
+export function verbRowFromCard(card: VerbCard): VerbBatchRow {
+  return { id: String(card.id), english: card.english, infinitive: card.italian, io: card.details.io, tu: card.details.tu, luiLei: card.details.luiLei, noi: card.details.noi, voi: card.details.voi, loro: card.details.loro, auxiliary: card.details.auxiliary, participle: card.details.participle };
 }
 
-export function adjectiveRowFromCard(card: Flashcard): AdjectiveBatchRow {
-  return { id: String(card.id), english: card.english, masculineSingular: card.details.masculineSingular ?? card.italian, feminineSingular: card.details.feminineSingular ?? "", masculinePlural: card.details.masculinePlural ?? "", femininePlural: card.details.femininePlural ?? "" };
+export function adjectiveRowFromCard(card: AdjectiveCard): AdjectiveBatchRow {
+  return { id: String(card.id), english: card.english, masculineSingular: card.details.masculineSingular || card.italian, feminineSingular: card.details.feminineSingular, masculinePlural: card.details.masculinePlural, femininePlural: card.details.femininePlural };
 }
 
-export function adverbRowFromCard(card: Flashcard): AdverbBatchRow {
+export function adverbRowFromCard(card: AdverbCard): AdverbBatchRow {
   return { id: String(card.id), english: card.english, form: card.italian };
 }
 
@@ -290,7 +297,7 @@ export function updateNounRow<K extends keyof BatchRow>(row: BatchRow, field: K,
     const rowHasForms = Boolean(row.singular.trim() || row.plural.trim());
     const rowHasArticles = Boolean(row.definiteSingularArticle || row.definitePluralArticle || row.indefiniteArticle);
     const storedProfile = articleProfileFromArticlePresence(row);
-    const suggestionProfile = !rowHasForms && !rowHasArticles ? "111" : storedProfile ?? "111";
+    const suggestionProfile = !rowHasForms && !rowHasArticles ? nounArticleProfiles.all : storedProfile ?? nounArticleProfiles.all;
     const previous = suggestedNounArticles(row.gender, row.singular, row.plural, suggestionProfile);
     const next = suggestedNounArticles(nextRow.gender, nextRow.singular, nextRow.plural, suggestionProfile);
     const keepOrSuggest = (current: string, previousSuggestion: string, nextSuggestion: string) => !current || current === previousSuggestion ? nextSuggestion : current;
