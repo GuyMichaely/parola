@@ -16,6 +16,7 @@ export type NounDetails = {
 };
 
 export type VerbDetails = {
+  base?: never;
   io: string;
   tu: string;
   luiLei: string;
@@ -27,13 +28,16 @@ export type VerbDetails = {
 };
 
 export type AdjectiveDetails = {
+  base?: never;
   masculineSingular: string;
   feminineSingular: string;
   masculinePlural: string;
   femininePlural: string;
 };
 
-export type AdverbDetails = Record<string, never>;
+export type AdverbDetails = {
+  base?: never;
+};
 
 type CardBase<Type extends CardType, Details> = {
   id: number;
