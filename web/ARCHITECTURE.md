@@ -12,7 +12,7 @@ Parola web (React + Vite)
 Chrome capture extension
     |
     +--> stages words/contexts
-    +--> imports approved cards into Parola web
+    +--> hands reviewed candidates to Parola web
 ```
 
 ## Web
@@ -25,8 +25,9 @@ The main source boundaries are:
 
 ```text
 src/
-├── App.tsx                         application, inventory, and study-session orchestration
+├── App.tsx                         application, inventory, study, extension-import orchestration
 ├── cardTypes.ts                   shared card-type labels and ordering
+├── extensionImport.ts             extension candidate protocol and current-card conversion
 ├── cards/
 │   ├── types.ts                   Flashcard/CardType domain model
 │   ├── editorModel.ts             card editor rows, validation, conversion, drafts
@@ -107,23 +108,33 @@ Inventory JSON export/import contains `cards` and `nounMorphology` without trans
 
 Changes to non-noun cards do not invalidate the morphology draft.
 
+## Extension import boundary
+
+The extension does not persist Parola inventory state itself. Its content script forwards reviewed candidates to the loaded Parola page through a same-page request/response bridge.
+
+`extensionImport.ts` validates that transport shape and converts candidates into the current `Flashcard` model. Nouns are canonicalized through the active `NounMorphology`, so an ordinary reviewed form can become an `o-i` definition while a nonstandard or tantum noun resolves according to the currently configured morphology. The converted cards then use the same `addBatch` and `CardStorage` path as ordinary card creation.
+
+The bridge retries one request ID while waiting for the page, and `App` memoizes work for that request ID so retries do not create duplicate imports. The extension removes its staged items only after Parola acknowledges a successful save.
+
+The transport candidate is not a second persisted Parola card schema. The current extension staged record still combines capture evidence and editable candidate fields; separating those is a later extension-domain cleanup.
+
 ## Validation
 
-`npm test` compiles the parser, preview, and synchronization modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
+`npm test` compiles the parser, preview, synchronization, and extension-import conversion modules into temporary CommonJS test output and runs deterministic Node tests against the real source modules.
 
-The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer.
+The noun suite covers ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, zero-candidate complete syntax, candidate specificity ordering, and live-preview candidate scoping. The sync suite covers automatic newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback using in-memory browser storage plus a fake HTTP peer. Extension-import tests cover current-model conversion, including `specchio` and explicit plural-only `vestiti`.
 
 These synchronization tests verify decision logic without mutating a deployed inventory. A live browser↔API smoke test remains the environment-level check for endpoint configuration, CORS/networking, and deployed persistence.
 
-`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, and `node --check api/server.mjs` on relevant pull requests and pushes to `main`. The Pages deployment also runs the complete web test suite before building the production site.
+`.github/workflows/validate.yml` runs `npm ci`, `npm test`, the production web build, API syntax, and extension static syntax/manifest checks on relevant pull requests and pushes to `main`. The Pages deployment also runs the complete web test suite before building the production site.
 
 ## Extension
 
-The Chrome extension is source-controlled under `extension/`. It stages user-selected Italian words and context, provides a review UI, and sends approved typed cards to the hosted Parola page through its content script.
+The Chrome extension is source-controlled under `extension/`. It stages user-selected Italian words and context, provides a review UI, and hands approved reviewed candidates to the hosted Parola page through its content script.
 
-There is no automated browser/end-to-end extension test harness. Release workflows perform static JavaScript/manifest validation and use Chrome only to pack/sign the CRX.
+There is no automated browser/end-to-end extension test harness. Release workflows perform static JavaScript/manifest validation and use Chrome only to pack/sign the CRX. The web-side candidate conversion is covered deterministically without launching Chrome.
 
-The canonical extension release workflow is `.github/workflows/release-extension.yml`, which publishes signed release assets through GitHub Releases. The extension manifest has used the GitHub Releases update feed since `0.2.3`; `0.2.4` was the cutover release. The Pages workflow still publishes the old feed path only as a compatibility bridge for clients installed before the cutover. Remove that bridge after the installed legacy client is confirmed to have reached `0.2.4` or later.
+The canonical extension release workflow is `.github/workflows/release-extension.yml`, which publishes signed release assets through GitHub Releases. The extension manifest has used the GitHub Releases update feed since `0.2.3`; `0.2.4` was the feed-cutover release. Source/tag `0.2.5` contains the repaired Parola import boundary. The Pages workflow still publishes the old feed path only as a compatibility bridge for clients installed before the cutover. Remove that bridge after the installed extension is confirmed to have moved onto the independent release feed.
 
 ## API
 
