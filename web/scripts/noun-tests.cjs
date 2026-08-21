@@ -10,6 +10,8 @@ fs.writeFileSync(path.join(testDist, "package.json"), '{"type":"commonjs"}\n');
 const {
   cloneNounMorphology,
   defaultNounMorphology,
+  normalizeNounMorphology,
+  resolvedNounForms,
   ruleNumberMode,
 } = require(path.join(testDist, "cards", "nounMorphology.js"));
 const {
@@ -42,7 +44,7 @@ function nounCard({
   rule,
   base,
   gender = "masculine",
-  articleMode = "automatic",
+  articleProfile = "111",
 }) {
   return {
     id: 1,
@@ -51,7 +53,7 @@ function nounCard({
     italian,
     setName: null,
     tags: [],
-    details: { rule, base, gender, articleMode },
+    details: { rule, base, gender, articleProfile },
   };
 }
 
@@ -94,27 +96,17 @@ test("adding -chio/-chi to learned shorthand makes lo specchio correct", () => {
   assert.ok(evaluation.matchingCandidates.some((candidate) => candidate.declensionRule === rules.chioChi && candidate.definition.base === "spec"));
 });
 
-test("gender shorthand shares the learned-shorthand policy", () => {
+test("article-taking shorthand requires an article", () => {
+  const morphology = morphologyWithLearnedRule(rules.chioChi);
   const card = nounCard({ english: "mirror", italian: "specchio", rule: rules.chioChi, base: "spec" });
-  assert.equal(evaluateNounAnswer(card, "m specchio", defaultNounMorphology, keywords).result, "wrong");
-  assert.equal(evaluateNounAnswer(card, "m specchio", morphologyWithLearnedRule(rules.chioChi), keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(card, "m specchio", morphology, keywords).result, "invalid");
 });
 
-test("elided definite articles are split and normalized during recognition", () => {
-  const card = nounCard({ english: "entrance", italian: "entrata", rule: rules.aE, base: "entrat", gender: "feminine" });
-  assert.equal(evaluateNounAnswer(card, "l'entrata", defaultNounMorphology, keywords).result, "correct");
-  assert.equal(evaluateNounAnswer(card, "l’entrata", defaultNounMorphology, keywords).result, "correct");
-});
-
-test("ambiguous l' branches gender without consulting the target card", () => {
+test("elided definite article requires an explicit gender when the article is ambiguous", () => {
   const card = nounCard({ english: "tree", italian: "albero", rule: rules.oI, base: "alber", gender: "masculine" });
-  const evaluation = evaluateNounAnswer(card, "l'albero", defaultNounMorphology, keywords);
-  assert.equal(evaluation.result, "correct");
-  const genders = evaluation.candidates
-    .filter((candidate) => candidate.syntaxName === "Article + singular" && candidate.declensionRule === rules.oI)
-    .map((candidate) => candidate.definition.gender)
-    .sort();
-  assert.deepEqual(genders, ["feminine", "masculine"]);
+  assert.equal(evaluateNounAnswer(card, "l'albero", defaultNounMorphology, keywords).result, "invalid");
+  assert.equal(evaluateNounAnswer(card, "l’albero", defaultNounMorphology, keywords).result, "invalid");
+  assert.equal(evaluateNounAnswer(card, "m l'albero", defaultNounMorphology, keywords).result, "correct");
 });
 
 test("conflicting explicit gender and article evidence is invalid", () => {
@@ -122,29 +114,54 @@ test("conflicting explicit gender and article evidence is invalid", () => {
   assert.equal(evaluateNounAnswer(card, "m la casa", defaultNounMorphology, keywords).result, "invalid");
 });
 
-test("pluralia tantum derives plural-only behavior from its rule", () => {
-  const card = nounCard({
-    english: "clothes",
-    italian: "vestiti",
-    rule: rules.pluralBase,
-    base: "vestiti",
-  });
-  const evaluation = evaluateNounAnswer(card, "p i vestiti", defaultNounMorphology, keywords);
-  assert.equal(evaluation.result, "correct");
-  assert.ok(evaluation.matchingCandidates.every((candidate) => candidate.definition.rule === rules.pluralBase && candidate.definition.base === "vestiti"));
+test("article capability constraints do not require an exact profile match", () => {
+  const all = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "111" });
+  assert.equal(evaluateNounAnswer(all, "il libro", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(all, "i libri", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(all, "un libro", defaultNounMorphology, keywords).result, "correct");
+
+  const definiteSingularOnly = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "100" });
+  assert.equal(evaluateNounAnswer(definiteSingularOnly, "il libro", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(definiteSingularOnly, "i libri", defaultNounMorphology, keywords).result, "wrong");
+  assert.equal(evaluateNounAnswer(definiteSingularOnly, "un libro", defaultNounMorphology, keywords).result, "wrong");
 });
 
-test("singularia tantum derives singular-only behavior and accepts marker order either way", () => {
+test("article profile is independent from whether a declension has plural forms", () => {
+  const card = nounCard({ english: "book", italian: "libro", rule: rules.oI, base: "libr", articleProfile: "100" });
+  const forms = resolvedNounForms(card, defaultNounMorphology);
+  assert.equal(forms.singular, "libro");
+  assert.equal(forms.plural, "libri");
+  assert.equal(forms.definiteSingularArticle, "il");
+  assert.equal(forms.definitePluralArticle, "");
+  assert.equal(forms.indefiniteArticle, "");
+});
+
+test("singular-only and plural-only article nouns use ordinary article shorthand", () => {
+  const morphology = morphologyWithLearnedRule(rules.singularBase);
+  const learned = morphology.inferenceSets.find((set) => set.name === "Learned shorthand");
+  assert.ok(learned);
+  if (!learned.declensionRules.includes(rules.pluralBase)) learned.declensionRules.push(rules.pluralBase);
+
+  const burro = nounCard({ english: "butter", italian: "burro", rule: rules.singularBase, base: "burro", articleProfile: "100" });
+  assert.equal(evaluateNounAnswer(burro, "il burro", morphology, keywords).result, "correct");
+
+  const nozze = nounCard({ english: "wedding", italian: "nozze", rule: rules.pluralBase, base: "nozze", gender: "feminine", articleProfile: "010" });
+  assert.equal(evaluateNounAnswer(nozze, "le nozze", morphology, keywords).result, "correct");
+});
+
+test("articleless nouns require explicit gender and plurality", () => {
   const card = nounCard({
     english: "Venice",
     italian: "Venezia",
     rule: rules.singularBase,
     base: "Venezia",
     gender: "feminine",
-    articleMode: "none",
+    articleProfile: "000",
   });
   assert.equal(evaluateNounAnswer(card, "f s Venezia", defaultNounMorphology, keywords).result, "correct");
   assert.equal(evaluateNounAnswer(card, "s f Venezia", defaultNounMorphology, keywords).result, "correct");
+  assert.equal(evaluateNounAnswer(card, "f Venezia", defaultNounMorphology, keywords).result, "invalid");
+  assert.equal(evaluateNounAnswer(card, "la Venezia", morphologyWithLearnedRule(rules.singularBase), keywords).result, "wrong");
 });
 
 test("a structurally complete syntax with zero candidates is wrong, not invalid", () => {
@@ -155,13 +172,13 @@ test("a structurally complete syntax with zero candidates is wrong, not invalid"
   const card = nounCard({ english: "cucumber", italian: "cetriolo", rule: rules.oI, base: "cetriol" });
   const evaluation = evaluateNounAnswer(card, "il cetriolo", morphology, keywords);
   assert.equal(evaluation.result, "wrong");
-  assert.ok(evaluation.attempts.some((attempt) => attempt.syntax.name === "Article + singular" && attempt.status === "complete" && attempt.candidates.length === 0));
+  assert.ok(evaluation.attempts.some((attempt) => attempt.syntax.name === "Definite singular article + noun" && attempt.status === "complete" && attempt.candidates.length === 0));
 });
 
 test("candidate ordering prefers the more specific suffix without discarding broader candidates", () => {
   const morphology = morphologyWithLearnedRule(rules.chioChi);
   const attempts = analyzeNounInput("lo specchio", morphology, keywords);
-  const articleAttempt = attempts.find((attempt) => attempt.syntax.name === "Article + singular");
+  const articleAttempt = attempts.find((attempt) => attempt.syntax.name === "Definite singular article + noun");
   assert.ok(articleAttempt);
   assert.equal(articleAttempt.status, "complete");
   assert.equal(articleAttempt.candidates[0]?.declensionRule, rules.chioChi);
@@ -170,17 +187,24 @@ test("candidate ordering prefers the more specific suffix without discarding bro
 
 test("live preview lists declensions only from the syntax it displays", () => {
   const morphology = cloneNounMorphology(defaultNounMorphology);
-  const articleSyntax = morphology.syntaxRules.find((syntax) => syntax.name === "Article + singular");
+  const articleSyntax = morphology.syntaxRules.find((syntax) => syntax.name === "Definite singular article + noun");
   assert.ok(articleSyntax);
   morphology.syntaxRules.splice(1, 0, {
     ...JSON.parse(JSON.stringify(articleSyntax)),
-    name: "Article + singular (full inference)",
+    name: "Definite singular article + noun (full inference)",
     inferenceSet: "Full noun answers",
   });
 
   const card = nounCard({ english: "mirror", italian: "specchio", rule: rules.chioChi, base: "spec" });
   const preview = analyzeAnswerSyntax(card, "lo specchio", keywords, morphology);
-  assert.equal(preview.syntaxName, "Article + singular");
+  assert.equal(preview.syntaxName, "Definite singular article + noun");
   assert.ok(preview.candidateNames.includes(rules.oI));
   assert.equal(preview.candidateNames.includes(rules.chioChi), false);
+});
+
+test("morphology schema rejects retired syntax article and number properties", () => {
+  const retired = cloneNounMorphology(defaultNounMorphology);
+  retired.syntaxRules[0].articleMode = "automatic";
+  retired.syntaxRules[0].numberMode = "both";
+  assert.throws(() => normalizeNounMorphology(retired), /must contain exactly/i);
 });
