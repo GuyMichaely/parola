@@ -41,15 +41,15 @@ export function NounAnswerDiagnostic({ card, answer, keywords, morphology }: { c
   }
 
   const uniqueCandidates = Array.from(new Map(evaluation.candidates.map((candidate) => {
-    const key = `${candidate.syntaxRuleId}\u0000${candidate.declensionRuleId}\u0000${candidate.definition.base}\u0000${candidate.definition.gender}`;
+    const key = `${candidate.syntaxName}\u0000${candidate.declensionRule}\u0000${candidate.definition.base}\u0000${candidate.definition.gender}`;
     return [key, candidate] as const;
   })).values());
 
   return <div className="submitted-answer noun-answer-diagnostic">
     <span>How Parola interpreted it</span>
     <div>
-      {uniqueCandidates.map((candidate) => <p key={`${candidate.syntaxRuleId}:${candidate.declensionRuleId}:${candidate.definition.base}:${candidate.definition.gender}`}>
-        <strong>{candidate.declensionRuleName}</strong>
+      {uniqueCandidates.map((candidate) => <p key={`${candidate.syntaxName}:${candidate.declensionRule}:${candidate.definition.base}:${candidate.definition.gender}`}>
+        <strong>{candidate.declensionRule}</strong>
         {` · base ${candidate.definition.base || "∅"} · ${candidate.definition.gender} · ${candidate.syntaxName}`}
       </p>)}
     </div>
