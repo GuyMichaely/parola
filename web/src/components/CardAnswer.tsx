@@ -14,7 +14,7 @@ export function NounAnswer({ card, morphology }: { card: NounCard; morphology: N
   return (
     <div className="answer-content">
       <span className="answer-label">Italian · {forms.gender}{rule ? ` · ${rule.name}` : ""}</span>
-      <h2>{forms.singular || forms.plural || card.italian}</h2>
+      <h2>{forms.singular || forms.plural}</h2>
       {hasArticles && <table className="noun-forms-table">
         <thead><tr><th>Form</th><th>Article</th><th>Word</th></tr></thead>
         <tbody>
@@ -100,11 +100,14 @@ export function CardAnswer({ card, morphology }: { card: Flashcard; morphology: 
 }
 
 export function ItalianPrompt({ card, morphology }: { card: Flashcard; morphology: NounMorphology }) {
-  const nounForm = card.type === "noun" ? resolvedNounForms(card, morphology).singular : "";
+  const nounForm = card.type === "noun" ? (() => {
+    const forms = resolvedNounForms(card, morphology);
+    return forms.singular || forms.plural;
+  })() : "";
   return (
     <div className="question-content">
       <span className="answer-label">Italian</span>
-      <h2>{card.type === "noun" ? nounForm || card.italian : card.italian}</h2>
+      <h2>{card.type === "noun" ? nounForm : card.italian}</h2>
     </div>
   );
 }
@@ -134,7 +137,7 @@ export function ItalianVerificationForm({ card, keywords, morphology, onResult }
   }
 
   const placeholder = card.type === "noun"
-    ? `il libro  ·  m lo specchio  ·  ${keywords.feminine} ${keywords.singularOnly} Venezia`
+    ? `il libro  ·  lo specchio gli specchi uno  ·  ${keywords.feminine} ${keywords.singularOnly} Venezia`
     : card.type === "verb" ? "parlare parlo parli parla parliamo parlate parlano avere parlato"
       : card.type === "adjective" ? "bello  or  bello bella belli belle"
         : "molto";
@@ -150,7 +153,7 @@ export function ItalianVerificationForm({ card, keywords, morphology, onResult }
       <details className="answer-syntax-help">
         <summary>Answer format</summary>
         <div>
-          <p><strong>Noun:</strong> full form <code>il libro i libri un</code> or <code>l’entrata le entrate un’</code>. Short noun syntaxes use configured inference sets. Gender and tantum markers may appear in either order. Singular-only example: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>.</p>
+          <p><strong>Noun:</strong> full form <code>il libro i libri un</code> or <code>lo specchio gli specchi uno</code>. Nouns that take <code>lo</code> require the full declension. Other short noun syntaxes use configured inference sets. Gender and tantum markers may appear in either order. Singular-only example: <code>{keywords.feminine} {keywords.singularOnly} Venezia</code>.</p>
           <p><strong>Verb:</strong> <code>infinitive io tu lui/lei noi voi loro auxiliary participle</code>.</p>
           <p><strong>Adjective:</strong> regular shorthand <code>bello</code>, or full <code>bello bella belli belle</code>.</p>
           <p><strong>Adverb:</strong> one invariant form, such as <code>molto</code>.</p>
