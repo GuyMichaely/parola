@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "web/**"
-      - "extension/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -17,11 +16,6 @@ permissions:
 concurrency:
   group: github-pages
   cancel-in-progress: false
-
-env:
-  EXTENSION_ID: kekniohgmpmijldjfamhjehnbmkmiajg
-  EXTENSION_UPDATE_URL: https://github.com/GuyMichaely/parola/releases/latest/download/updates.xml
-  EXTENSION_CRX_URL: https://guymichaely.com/parola/extension/parola.crx
 
 jobs:
   build:
@@ -44,84 +38,13 @@ jobs:
           npm test
           npm run build
 
-      - name: Validate extension source
-        working-directory: extension
-        run: |
-          node --check background.js
-          node --check content/parola.js
-          node --check focus-preservation.js
-          node --check popup.js
-          node --check review.js
-          node -e 'const manifest = JSON.parse(require("fs").readFileSync("manifest.json", "utf8")); if (!manifest.version) throw new Error("manifest version is required")'
-
-      - name: Assemble Pages site and signed extension
-        env:
-          PRIVATE_KEY: ${{ secrets.PAROLA_EXTENSION_PRIVATE_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$PRIVATE_KEY"
-
-          SITE_DIR="$RUNNER_TEMP/parola-pages"
-          BUILD_DIR="$RUNNER_TEMP/parola-extension"
-          KEY_FILE="$RUNNER_TEMP/parola-extension.pem"
-          CHROME_PATH="$(command -v google-chrome)"
-
-          test -x "$CHROME_PATH"
-          rm -rf "$SITE_DIR" "$BUILD_DIR" "${BUILD_DIR}.crx"
-          mkdir -p "$SITE_DIR/extension" "$BUILD_DIR/content"
-          cp -a web/dist/. "$SITE_DIR/"
-
-          cp extension/manifest.json extension/background.js extension/focus-preservation.js extension/popup.html extension/popup.js extension/review.html extension/review.js extension/ui.css "$BUILD_DIR/"
-          cp extension/content/*.js "$BUILD_DIR/content/"
-          test -f "$BUILD_DIR/content/parola.js"
-
-          VERSION="$(node -p "require('./extension/manifest.json').version")"
-
-          printf '%s' "$PRIVATE_KEY" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-
-          "$CHROME_PATH" --headless=new --no-sandbox \
-            --pack-extension="$BUILD_DIR" \
-            --pack-extension-key="$KEY_FILE"
-
-          CRX_FILE="${BUILD_DIR}.crx"
-          test -s "$CRX_FILE"
-
-          HEX_ID="$(openssl rsa -in "$KEY_FILE" -pubout -outform DER 2>/dev/null | openssl dgst -sha256 -binary | xxd -p -c 256 | cut -c1-32)"
-          BUILT_EXTENSION_ID="$(python3 - "$HEX_ID" <<'PY'
-          import sys
-          print(''.join(chr(ord('a') + int(ch, 16)) for ch in sys.argv[1]))
-          PY
-          )"
-          test "$BUILT_EXTENSION_ID" = "$EXTENSION_ID"
-
-          cp "$CRX_FILE" "$SITE_DIR/extension/parola.crx"
-          cat > "$SITE_DIR/extension/updates.xml" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
-            <app appid="$EXTENSION_ID">
-              <updatecheck codebase="$EXTENSION_CRX_URL" version="$VERSION" />
-            </app>
-          </gupdate>
-          EOF
-          cat > "$SITE_DIR/extension/version.json" <<EOF
-          {
-            "id": "$EXTENSION_ID",
-            "version": "$VERSION",
-            "commit": "$GITHUB_SHA",
-            "updateUrl": "$EXTENSION_UPDATE_URL",
-            "crxUrl": "$EXTENSION_CRX_URL"
-          }
-          EOF
-
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: ${{ runner.temp }}/parola-pages
+          path: web/dist
 
   deploy:
     needs: build
