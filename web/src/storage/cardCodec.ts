@@ -1,15 +1,45 @@
-import type { Flashcard } from "../cards/types";
+import type { CardType, Flashcard } from "../cards/types";
+import { normalizeNounArticleProfile } from "../cards/nounMorphology";
 import { cardTypes } from "../cardTypes";
 
-export function cloneCards(cards: Flashcard[]) {
-  return cards.map((card) => ({ ...card, tags: [...card.tags], details: { ...card.details } }));
+function objectValue(value: unknown, label: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  return value as Record<string, unknown>;
+}
+
+function assertExactKeys(value: Record<string, unknown>, label: string, expected: string[]) {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+    throw new Error(`${label} must contain exactly: ${wanted.join(", ")}.`);
+  }
+}
+
+function stringField(value: unknown) {
+  return String(value ?? "");
+}
+
+export function cloneCards(cards: Flashcard[]): Flashcard[] {
+  return cards.map((card) => {
+    if (card.type === "noun") {
+      return {
+        ...card,
+        tags: [...card.tags],
+        details: {
+          ...card.details,
+          articleProfile: { ...card.details.articleProfile },
+        },
+      };
+    }
+    return { ...card, tags: [...card.tags], details: { ...card.details } } as Flashcard;
+  });
 }
 
 function normalizeIdentityText(value: string) {
   return value.normalize("NFC").trim().toLocaleLowerCase("it-IT").replace(/\s+/g, " ");
 }
 
-export function cardDuplicateKey(card: Pick<Flashcard, "type" | "english" | "italian">) {
+export function cardDuplicateKey(card: { type: CardType; english: string; italian: string }) {
   return `${card.type}\u0000${normalizeIdentityText(card.english)}\u0000${normalizeIdentityText(card.italian)}`;
 }
 
@@ -23,37 +53,79 @@ export function assertNoDuplicateCards(existing: Flashcard[], incoming: Flashcar
 }
 
 export function normalizeCard(value: unknown): Flashcard {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid card returned by storage.");
-  const card = value as Partial<Flashcard>;
-  if (!Number.isFinite(card.id) || !card.type || !cardTypes.includes(card.type) || !card.english || !card.italian) {
+  const raw = objectValue(value, "Card");
+  const id = Number(raw.id);
+  const type = raw.type;
+  const english = String(raw.english ?? "");
+  const italian = String(raw.italian ?? "");
+  if (!Number.isFinite(id) || typeof type !== "string" || !cardTypes.includes(type as CardType) || !english || !italian) {
     throw new Error("Storage returned an incomplete or invalid card.");
   }
-  const details = card.details && typeof card.details === "object" && !Array.isArray(card.details)
-    ? Object.fromEntries(Object.entries(card.details).map(([key, item]) => [key, String(item)]))
-    : {};
-  if (card.type === "noun") {
-    const nounKeys = Object.keys(details).sort();
-    const expectedKeys = ["articleProfile", "base", "gender", "rule"];
-    if (
-      nounKeys.length !== expectedKeys.length
-      || nounKeys.some((key, index) => key !== expectedKeys[index])
-      || !details.rule
-      || details.base === undefined
-      || !["masculine", "feminine"].includes(details.gender)
-      || !["111", "100", "010", "000"].includes(details.articleProfile)
-    ) {
-      throw new Error(`Noun card ${card.id} does not use the current rule/base/gender/article-profile schema.`);
-    }
-  }
-  return {
-    id: Number(card.id),
-    type: card.type,
-    english: String(card.english),
-    italian: String(card.italian),
-    setName: typeof card.setName === "string" && card.setName ? card.setName : null,
-    tags: Array.isArray(card.tags) ? card.tags.map(String) : [],
-    details,
+
+  const common = {
+    id,
+    english,
+    italian,
+    setName: typeof raw.setName === "string" && raw.setName ? raw.setName : null,
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
   };
+  const details = objectValue(raw.details, `${type} card ${id} details`);
+
+  if (type === "noun") {
+    assertExactKeys(details, `Noun card ${id} details`, ["articleProfile", "base", "gender", "rule"]);
+    const rule = String(details.rule ?? "").trim();
+    const gender = details.gender;
+    if (!rule || (gender !== "masculine" && gender !== "feminine")) {
+      throw new Error(`Noun card ${id} does not use the current rule/base/gender/article-profile schema.`);
+    }
+    return {
+      ...common,
+      type: "noun",
+      details: {
+        rule,
+        base: String(details.base ?? "").normalize("NFC"),
+        gender,
+        articleProfile: normalizeNounArticleProfile(details.articleProfile, `Noun card ${id} article profile`),
+      },
+    };
+  }
+
+  if (type === "verb") {
+    assertExactKeys(details, `Verb card ${id} details`, ["io", "tu", "luiLei", "noi", "voi", "loro", "auxiliary", "participle"]);
+    const auxiliary = details.auxiliary;
+    if (auxiliary !== "avere" && auxiliary !== "essere") throw new Error(`Verb card ${id} has an invalid auxiliary.`);
+    return {
+      ...common,
+      type: "verb",
+      details: {
+        io: stringField(details.io),
+        tu: stringField(details.tu),
+        luiLei: stringField(details.luiLei),
+        noi: stringField(details.noi),
+        voi: stringField(details.voi),
+        loro: stringField(details.loro),
+        auxiliary,
+        participle: stringField(details.participle),
+      },
+    };
+  }
+
+  if (type === "adjective") {
+    assertExactKeys(details, `Adjective card ${id} details`, ["masculineSingular", "feminineSingular", "masculinePlural", "femininePlural"]);
+    return {
+      ...common,
+      type: "adjective",
+      details: {
+        masculineSingular: stringField(details.masculineSingular),
+        feminineSingular: stringField(details.feminineSingular),
+        masculinePlural: stringField(details.masculinePlural),
+        femininePlural: stringField(details.femininePlural),
+      },
+    };
+  }
+
+  assertExactKeys(details, `Adverb card ${id} details`, []);
+  return { ...common, type: "adverb", details: {} };
 }
 
 export function parseCardsResponse(value: unknown): Flashcard[] {
