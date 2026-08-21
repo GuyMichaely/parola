@@ -37,7 +37,7 @@ test("extension imports accept a current canonical noun card unchanged", () => {
       rule: "-chio → -chi",
       base: "spec",
       gender: "masculine",
-      articleMode: "automatic",
+      articleProfile: "111",
     },
   });
 
@@ -62,7 +62,26 @@ test("extension imports reject the retired noun forms/details shape", () => {
 
   assert.throws(
     () => extensionCandidatesToCards([legacy], defaultNounMorphology),
-    /current rule\/base\/gender\/article schema/i,
+    /current rule\/base\/gender\/article-profile schema/i,
+  );
+});
+
+test("extension imports reject the retired articleMode noun schema", () => {
+  const retired = canonicalCard({
+    type: "noun",
+    english: "mirror",
+    italian: "specchio",
+    details: {
+      rule: "-chio → -chi",
+      base: "spec",
+      gender: "masculine",
+      articleMode: "automatic",
+    },
+  });
+
+  assert.throws(
+    () => extensionCandidatesToCards([retired], defaultNounMorphology),
+    /current rule\/base\/gender\/article-profile schema/i,
   );
 });
 
@@ -75,7 +94,7 @@ test("extension imports reject canonical nouns that disagree with active morphol
       rule: "-chio → -chi",
       base: "wrong",
       gender: "masculine",
-      articleMode: "automatic",
+      articleProfile: "111",
     },
   });
 
