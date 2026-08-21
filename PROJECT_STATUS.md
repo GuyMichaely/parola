@@ -118,11 +118,13 @@ The Inventory view exposes a noun morphology panel. Declension rules, inference 
 
 See `docs/NOUN_MORPHOLOGY_AND_SYNTAX.md` for the detailed model.
 
-## Parser validation
+## Automated validation
 
-The web package has a deterministic noun parser test suite. `npm test` compiles the real parsing/preview modules into temporary test output and checks the main architectural cases: ordinary shorthand, the staged `specchio` rule, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
+The web package has deterministic tests against the real parser, preview, and synchronization modules. The noun cases cover ordinary shorthand, staged `specchio` inference, shared gender shorthand policy, elided and ambiguous articles, contradictory grammatical evidence, singularia/pluralia tantum, complete syntax with zero candidates, morphology-specificity ordering, and preview candidate scoping.
 
-`.github/workflows/validate.yml` runs the tests, the production web build, and the API syntax check on relevant pull requests and pushes to `main`. The Pages deployment also runs the noun parser tests before building the production site.
+The synchronization cases cover newer-remote reconciliation, newer-local push, ask-first reconciliation, non-persistent local mode, and offline fallback. These tests exercise the single-snapshot synchronization logic with in-memory browser storage and a fake HTTP peer; they do not replace a smoke test against the deployed browser/API environment.
+
+`.github/workflows/validate.yml` runs the tests, the production web build, and the API syntax check on relevant pull requests and pushes to `main`. The Pages deployment also runs the test suite before building the production site.
 
 ## Inventory migration state
 
@@ -168,7 +170,7 @@ Manual capture and the basic review flow exist. The next larger extension archit
 
 ## Immediate next steps
 
-1. Keep the noun parser suite green and manually exercise `cetriolo`, staged `specchio` inference, gender shorthand, elided articles, singularia tantum, and pluralia tantum in the actual study UI.
-2. Verify local/remote synchronization behavior using the single complete inventory snapshot, including conflict and ask-first behavior.
+1. Keep the automated suite green and manually exercise `cetriolo`, staged `specchio` inference, gender shorthand, elided articles, singularia tantum, and pluralia tantum in the actual study UI.
+2. Run a live browser↔Azure sync smoke test against the deployed environment. The synchronization decision logic itself is covered deterministically, including automatic/ask-first reconciliation and offline/non-persistent behavior.
 3. Confirm the installed Parola Capture client is `0.2.4` or later. Once confirmed, remove the temporary Pages extension compatibility feed/package path.
 4. Resume the capture/enrichment roadmap: separate captured surface forms/context from canonical card candidates, then add user-initiated enrichment behind a provider/API abstraction.
